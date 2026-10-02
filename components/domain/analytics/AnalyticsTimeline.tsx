@@ -1,43 +1,24 @@
-import { Text, TouchableOpacity, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { AnalyticsRow } from "../../ui/AnalyticsRow";
 import { formatCurrency } from "../../ui/AmountDisplay";
-import { COLORS } from "../../../constants/theme";
-import {
-  ANALYTICS_EVENT_LABELS,
-  groupAnalyticsEventsByDate,
-} from "../../../lib/obligation-analytics-helpers";
-import {
-  obligationHistoryEventAmountPrefix,
-  obligationHistoryEventColor,
-} from "../../../lib/obligation-viewer-labels";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
+import { parseDisplayDate } from "../../../lib/date";
+import { ANALYTICS_EVENT_LABELS } from "../../../lib/obligation-analytics-helpers";
+import { obligationHistoryEventAmountPrefix, obligationHistoryEventColor } from "../../../lib/obligation-viewer-labels";
 import { firstMeaningfulText } from "../../../lib/text-utils";
 import type { ObligationDirection, ObligationEventSummary } from "../../../types/domain";
-import { styles } from "../ObligationAnalyticsModal.styles";
 
 type TimelineFilter = "all" | "payments" | "capital";
-type TimelineToneFilter = "all" | "positive" | "negative";
-
-const FILTER_OPTIONS: ReadonlyArray<{ id: TimelineFilter; label: string }> = [
-  { id: "all", label: "Todos" },
-  { id: "payments", label: "" },
-  { id: "capital", label: "Capital" },
-];
-
-const TONE_OPTIONS: ReadonlyArray<{ id: TimelineToneFilter; label: string }> = [
-  { id: "all", label: "Todo impacto" },
-  { id: "positive", label: "Solo positivos" },
-  { id: "negative", label: "Solo negativos" },
-];
 
 type Props = {
   timelineEvents: ObligationEventSummary[];
   filteredTimelineEvents: ObligationEventSummary[];
   timelineFilter: TimelineFilter;
-  timelineToneFilter: TimelineToneFilter;
   onChangeTimelineFilter: (filter: TimelineFilter) => void;
-  onChangeTimelineToneFilter: (filter: TimelineToneFilter) => void;
   analyticsDirection: ObligationDirection;
   isSharedViewer: boolean;
   currency: string;
@@ -47,13 +28,14 @@ type Props = {
   onViewerEventTap: (event: ObligationEventSummary) => void;
 };
 
+const INITIAL_LIMIT = 8;
+const PAGE_SIZE = 20;
+
 export function AnalyticsTimeline({
   timelineEvents,
   filteredTimelineEvents,
   timelineFilter,
-  timelineToneFilter,
   onChangeTimelineFilter,
-  onChangeTimelineToneFilter,
   analyticsDirection,
   isSharedViewer,
   currency,
@@ -62,146 +44,92 @@ export function AnalyticsTimeline({
   onEventTap,
   onViewerEventTap,
 }: Props) {
+  const [visibleCount, setVisibleCount] = useState(INITIAL_LIMIT);
+  const visible = filteredTimelineEvents.slice(0, visibleCount);
+  const filters: { id: TimelineFilter; label: string }[] = [
+    { id: "all", label: "Todo" },
+    { id: "payments", label: `${eventPaymentNoun}s` },
+    { id: "capital", label: "Capital" },
+  ];
+
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Línea de tiempo</Text>
-
-      <View style={styles.pillRowWrap}>
-        {FILTER_OPTIONS.map((option) => {
-          const label = option.id === "payments" ? `${eventPaymentNoun}s` : option.label;
-          return (
-            <TouchableOpacity
-              key={option.id}
-              style={[styles.filterPill, timelineFilter === option.id && styles.filterPillActive]}
-              onPress={() => onChangeTimelineFilter(option.id)}
-            >
-              <Text style={[styles.filterPillText, timelineFilter === option.id && styles.filterPillTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      <View style={styles.pillRowWrap}>
-        {TONE_OPTIONS.map((option) => (
+      <Text style={styles.title}>Actividad</Text>
+      <Text style={styles.subtitle}>
+        {filteredTimelineEvents.length} de {timelineEvents.length} eventos · toca uno para ver su detalle
+      </Text>
+      <View style={styles.selector}>
+        {filters.map((filter) => (
           <TouchableOpacity
-            key={option.id}
-            style={[styles.filterPill, timelineToneFilter === option.id && styles.filterPillActive]}
-            onPress={() => onChangeTimelineToneFilter(option.id)}
+            key={filter.id}
+            style={[styles.segment, timelineFilter === filter.id && styles.segmentSelected]}
+            onPress={() => { setVisibleCount(INITIAL_LIMIT); onChangeTimelineFilter(filter.id); }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: timelineFilter === filter.id }}
           >
-            <Text style={[styles.filterPillText, timelineToneFilter === option.id && styles.filterPillTextActive]}>
-              {option.label}
-            </Text>
+            <Text style={[styles.segmentText, timelineFilter === filter.id && styles.segmentTextSelected]}>{filter.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
       {timelineEvents.length === 0 ? (
-        <Text style={styles.emptyHistory}>Aun no hay eventos para construir la linea de tiempo.</Text>
+        <Text style={styles.empty}>Todavía no hay actividad registrada.</Text>
       ) : filteredTimelineEvents.length === 0 ? (
-        <Text style={styles.emptyHistory}>No hay eventos que coincidan con esos filtros.</Text>
+        <Text style={styles.empty}>No hay eventos en este filtro.</Text>
       ) : (
-        <View style={styles.tl2Container}>
-          {groupAnalyticsEventsByDate(filteredTimelineEvents).map(({ date, events: dayEvents }) => {
-            const dayTotal = dayEvents.reduce((sum, e) => {
-              const useCash = shouldUseCashPerspective(e.id);
-              const prefix = obligationHistoryEventAmountPrefix(e.eventType, analyticsDirection, isSharedViewer, useCash);
-              return sum + (prefix === "+" ? e.amount : -e.amount);
-            }, 0);
-            const dayTotalColor = dayTotal >= 0 ? COLORS.income : COLORS.danger;
+        <>
+          {visible.map((event, index) => {
+            const useCash = shouldUseCashPerspective(event.id);
+            const prefix = obligationHistoryEventAmountPrefix(event.eventType, analyticsDirection, isSharedViewer, useCash);
+            const tint = obligationHistoryEventColor(event.eventType, analyticsDirection, isSharedViewer, useCash);
+            const eventLabel = event.eventType === "payment"
+              ? eventPaymentNoun
+              : ANALYTICS_EVENT_LABELS[event.eventType]?.label ?? "Movimiento";
+            const description = firstMeaningfulText(event.description, event.reason, event.notes);
+            const onPress = onEventTap
+              ? () => onEventTap(event)
+              : isSharedViewer ? () => onViewerEventTap(event) : undefined;
             return (
-              <View key={date}>
-                <View style={styles.tl2DateRow}>
-                  <View style={styles.tl2NodeCol}>
-                    <View style={styles.tl2DateDot} />
-                  </View>
-                  <Text style={styles.tl2DateLabel}>
-                    {format(new Date(date + "T12:00:00"), "d MMM yyyy", { locale: es }).toUpperCase()}
-                  </Text>
-                  <View style={styles.tl2DateLine} />
-                  <Text style={[styles.tl2DayTotal, { color: dayTotalColor }]}>
-                    {dayTotal >= 0 ? "+" : ""}{formatCurrency(Math.abs(dayTotal), currency)}
-                  </Text>
-                </View>
-
-                {dayEvents.map((event, i) => {
-                  const useCashPerspective = shouldUseCashPerspective(event.id);
-                  const eventTint = obligationHistoryEventColor(
-                    event.eventType,
-                    analyticsDirection,
-                    isSharedViewer,
-                    useCashPerspective,
-                  );
-                  const amountPrefix = obligationHistoryEventAmountPrefix(
-                    event.eventType,
-                    analyticsDirection,
-                    isSharedViewer,
-                    useCashPerspective,
-                  );
-                  const eventLabel =
-                    event.eventType === "payment"
-                      ? eventPaymentNoun
-                      : ANALYTICS_EVENT_LABELS[event.eventType]?.label ?? event.eventType;
-                  const eventDetail = firstMeaningfulText(event.description, event.reason, event.notes);
-                  const impactLabel =
-                    eventTint === COLORS.income
-                      ? "Positivo"
-                      : eventTint === COLORS.expense
-                        ? "Negativo"
-                        : "Neutro";
-                  const isLastInDay = i === dayEvents.length - 1;
-
-                  return (
-                    <View key={event.id} style={styles.tl2EventRow}>
-                      <View style={styles.tl2LineCol}>
-                        <View style={styles.tl2LineSegment} />
-                        <View style={[styles.tl2Dot, {
-                          backgroundColor: eventTint,
-                          shadowColor: eventTint,
-                          shadowOpacity: 0.5,
-                          shadowRadius: 3,
-                          elevation: 3,
-                        }]} />
-                        {isLastInDay
-                          ? <View style={styles.tl2LineEnd} />
-                          : <View style={styles.tl2LineSegment} />}
-                      </View>
-
-                      <TouchableOpacity
-                        style={styles.tl2Card}
-                        onPress={() => {
-                          if (onEventTap) { onEventTap(event); return; }
-                          if (isSharedViewer) onViewerEventTap(event);
-                        }}
-                        activeOpacity={onEventTap || isSharedViewer ? 0.8 : 1}
-                      >
-                        <View style={styles.tl2CardBody}>
-                          <Text style={[styles.tl2TypeLabel, { color: eventTint }]} numberOfLines={1}>
-                            {eventLabel}
-                          </Text>
-                          <View style={styles.tl2CardSubRow}>
-                            <View style={[styles.tl2Badge, { backgroundColor: eventTint + "18" }]}>
-                              <Text style={[styles.tl2BadgeText, { color: eventTint }]}>{impactLabel}</Text>
-                            </View>
-                            {eventDetail ? (
-                              <Text style={styles.tl2CardDesc} numberOfLines={1}>
-                                {eventDetail}
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-                        <Text style={[styles.tl2Amount, { color: eventTint }]} numberOfLines={1}>
-                          {amountPrefix}{formatCurrency(event.amount, currency)}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-              </View>
+              <AnalyticsRow
+                key={event.id}
+                label={description || eventLabel}
+                detail={`${format(parseDisplayDate(event.eventDate), "d MMM yyyy", { locale: es })} · ${eventLabel}${event.installmentNo ? ` · cuota ${event.installmentNo}` : ""}`}
+                value={`${prefix}${formatCurrency(event.amount, currency)}`}
+                valueColor={tint === COLORS.income || tint === COLORS.expense ? tint : undefined}
+                onPress={onPress}
+                last={index === visible.length - 1 && visibleCount >= filteredTimelineEvents.length}
+              />
             );
           })}
-        </View>
+          {filteredTimelineEvents.length > INITIAL_LIMIT ? (
+            <Pressable
+              style={styles.expand}
+              onPress={() => setVisibleCount((count) => count >= filteredTimelineEvents.length ? INITIAL_LIMIT : count + PAGE_SIZE)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.expandText}>
+                {visibleCount >= filteredTimelineEvents.length
+                  ? "Mostrar menos"
+                  : `Ver ${Math.min(PAGE_SIZE, filteredTimelineEvents.length - visibleCount)} más`}
+              </Text>
+            </Pressable>
+          ) : null}
+        </>
       )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  section: { marginTop: SPACING.xxxl },
+  title: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xl, color: COLORS.ink },
+  subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, marginTop: SPACING.xs },
+  selector: { flexDirection: "row", alignSelf: "flex-start", padding: SPACING.xs / 2, borderRadius: RADIUS.md, backgroundColor: SURFACE.card, marginTop: SPACING.md, marginBottom: SPACING.sm },
+  segment: { minHeight: 36, paddingHorizontal: SPACING.md, justifyContent: "center", borderRadius: RADIUS.sm },
+  segmentSelected: { backgroundColor: SURFACE.cardBorder },
+  segmentText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  segmentTextSelected: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  empty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, paddingVertical: SPACING.lg },
+  expand: { minHeight: 48, justifyContent: "center" },
+  expandText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.fog },
+});

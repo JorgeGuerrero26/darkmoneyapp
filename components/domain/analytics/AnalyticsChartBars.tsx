@@ -1,28 +1,9 @@
-import {
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { formatCurrency } from "../../ui/AmountDisplay";
 import { formatSignedCurrencyValue } from "../../../lib/obligation-analytics-helpers";
-import type {
-  MonthlySeriesPoint,
-  MonthlySeriesScope,
-} from "../../../lib/obligation-monthly-series";
-import { styles } from "../ObligationAnalyticsModal.styles";
-
-type ChartScopeOption = {
-  id: MonthlySeriesScope;
-  label: string;
-};
-
-const SCOPE_OPTIONS: readonly ChartScopeOption[] = [
-  { id: "6", label: "6 meses" },
-  { id: "12", label: "12 meses" },
-  { id: "all", label: "Todo" },
-];
+import type { MonthlySeriesPoint, MonthlySeriesScope } from "../../../lib/obligation-monthly-series";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 
 type Props = {
   title: string;
@@ -30,10 +11,15 @@ type Props = {
   maxAbsValue: number;
   currency: string;
   signedDisplay: boolean;
-  needsScroll: boolean;
   chartScope: MonthlySeriesScope;
   onChangeChartScope: (scope: MonthlySeriesScope) => void;
 };
+
+const OPTIONS: { id: MonthlySeriesScope; label: string }[] = [
+  { id: "6", label: "6 meses" },
+  { id: "12", label: "12 meses" },
+  { id: "all", label: "Todo" },
+];
 
 export function AnalyticsChartBars({
   title,
@@ -41,64 +27,73 @@ export function AnalyticsChartBars({
   maxAbsValue,
   currency,
   signedDisplay,
-  needsScroll,
   chartScope,
   onChangeChartScope,
 }: Props) {
-  const bars = (fixed: boolean) =>
-    series.map((m) => (
-      <View key={m.key} style={[styles.chartBar, fixed && styles.chartBarFixed]}>
-        <View style={styles.barTrack}>
-          <View
-            style={[
-              styles.barFill,
-              m.total > 0 ? styles.barFillPositive : m.total < 0 ? styles.barFillNegative : null,
-              { height: `${Math.round((Math.abs(m.total) / maxAbsValue) * 100)}%` as any },
-              m.total === 0 && styles.barEmpty,
-            ]}
-          />
-        </View>
-        <Text style={styles.barLabel} numberOfLines={1}>
-          {m.label}
-        </Text>
-        {m.total !== 0 ? (
-          <Text style={styles.barValue} numberOfLines={1}>
-            {(signedDisplay
-              ? formatSignedCurrencyValue(m.total, currency)
-              : formatCurrency(m.total, currency)
-            ).replace(/\s/g, "")}
-          </Text>
-        ) : null}
-      </View>
-    ));
+  const hasActivity = series.some((month) => month.total !== 0);
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {needsScroll ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator
-          contentContainerStyle={styles.chartScroll}
-        >
-          <View style={[styles.chart, styles.chartWide]}>{bars(true)}</View>
-        </ScrollView>
-      ) : (
-        <View style={styles.chart}>{bars(false)}</View>
-      )}
-      <View style={styles.pillRowWrap}>
-        {SCOPE_OPTIONS.map((opt) => (
+      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.subtitle}>{signedDisplay ? "Solo movimientos asociados a una cuenta" : "Importes registrados por mes"}</Text>
+      <View style={styles.selector}>
+        {OPTIONS.map((option) => (
           <TouchableOpacity
-            key={opt.id}
-            style={[styles.filterPill, chartScope === opt.id && styles.filterPillActive]}
-            onPress={() => onChangeChartScope(opt.id)}
+            key={option.id}
+            style={[styles.segment, chartScope === option.id && styles.segmentSelected]}
+            onPress={() => onChangeChartScope(option.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: chartScope === option.id }}
           >
-            <Text style={[styles.filterPillText, chartScope === opt.id && styles.filterPillTextActive]}>
-              {opt.label}
-            </Text>
+            <Text style={[styles.segmentText, chartScope === option.id && styles.segmentTextSelected]}>{option.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
+
+      {hasActivity ? series.map((month) => {
+        const width = `${Math.max(2, Math.abs(month.total) / maxAbsValue * (signedDisplay ? 50 : 100))}%` as const;
+        return (
+          <View key={month.key} style={styles.monthRow}>
+            <Text style={styles.monthLabel}>{month.label}</Text>
+            <View style={styles.track}>
+              {signedDisplay ? <View style={styles.zeroLine} /> : null}
+              {month.total !== 0 ? (
+                <View style={[
+                  styles.fill,
+                  {
+                    width,
+                    left: signedDisplay ? month.total > 0 ? "50%" : undefined : 0,
+                    right: signedDisplay && month.total < 0 ? "50%" : undefined,
+                  },
+                ]} />
+              ) : null}
+            </View>
+            <Text style={[styles.monthValue, signedDisplay && month.total !== 0 && { color: month.total > 0 ? COLORS.income : COLORS.expense }]} numberOfLines={1} adjustsFontSizeToFit>
+              {month.total === 0 ? "—" : signedDisplay ? formatSignedCurrencyValue(month.total, currency) : formatCurrency(month.total, currency)}
+            </Text>
+          </View>
+        );
+      }) : (
+        <Text style={styles.empty}>Aún no hay pagos en este período.</Text>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  section: { marginTop: SPACING.xxxl },
+  title: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xl, color: COLORS.ink },
+  subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, marginTop: SPACING.xs },
+  selector: { flexDirection: "row", alignSelf: "flex-start", padding: SPACING.xs / 2, backgroundColor: SURFACE.card, borderRadius: RADIUS.md, marginTop: SPACING.md, marginBottom: SPACING.sm },
+  segment: { paddingHorizontal: SPACING.md, minHeight: 36, justifyContent: "center", borderRadius: RADIUS.sm },
+  segmentSelected: { backgroundColor: SURFACE.cardBorder },
+  segmentText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  segmentTextSelected: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  monthRow: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: SPACING.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: SURFACE.separator },
+  monthLabel: { width: 64, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink, textTransform: "capitalize" },
+  track: { flex: 1, height: 6, borderRadius: RADIUS.full, backgroundColor: SURFACE.track, overflow: "hidden" },
+  zeroLine: { position: "absolute", left: "50%", width: 1, height: "100%", backgroundColor: COLORS.storm },
+  fill: { position: "absolute", height: "100%", borderRadius: RADIUS.full, backgroundColor: COLORS.ink },
+  monthValue: { width: 88, textAlign: "right", fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  empty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, paddingVertical: SPACING.lg },
+});

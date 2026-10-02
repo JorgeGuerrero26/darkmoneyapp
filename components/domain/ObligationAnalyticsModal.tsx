@@ -1,42 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  X,
-  TrendingUp,
-  Calendar,
-  CheckCircle,
-  CheckCircle2,
-  Clock,
-  CreditCard,
-  ChevronLeft,
-  ChevronRight,
-  XCircle,
-} from "lucide-react-native";
-import { differenceInCalendarDays, differenceInDays, endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
-import { es } from "date-fns/locale";
+import { ChevronDown, X } from "lucide-react-native";
 
-import { formatCurrency } from "../ui/AmountDisplay";
-import { ProgressBar } from "../ui/ProgressBar";
-import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { parseDisplayDate, todayPeru } from "../../lib/date";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { sortByName } from "../../lib/sort-locale";
-import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { OBLIGATION_EVENT_HISTORY_PAGE_SIZE } from "../../constants/config";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import type {
-  NotificationItem,
   ObligationSummary,
   ObligationEventSummary,
   ObligationPaymentRequest,
@@ -48,27 +29,16 @@ import {
 } from "../../services/queries/workspace-data";
 import {
   useObligationEventsQuery,
-  useObligationPaymentRequestsQuery,
   useViewerPaymentRequestsQuery,
-  useAcceptPaymentRequestMutation,
-  useRejectPaymentRequestMutation,
   useCreateObligationEventDeleteRequestMutation,
-  useDeleteObligationEventMutation,
   useObligationEventViewerLinksQuery,
-  useRejectObligationEventDeleteRequestMutation,
   useUpsertLinkEventToAccountMutation,
 } from "../../services/queries/obligations";
 import { useObligationEventAttachmentsQuery } from "../../services/queries/attachments";
 import {
-  analyticsChartSectionTitle,
   analyticsEventPaymentNoun,
-  analyticsInstallmentsDoneAdj,
   analyticsPaidMetricLabel,
-  analyticsPaymentCountMetricLabel,
   obligationEventCashDeltaSign,
-  obligationHistoryEventColor,
-  obligationHistoryEventAmountPrefix,
-  obligationProgressPaidAdjective,
   obligationViewerActsAsCollector,
 } from "../../lib/obligation-viewer-labels";
 import { useToast } from "../../hooks/useToast";
@@ -80,39 +50,19 @@ import {
   readEventDeletePayload,
   type EventDeleteStatus,
 } from "../../lib/obligation-event-payloads";
-import { firstMeaningfulText } from "../../lib/text-utils";
-import { currentMonthRangeYmd, ymdToLocalDate } from "../../lib/obligation-date-range";
-import {
-  ANALYTICS_EVENT_LABELS,
-  formatPeriodLabel,
-  formatSignedCurrencyValue,
-  groupAnalyticsEventsByDate,
-  type DeleteRequestHistoryEntry,
-  type HistoryItem,
-} from "../../lib/obligation-analytics-helpers";
 import { buildMonthlySeries } from "../../lib/obligation-monthly-series";
 import { computeAnalyticsAmounts } from "../../lib/obligation-analytics-amounts";
-import {
-  buildCombinedHistoryList,
-  buildHistoryItemsByRequestStatus,
-} from "../../lib/obligation-history-items";
 import { useObligationAnalyticsHistory } from "../../hooks/useObligationAnalyticsHistory";
 import { styles } from "./ObligationAnalyticsModal.styles";
 import { AnalyticsChartBars } from "./analytics/AnalyticsChartBars";
-import { AnalyticsInstallmentGrid } from "./analytics/AnalyticsInstallmentGrid";
-import { AnalyticsInsightCards } from "./analytics/AnalyticsInsightCards";
+import { ObligationAnalyticsOverview } from "./analytics/ObligationAnalyticsOverview";
 import { AnalyticsTimeline } from "./analytics/AnalyticsTimeline";
 import { AnalyticsViewerEventActionSheet } from "./analytics/AnalyticsViewerEventActionSheet";
 import { AnalyticsViewerLinkAccountSheet } from "./analytics/AnalyticsViewerLinkAccountSheet";
-import { AnalyticsApprovalSheet } from "./analytics/AnalyticsApprovalSheet";
 
-type HistoryPreset = "month" | "3m" | "year" | "all" | "custom";
 type ChartScope = "6" | "12" | "all";
 type TimelineFilter = "all" | "payments" | "capital";
-type TimelineToneFilter = "all" | "positive" | "negative";
 type TimelinePerspective = "obligation" | "cash";
-type ComparisonMode = "flow" | "capital" | "all";
-type ComparisonWindow = "month" | "90d";
 
 type Props = {
   visible: boolean;
@@ -122,22 +72,14 @@ type Props = {
   userId?: string | null;
 };
 
-type EventTypeFilter = "all" | "approved" | "pending" | "rejected";
-
 export function ObligationAnalyticsModal({ visible, obligation, onClose, onEventTap, userId }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const { showToast, showErrorToast } = useToast();
-  const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("month");
-  const [historyFrom, setHistoryFrom] = useState("");
-  const [historyTo, setHistoryTo] = useState("");
   const [chartScope, setChartScope] = useState<ChartScope>("6");
-  const [analyticsPerspective, setAnalyticsPerspective] = useState<TimelinePerspective>("cash");
+  const [analyticsPerspective, setAnalyticsPerspective] = useState<TimelinePerspective>("obligation");
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
-  const [timelineToneFilter, setTimelineToneFilter] = useState<TimelineToneFilter>("all");
-  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("flow");
-  const [comparisonWindow, setComparisonWindow] = useState<ComparisonWindow>("month");
-  const [historyPageIndex, setHistoryPageIndex] = useState(0);
+  const [calculationOpen, setCalculationOpen] = useState(false);
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({
     visible,
     onClose,
@@ -145,32 +87,16 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
 
   useEffect(() => {
     if (!visible || !obligation) return;
-    const { from, to } = currentMonthRangeYmd();
-    setHistoryPreset("month");
-    setHistoryFrom(from);
-    setHistoryTo(to);
     setChartScope("6");
-    setAnalyticsPerspective("cash");
+    setAnalyticsPerspective("obligation");
     setTimelineFilter("all");
-    setTimelineToneFilter("all");
-    setComparisonMode("flow");
-    setComparisonWindow("month");
-    setHistoryPageIndex(0);
-    setEventTypeFilter("all");
-    setRejectingRequestId(null);
-    setRejectReason("");
-    setApprovingRequest(null);
-    setApprovalAccountId(null);
+    setCalculationOpen(false);
     setSelectedViewerEvent(null);
     setViewerAttachmentPreviewVisible(false);
     setLinkingEvent(null);
     setLinkingAccountId(null);
     setViewerDeleteRequestEvent(null);
   }, [visible, obligation?.id]);
-
-  useEffect(() => {
-    setHistoryPageIndex(0);
-  }, [historyFrom, historyTo, historyPreset]);
 
   const isSharedViewer =
     obligation != null &&
@@ -181,6 +107,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     data: remoteEvents,
     isPending: remoteEventsPending,
     isError: remoteEventsError,
+    refetch: refetchRemoteEvents,
   } = useObligationEventsQuery(obligation?.id, visible && isSharedViewer);
 
   const shareId = isSharedViewer && obligation && "share" in obligation
@@ -200,15 +127,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     return map;
   }, [viewerLinks]);
 
-  // Payment requests: owner sees all requests; viewer sees their own
-  const { data: ownerRequests = [] } = useObligationPaymentRequestsQuery(
-    visible && !isSharedViewer ? obligation?.id : null,
-  );
+  // Las solicitudes aceptadas permiten reconocer pagos ya asociados por el visor.
   const { data: viewerRequests = [] } = useViewerPaymentRequestsQuery(
     visible && isSharedViewer ? obligation?.id : null,
     userId,
   );
-  const allRequests = isSharedViewer ? viewerRequests : ownerRequests;
   const acceptedViewerRequestByEventId = useMemo(() => {
     const map = new Map<number, ObligationPaymentRequest>();
     for (const req of viewerRequests) {
@@ -219,11 +142,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     return map;
   }, [viewerRequests]);
 
-  const acceptMutation = useAcceptPaymentRequestMutation();
-  const rejectMutation = useRejectPaymentRequestMutation();
   const createDeleteRequestMutation = useCreateObligationEventDeleteRequestMutation();
-  const deleteEventMutation = useDeleteObligationEventMutation();
-  const rejectDeleteRequestMutation = useRejectObligationEventDeleteRequestMutation();
   const linkEventMutation = useUpsertLinkEventToAccountMutation();
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
@@ -236,11 +155,6 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     selectedViewerEvent ? obligation?.workspaceId ?? null : null,
     selectedViewerEvent?.id ?? null,
   );
-  const [eventTypeFilter, setEventTypeFilter] = useState<EventTypeFilter>("all");
-  const [rejectingRequestId, setRejectingRequestId] = useState<number | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [approvingRequest, setApprovingRequest] = useState<ObligationPaymentRequest | null>(null);
-  const [approvalAccountId, setApprovalAccountId] = useState<number | null>(null);
   const [linkingEvent, setLinkingEvent] = useState<ObligationEventSummary | null>(null);
   const [linkingAccountId, setLinkingAccountId] = useState<number | null>(null);
   const [viewerDeleteRequestEvent, setViewerDeleteRequestEvent] = useState<ObligationEventSummary | null>(null);
@@ -292,55 +206,12 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     return local;
   }, [obligation, isSharedViewer, remoteEvents]);
 
-  const ownerDeleteRequests = useMemo((): DeleteRequestHistoryEntry[] => {
-    if (!obligation || isSharedViewer) return [];
-    const items: DeleteRequestHistoryEntry[] = [];
-    for (const item of notifications) {
-      if (item.kind !== "obligation_event_delete_request") continue;
-      const payload = readEventDeletePayload(item.payload);
-      if (!payload || payload.obligationId !== obligation.id || payload.responseStatus) continue;
-      items.push({
-        id: `owner-delete-${item.id}`,
-        status: "pending",
-        payload,
-        event: eventsForModal.find((ev) => ev.id === payload.eventId) ?? null,
-        notification: item,
-        ownerCanRespond: true,
-      });
-    }
-    return items.sort((a, b) => b.notification.scheduledFor.localeCompare(a.notification.scheduledFor));
-  }, [eventsForModal, isSharedViewer, notifications, obligation]);
-
-  const viewerDeleteRequests = useMemo((): DeleteRequestHistoryEntry[] => {
-    if (!obligation || !isSharedViewer) return [];
-    return [...viewerDeleteStatusByEventId.values()]
-      .filter((item) => item.status === "pending" || item.status === "rejected")
-      .map((item) => ({
-        id: `viewer-delete-${item.notification.id}`,
-        status: item.status,
-        payload: item.payload,
-        event: eventsForModal.find((ev) => ev.id === item.payload.eventId) ?? null,
-        notification: item.notification,
-        ownerCanRespond: false,
-      }))
-      .sort((a, b) => b.notification.scheduledFor.localeCompare(a.notification.scheduledFor));
-  }, [eventsForModal, isSharedViewer, obligation, viewerDeleteStatusByEventId]);
-
-  const deleteRequests = isSharedViewer ? viewerDeleteRequests : ownerDeleteRequests;
-
   // Todos los hooks deben ejecutarse siempre (nunca después de `return null`).
   const {
     paymentEvents,
     allEventsSorted,
     timelineEvents,
-    filteredHistoryEvents,
-    historyDateRangeNotice,
-  } = useObligationAnalyticsHistory({
-    eventsForModal,
-    historyPreset,
-    historyFrom,
-    historyTo,
-  });
+  } = useObligationAnalyticsHistory(eventsForModal);
 
   useEffect(() => {
     if (!isSharedViewer || !viewerRequests.length || !profile?.id || !shareId || !activeWorkspaceId || !obligation) return;
@@ -395,17 +266,6 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerRequests, linkedEventIds.size]);
 
-  const monthlyPayments = useMemo(
-    () =>
-      buildMonthlySeries({
-        items: paymentEvents,
-        scope: chartScope,
-        getMonthKey: (e) => e.eventDate.slice(0, 7),
-        getAmount: (e) => e.amount,
-      }),
-    [paymentEvents, chartScope],
-  );
-
   const analyticsDirection = obligation?.direction ?? "receivable";
   function shouldUseCashPerspective(eventId: number, perspective: TimelinePerspective) {
     if (!isSharedViewer || perspective !== "cash") return false;
@@ -417,7 +277,6 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
       return paymentEvents.map((event) => ({
         event,
         signedAmount: event.amount,
-        displayAmount: event.amount,
       }));
     }
     return eventsForModal
@@ -433,10 +292,9 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         return {
           event,
           signedAmount: sign * event.amount,
-          displayAmount: event.amount,
         };
       })
-      .filter((item): item is { event: ObligationEventSummary; signedAmount: number; displayAmount: number } => item != null)
+      .filter((item): item is { event: ObligationEventSummary; signedAmount: number } => item != null)
       .sort((a, b) => b.event.eventDate.localeCompare(a.event.eventDate));
   }, [
     analyticsDirection,
@@ -457,117 +315,10 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
       }),
     [analysisEvents, chartScope],
   );
-  // Combined list: events (approved) + pending/rejected requests
-  const combinedList = useMemo(
-    () =>
-      buildCombinedHistoryList({
-        events: filteredHistoryEvents,
-        requests: allRequests,
-        deleteRequests,
-      }),
-    [filteredHistoryEvents, allRequests, deleteRequests],
-  );
-
-  const displayList = useMemo((): HistoryItem[] => {
-    switch (eventTypeFilter) {
-      case "approved":
-        return combinedList.filter((i) => i.kind === "event");
-      case "pending":
-        return buildHistoryItemsByRequestStatus({
-          requests: allRequests,
-          deleteRequests,
-          status: "pending",
-        });
-      case "rejected":
-        return buildHistoryItemsByRequestStatus({
-          requests: allRequests,
-          deleteRequests,
-          status: "rejected",
-        });
-      default:
-        return combinedList;
-    }
-  }, [combinedList, allRequests, deleteRequests, eventTypeFilter]);
-
-  const pendingCount =
-    allRequests.filter((r) => r.status === "pending").length +
-    deleteRequests.filter((r) => r.status === "pending").length;
-
-  const historyPageSize = OBLIGATION_EVENT_HISTORY_PAGE_SIZE;
-  const historyTotalPages = Math.max(1, Math.ceil(displayList.length / historyPageSize));
-  const historySafePage = Math.min(historyPageIndex, historyTotalPages - 1);
-  const historyPageOffset = historySafePage * historyPageSize;
-  const paginatedHistoryItems = displayList.slice(
-    historyPageOffset,
-    historyPageOffset + historyPageSize,
-  );
-
   const analyticsAmounts = useMemo(
     () => computeAnalyticsAmounts(obligation, paymentEvents),
     [obligation, paymentEvents],
   );
-
-  function handleInlineAccept(req: ObligationPaymentRequest) {
-    if (!obligation) return;
-    setApprovingRequest(req);
-    setApprovalAccountId(
-      !isSharedViewer ? (obligation as ObligationSummary).settlementAccountId ?? null : null,
-    );
-  }
-
-  function confirmInlineAccept() {
-    if (!obligation || !approvingRequest) return;
-    acceptMutation.mutate(
-      {
-        requestId: approvingRequest.id,
-        obligationId: approvingRequest.obligationId,
-        workspaceId: approvingRequest.workspaceId,
-        amount: approvingRequest.amount,
-        paymentDate: approvingRequest.paymentDate,
-        installmentNo: approvingRequest.installmentNo,
-        description: approvingRequest.description,
-        accountId: approvalAccountId,
-        createMovement: approvalAccountId != null,
-        direction: obligation.direction,
-        obligationTitle: obligation.title,
-        viewerAccountId: approvingRequest.viewerAccountId ?? null,
-        viewerWorkspaceId: approvingRequest.viewerWorkspaceId ?? null,
-        viewerUserId: approvingRequest.requestedByUserId,
-        ownerUserId: userId,
-        shareId: approvingRequest.shareId,
-      },
-      {
-        onSuccess: () => {
-          setApprovingRequest(null);
-          setApprovalAccountId(null);
-          showToast("Solicitud aceptada", "success");
-        },
-        onError: (err) => {
-          showErrorToast("No se pudo aceptar la solicitud", err);
-        },
-      },
-    );
-  }
-
-  async function handleInlineReject(req: ObligationPaymentRequest) {
-    if (!obligation) return;
-    try {
-      await rejectMutation.mutateAsync({
-        requestId: req.id,
-        obligationId: req.obligationId,
-        rejectionReason: rejectReason.trim() || null,
-        viewerUserId: req.requestedByUserId,
-        ownerUserId: userId,
-        amount: req.amount,
-        obligationTitle: obligation.title,
-      });
-      setRejectingRequestId(null);
-      setRejectReason("");
-      showToast("Solicitud rechazada", "success");
-    } catch (err: unknown) {
-      showErrorToast("No se pudo rechazar la solicitud", err);
-    }
-  }
 
   function handleViewerEventTap(ev: ObligationEventSummary) {
     setViewerAttachmentPreviewVisible(false);
@@ -643,48 +394,6 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     }
   }
 
-  async function handleApproveDeleteRequest(req: DeleteRequestHistoryEntry) {
-    if (!obligation) return;
-    try {
-      await deleteEventMutation.mutateAsync({
-        eventId: req.payload.eventId,
-        obligationId: obligation.id,
-        movementId: req.event?.movementId ?? null,
-        ownerUserId: userId,
-        obligationTitle: obligation.title,
-        amount: req.event?.amount ?? req.payload.amount,
-        eventType: req.event?.eventType ?? req.payload.eventType,
-        eventDate: req.event?.eventDate ?? req.payload.eventDate,
-      });
-      showToast(
-        "Solicitud aprobada",
-        "success",
-        req.event ? "Evento eliminado" : "Pendiente resuelta",
-      );
-    } catch (err: unknown) {
-      showErrorToast("No se pudo aprobar la solicitud", err);
-    }
-  }
-
-  async function handleRejectDeleteRequest(req: DeleteRequestHistoryEntry) {
-    if (!obligation || !userId || !req.payload.requestedByUserId) return;
-    try {
-      await rejectDeleteRequestMutation.mutateAsync({
-        obligationId: obligation.id,
-        eventId: req.payload.eventId,
-        ownerUserId: userId,
-        viewerUserId: req.payload.requestedByUserId,
-        amount: req.payload.amount,
-        eventType: req.payload.eventType,
-        eventDate: req.payload.eventDate,
-        obligationTitle: obligation.title,
-      });
-      showToast("Solicitud de eliminación rechazada", "success");
-    } catch (err: unknown) {
-      showErrorToast("No se pudo rechazar la solicitud de eliminación", err);
-    }
-  }
-
   if (!obligation) return null;
 
   const currency = obligation.currencyCode;
@@ -694,122 +403,16 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     currentPrincipal > 0.009
       ? Math.min(100, Math.max(0, (Math.max(0, paidAmount) / currentPrincipal) * 100))
       : obligation.progressPercent;
-  const isPaid = obligation.status === "paid";
-
-  const needsChartScroll =
-    chartScope === "all" && monthlyPayments.length > 6;
-
-  const maxMonthly = Math.max(...monthlyPayments.map((m) => m.total), 1);
-
-  const totalInstallments = obligation.installmentCount ?? 0;
-  const paidInstallments = paymentEvents.length;
-  const todayLocal = ymdToLocalDate(todayPeru());
-  const todayMonthKey = format(startOfMonth(todayLocal), "yyyy-MM");
-  const currentMonthPaid = paymentEvents
-    .filter((event) => event.eventDate.slice(0, 7) === todayMonthKey)
-    .reduce((sum, event) => sum + event.amount, 0);
-  const trailing90DaysPaid = paymentEvents
-    .filter((event) => {
-      const eventDate = ymdToLocalDate(event.eventDate);
-      return differenceInDays(todayLocal, eventDate) <= 90;
-    })
-    .reduce((sum, event) => sum + event.amount, 0);
-  const totalPaidRecorded = paymentEvents.reduce((sum, event) => sum + event.amount, 0);
-  const averagePaymentAmount = paymentEvents.length > 0 ? totalPaidRecorded / paymentEvents.length : 0;
-  const lastPaymentEvent = paymentEvents[0] ?? null;
-  const firstPaymentEvent = paymentEvents.length > 0 ? paymentEvents[paymentEvents.length - 1] : null;
-  const largestPaymentEvent = paymentEvents.reduce<ObligationEventSummary | null>(
-    (largest, event) => (!largest || event.amount > largest.amount ? event : largest),
-    null,
-  );
-  const averageGapDays = (() => {
-    if (paymentEvents.length < 2) return null;
-    const gaps: number[] = [];
-    for (let index = 0; index < paymentEvents.length - 1; index += 1) {
-      const newer = ymdToLocalDate(paymentEvents[index].eventDate);
-      const older = ymdToLocalDate(paymentEvents[index + 1].eventDate);
-      gaps.push(Math.abs(differenceInCalendarDays(newer, older)));
-    }
-    return gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
-  })();
-  const bestMonth = monthlyPayments.reduce<{ key: string; label: string; total: number } | null>(
-    (best, month) => (!best || month.total > best.total ? month : best),
-    null,
-  );
-  const monthsWithActivity = monthlyPayments.filter((month) => month.total > 0);
-  const averageMonthlyPaid =
-    monthsWithActivity.length > 0
-      ? monthsWithActivity.reduce((sum, month) => sum + month.total, 0) / monthsWithActivity.length
-      : 0;
-  const remainingInstallments = Math.max(0, totalInstallments - paidInstallments);
-  const amountPerRemainingInstallment =
-    remainingInstallments > 0 ? obligation.pendingAmount / remainingInstallments : null;
-  const monthsToFinishAtCurrentRhythm =
-    averageMonthlyPaid > 0 && obligation.pendingAmount > 0
-      ? Math.ceil(obligation.pendingAmount / averageMonthlyPaid)
-      : null;
-  const dueDatePressure = obligation.dueDate
-    ? (() => {
-        const daysUntilDue = differenceInCalendarDays(ymdToLocalDate(obligation.dueDate), todayLocal);
-        if (monthsToFinishAtCurrentRhythm == null) {
-          return daysUntilDue < 0 ? "Sin ritmo suficiente para recuperar el atraso" : "Aun no hay ritmo suficiente";
-        }
-        const monthsUntilDue = daysUntilDue / 30;
-        if (daysUntilDue < 0) return "Compromiso vencido";
-        if (monthsToFinishAtCurrentRhythm <= monthsUntilDue) return "Ritmo saludable";
-        if (monthsToFinishAtCurrentRhythm <= monthsUntilDue + 1) return "Ritmo justo";
-        return "Necesita acelerar";
-      })()
-    : "Sin fecha limite";
-  const chartTitle = analyticsChartSectionTitle(obligation.direction, isSharedViewer, chartScope);
-  const paidMetricLabel = analyticsPaidMetricLabel(obligation.direction, isSharedViewer);
-  const paymentCountMetricLabel = analyticsPaymentCountMetricLabel(obligation.direction, isSharedViewer);
-  const installmentsDoneAdj = analyticsInstallmentsDoneAdj(obligation.direction, isSharedViewer);
-  const eventPaymentNoun = analyticsEventPaymentNoun(obligation.direction, isSharedViewer);
   const maxAnalysisMonthly = Math.max(...analysisMonthlySeries.map((month) => Math.abs(month.total)), 1);
-  const analysisCurrentMonthTotal = analysisEvents
-    .filter((item) => item.event.eventDate.slice(0, 7) === todayMonthKey)
-    .reduce((sum, item) => sum + item.signedAmount, 0);
-  const analysisTrailing90DaysTotal = analysisEvents
-    .filter((item) => differenceInDays(todayLocal, ymdToLocalDate(item.event.eventDate)) <= 90)
-    .reduce((sum, item) => sum + item.signedAmount, 0);
-  const analysisTotalRecorded = analysisEvents.reduce((sum, item) => sum + item.signedAmount, 0);
-  const analysisAveragePaymentAmount = analysisEvents.length > 0 ? analysisTotalRecorded / analysisEvents.length : 0;
-  const analysisLastEvent = analysisEvents[0]?.event ?? null;
-  const analysisFirstEvent = analysisEvents.length > 0 ? analysisEvents[analysisEvents.length - 1]?.event ?? null : null;
-  const analysisLargestEvent = analysisEvents.reduce<{ event: ObligationEventSummary; signedAmount: number; displayAmount: number } | null>(
-    (largest, item) => (!largest || Math.abs(item.signedAmount) > Math.abs(largest.signedAmount) ? item : largest),
-    null,
-  );
-  const analysisAverageGapDays = (() => {
-    if (analysisEvents.length < 2) return null;
-    const gaps: number[] = [];
-    for (let index = 0; index < analysisEvents.length - 1; index += 1) {
-      const newer = ymdToLocalDate(analysisEvents[index].event.eventDate);
-      const older = ymdToLocalDate(analysisEvents[index + 1].event.eventDate);
-      gaps.push(Math.abs(differenceInCalendarDays(newer, older)));
-    }
-    return gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
-  })();
-  const analysisBestMonth = analysisMonthlySeries.reduce<{ key: string; label: string; total: number } | null>(
-    (best, month) => {
-      if (month.total === 0) return best;
-      if (!best) return month;
-      return Math.abs(month.total) > Math.abs(best.total) ? month : best;
-    },
-    null,
-  );
-  const analysisMonthsWithActivity = analysisMonthlySeries.filter((month) => month.total !== 0);
-  const analysisAverageMonthlyTotal =
-    analysisMonthsWithActivity.length > 0
-      ? analysisMonthsWithActivity.reduce((sum, month) => sum + month.total, 0) / analysisMonthsWithActivity.length
-      : 0;
   const analysisPositiveTotal = analysisEvents
     .filter((item) => item.signedAmount > 0)
     .reduce((sum, item) => sum + item.signedAmount, 0);
   const analysisNegativeTotal = analysisEvents
     .filter((item) => item.signedAmount < 0)
     .reduce((sum, item) => sum + Math.abs(item.signedAmount), 0);
+  const analysisTotalRecorded = analysisPositiveTotal - analysisNegativeTotal;
+  const paidMetricLabel = analyticsPaidMetricLabel(obligation.direction, isSharedViewer);
+  const eventPaymentNoun = analyticsEventPaymentNoun(obligation.direction, isSharedViewer);
   const analysisRelevantEventCount = allEventsSorted.filter((event) =>
     event.eventType === "payment" ||
     event.eventType === "principal_increase" ||
@@ -819,313 +422,14 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     analyticsUsesCashPerspective
       ? Math.max(0, analysisRelevantEventCount - analysisEvents.length)
       : 0;
-  const analysisEventLabel =
-    analyticsUsesCashPerspective
-      ? analysisEvents.length === 1
-        ? "movimiento"
-        : "movimientos"
-      : analysisEvents.length === 1
-        ? eventPaymentNoun.toLowerCase()
-        : `${eventPaymentNoun.toLowerCase()}s`;
-  const analysisChartTitle = analyticsUsesCashPerspective
-    ? chartScope === "6"
-      ? "Impacto neto en caja por mes (ultimos 6 meses)"
-      : chartScope === "12"
-        ? "Impacto neto en caja por mes (ultimos 12 meses)"
-        : "Impacto neto en caja por mes (historico completo)"
-    : chartTitle;
-  const analysisSparkTitle = analyticsUsesCashPerspective
-    ? "Velocidad de caja"
-    : `Velocidad de ${eventPaymentNoun.toLowerCase()}s`;
-  const analysisSparkLabel = analyticsUsesCashPerspective
-    ? "promedio mensual neto con cuenta asociada"
-    : "promedio mensual activo";
-  const timelineSummary = (() => {
-    let positive = 0;
-    let negative = 0;
-    let unlinked = 0;
-    const summaryEvents = timelineEvents.filter((event) => {
-      if (timelineFilter === "payments") return event.eventType === "payment";
-      if (timelineFilter === "capital") return event.eventType !== "payment";
-      return true;
-    });
-    for (const event of summaryEvents) {
-      const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
-      const tint = obligationHistoryEventColor(
-        event.eventType,
-        analyticsDirection,
-        isSharedViewer,
-        useCashPerspective,
-      );
-      if (tint === COLORS.income) positive += 1;
-      if (tint === COLORS.expense) negative += 1;
-      if (isSharedViewer && analyticsPerspective === "cash" && !useCashPerspective) unlinked += 1;
-    }
-    return { positive, negative, unlinked, total: summaryEvents.length };
-  })();
   const filteredTimelineEvents = (() => {
     return timelineEvents.filter((event) => {
+      if (analyticsUsesCashPerspective && !shouldUseCashPerspective(event.id, analyticsPerspective)) return false;
       if (timelineFilter === "payments" && event.eventType !== "payment") return false;
       if (timelineFilter === "capital" && event.eventType === "payment") return false;
-      if (timelineToneFilter === "all") return true;
-      const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
-      const tint = obligationHistoryEventColor(
-        event.eventType,
-        analyticsDirection,
-        isSharedViewer,
-        useCashPerspective,
-      );
-      if (timelineToneFilter === "positive") return tint === COLORS.income;
-      return tint === COLORS.expense;
+      return true;
     });
   })();
-  const comparisonSummary = (() => {
-    const scopedEvents = allEventsSorted.filter((event) => {
-      if (event.eventType === "opening") return false;
-      if (comparisonMode === "flow") return event.eventType === "payment";
-      if (comparisonMode === "capital") {
-        return event.eventType === "principal_increase" || event.eventType === "principal_decrease";
-      }
-      return (
-        event.eventType === "payment" ||
-        event.eventType === "principal_increase" ||
-        event.eventType === "principal_decrease"
-      );
-    });
-    const currentPeriod =
-      comparisonWindow === "month"
-        ? { from: startOfMonth(todayLocal), to: todayLocal, label: format(startOfMonth(todayLocal), "MMMM yyyy", { locale: es }) }
-        : { from: subDays(todayLocal, 89), to: todayLocal, label: formatPeriodLabel(subDays(todayLocal, 89), todayLocal) };
-    const previousPeriod =
-      comparisonWindow === "month"
-        ? {
-            from: startOfMonth(subMonths(todayLocal, 1)),
-            to: endOfMonth(subMonths(todayLocal, 1)),
-            label: format(startOfMonth(subMonths(todayLocal, 1)), "MMMM yyyy", { locale: es }),
-          }
-        : {
-            from: subDays(currentPeriod.from, 90),
-            to: subDays(currentPeriod.from, 1),
-            label: formatPeriodLabel(subDays(currentPeriod.from, 90), subDays(currentPeriod.from, 1)),
-          };
-    const isWithinPeriod = (eventDate: string, from: Date, to: Date) => {
-      const date = ymdToLocalDate(eventDate);
-      return date >= from && date <= to;
-    };
-    const netImpactForPeriod = (from: Date, to: Date) =>
-      scopedEvents
-        .filter((event) => isWithinPeriod(event.eventDate, from, to))
-        .reduce((sum, event) => {
-          const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
-          const tint = obligationHistoryEventColor(
-            event.eventType,
-            analyticsDirection,
-            isSharedViewer,
-            useCashPerspective,
-          );
-          if (tint === COLORS.income) return sum + event.amount;
-          if (tint === COLORS.expense) return sum - event.amount;
-          return sum;
-        }, 0);
-    const currentCount = scopedEvents.filter((event) => isWithinPeriod(event.eventDate, currentPeriod.from, currentPeriod.to)).length;
-    const previousCount = scopedEvents.filter((event) => isWithinPeriod(event.eventDate, previousPeriod.from, previousPeriod.to)).length;
-    const currentNet = netImpactForPeriod(currentPeriod.from, currentPeriod.to);
-    const previousNet = netImpactForPeriod(previousPeriod.from, previousPeriod.to);
-    const deltaAmount = currentNet - previousNet;
-    const deltaCount = currentCount - previousCount;
-    const deltaPercent = previousNet !== 0 ? (deltaAmount / Math.abs(previousNet)) * 100 : null;
-    const toneStyle =
-      deltaAmount > 0
-        ? styles.insightPositive
-        : deltaAmount < 0
-          ? styles.insightNegative
-          : styles.insightWarning;
-    const categoryHint =
-      comparisonMode === "flow"
-        ? `${eventPaymentNoun.toLowerCase()}s`
-        : comparisonMode === "capital"
-          ? "aumentos y reducciones de capital"
-          : "flujo y capital combinados";
-    const perspectiveHint =
-      analyticsPerspective === "cash"
-        ? "desde la caja"
-        : "sobre la obligacion";
-    const windowHint =
-      comparisonWindow === "month"
-        ? "el mes actual contra el mes anterior"
-        : "los ultimos 90 dias contra los 90 dias previos";
-    const summaryLead =
-      deltaAmount > 0
-        ? `${comparisonWindow === "month" ? "Este mes" : "En los ultimos 90 dias"} mejoraste el impacto ${comparisonMode === "capital" ? "del capital" : comparisonMode === "flow" ? "del flujo" : "total"}`
-        : deltaAmount < 0
-          ? `${comparisonWindow === "month" ? "Este mes" : "En los ultimos 90 dias"} el impacto ${comparisonMode === "capital" ? "del capital" : comparisonMode === "flow" ? "del flujo" : "total"} empeoro`
-          : `${comparisonWindow === "month" ? "Este mes" : "En los ultimos 90 dias"} el impacto se mantuvo estable`;
-    const summaryBody =
-      previousNet !== 0
-        ? `${formatSignedCurrencyValue(currentNet, currency)} frente a ${formatSignedCurrencyValue(previousNet, currency)} en el periodo anterior (${deltaPercent! >= 0 ? "+" : ""}${Math.round(deltaPercent!)}%).`
-        : currentNet !== 0
-          ? `${formatSignedCurrencyValue(currentNet, currency)} tras un periodo previo sin impacto neto.`
-          : "No hubo impacto neto en ninguno de los dos periodos.";
-    const summaryFootnote =
-      deltaCount === 0
-        ? "La cantidad de eventos se mantuvo igual."
-        : `${deltaCount > 0 ? "Hubo mas" : "Hubo menos"} eventos: ${currentCount} vs ${previousCount}.`;
-    return {
-      currentNet,
-      previousNet,
-      currentCount,
-      previousCount,
-      currentPeriodLabel: currentPeriod.label,
-      previousPeriodLabel: previousPeriod.label,
-      toneStyle,
-      scopeHint: `Compara ${categoryHint} ${perspectiveHint} entre ${windowHint}.`,
-      detail:
-        previousNet !== 0
-          ? `${deltaPercent! >= 0 ? "+" : ""}${Math.round(deltaPercent!)}% frente a ${previousPeriod.label}`
-          : currentNet !== 0
-            ? `Aparece impacto en ${currentPeriod.label} tras un periodo previo sin cambios`
-            : "Ninguno de los dos periodos registra impacto neto",
-      countLabel:
-        deltaCount === 0
-          ? "Misma cantidad de eventos"
-          : `${deltaCount > 0 ? "+" : ""}${deltaCount} evento${Math.abs(deltaCount) === 1 ? "" : "s"}`,
-      headline:
-        deltaAmount > 0
-          ? "Impacto mas favorable que el periodo anterior"
-          : deltaAmount < 0
-            ? "Impacto menos favorable que el periodo anterior"
-            : "Impacto estable frente al periodo anterior",
-      summaryLead,
-      summaryBody,
-      summaryFootnote,
-      showCashHint: isSharedViewer && analyticsPerspective === "cash",
-      itemFamily:
-        comparisonMode === "flow"
-          ? `${eventPaymentNoun.toLowerCase()}${currentCount === 1 ? "" : "s"}`
-          : comparisonMode === "capital"
-            ? `cambio${currentCount === 1 ? "" : "s"} de capital`
-            : `evento${currentCount === 1 ? "" : "s"} clave`,
-      previousItemFamily:
-        comparisonMode === "flow"
-          ? `${eventPaymentNoun.toLowerCase()}${previousCount === 1 ? "" : "s"}`
-          : comparisonMode === "capital"
-            ? `cambio${previousCount === 1 ? "" : "s"} de capital`
-            : `evento${previousCount === 1 ? "" : "s"} clave`,
-    };
-  })();
-
-  function applyHistoryPreset(p: HistoryPreset) {
-    setHistoryPreset(p);
-    if (p === "all") {
-      setHistoryFrom("");
-      setHistoryTo("");
-      return;
-    }
-    const today = ymdToLocalDate(todayPeru());
-    if (p === "month") {
-      setHistoryFrom(format(startOfMonth(today), "yyyy-MM-dd"));
-      setHistoryTo(format(endOfMonth(today), "yyyy-MM-dd"));
-      return;
-    }
-    if (p === "3m") {
-      setHistoryFrom(format(startOfMonth(subMonths(today, 2)), "yyyy-MM-dd"));
-      setHistoryTo(format(endOfMonth(today), "yyyy-MM-dd"));
-      return;
-    }
-    if (p === "year") {
-      setHistoryFrom(`${today.getFullYear()}-01-01`);
-      setHistoryTo(format(endOfMonth(today), "yyyy-MM-dd"));
-      return;
-    }
-    if (p === "custom") {
-      const { from, to } = currentMonthRangeYmd();
-      setHistoryFrom(from);
-      setHistoryTo(to);
-    }
-  }
-
-  const metrics = analyticsUsesCashPerspective
-    ? [
-        {
-          key: "cashNet",
-          label: "Caja neta",
-          value: formatSignedCurrencyValue(analysisTotalRecorded, currency),
-          icon: TrendingUp,
-          color:
-            analysisTotalRecorded > 0
-              ? COLORS.income
-              : analysisTotalRecorded < 0
-                ? COLORS.danger
-                : COLORS.warning,
-        },
-        {
-          key: "cashIn",
-          label: "Ingresos vinculados",
-          value: formatCurrency(analysisPositiveTotal, currency),
-          icon: CheckCircle2,
-          color: COLORS.income,
-        },
-        {
-          key: "cashOut",
-          label: "Salidas vinculadas",
-          value: formatCurrency(analysisNegativeTotal, currency),
-          icon: XCircle,
-          color: COLORS.danger,
-        },
-        {
-          key: "cashCount",
-          label: "Mov. vinculados",
-          value: String(analysisEvents.length),
-          icon: CreditCard,
-          color: COLORS.primary,
-        },
-      ]
-    : [
-        {
-          key: "principal",
-          label: "Principal",
-          value: formatCurrency(currentPrincipal, currency),
-          icon: TrendingUp,
-          color: COLORS.primary,
-        },
-        {
-          key: "paid",
-          label: paidMetricLabel,
-          value: formatCurrency(Math.max(0, paidAmount), currency),
-          icon: CheckCircle2,
-          color: COLORS.income,
-        },
-        {
-          key: "pending",
-          label: "Pendiente",
-          value: formatCurrency(obligation.pendingAmount, currency),
-          icon: Clock,
-          color: COLORS.warning,
-        },
-        {
-          key: "paymentCount",
-          label: paymentCountMetricLabel,
-          value: String(obligation.paymentCount),
-          icon: CreditCard,
-          color: COLORS.storm,
-        },
-      ];
-  const ownerAccountQuestion = obligation.direction === "receivable"
-    ? "A que cuenta va a ingresar este dinero?"
-    : "De que cuenta va a salir este dinero?";
-  const ownerAccountLabel = obligation.direction === "receivable"
-    ? "Cuenta de abono"
-    : "Cuenta de debito";
-
-  const approvalDelta = approvingRequest
-    ? (obligation.direction === "receivable" ? approvingRequest.amount : -approvingRequest.amount)
-    : 0;
-  const approvalProjectedAccount = approvingRequest && approvalAccountId != null
-    ? ownerAccounts.find((acc) => acc.id === approvalAccountId) ?? null
-    : null;
-  const approvalProjectedBalance = approvalProjectedAccount
-    ? approvalProjectedAccount.currentBalance + approvalDelta
-    : null;
   const viewerLinkDelta = linkingEvent
     ? (obligationViewerActsAsCollector(obligation.direction, true) ? linkingEvent.amount : -linkingEvent.amount)
     : 0;
@@ -1151,10 +455,10 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
             <View style={styles.handle} />
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, redesignedStyles.header]}>
               <View style={styles.headerText}>
-                <Text style={styles.title} numberOfLines={1}>{obligation.title}</Text>
-                <Text style={styles.subtitle}>{obligation.counterparty}</Text>
+                <Text style={styles.title}>Analítica</Text>
+                <Text style={styles.subtitle} numberOfLines={2}>{obligation.title} · {obligation.counterparty}</Text>
               </View>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <X size={18} color={COLORS.storm} />
@@ -1163,121 +467,55 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
           </View>
 
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, redesignedStyles.content]}
             showsVerticalScrollIndicator={false}
           >
-            {/* Progress */}
-            <View style={styles.progressSection}>
-              <View style={styles.progressLabels}>
-                <Text style={styles.progressPct}>
-                  {Math.round(displayProgressPercent)}%{" "}
-                  {obligationProgressPaidAdjective(obligation.direction, isSharedViewer)}
-                </Text>
-                {obligation.dueDate ? (
-                  <Text style={styles.dueDate}>
-                    <Calendar size={11} color={COLORS.storm} /> Vence {format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}
-                  </Text>
-                ) : null}
+            {isSharedViewer && remoteEventsPending && !remoteEvents ? (
+              <View style={redesignedStyles.feedback}>
+                <ActivityIndicator color={COLORS.storm} />
+                <Text style={redesignedStyles.feedbackText}>Cargando actividad compartida…</Text>
               </View>
-              {analyticsUsesCashPerspective ? (
-                <Text style={styles.progressHint}>
-                  Esta barra sigue leyendo el avance base de la obligacion. El modo caja solo cambia las metricas y graficos del analisis.
-                </Text>
-              ) : null}
-              <ProgressBar
-                percent={displayProgressPercent}
-                alertPercent={isPaid ? 101 : 90}
-                height={8}
-              />
-              <View style={styles.progressAmounts}>
-                <Text style={styles.amountSmall}>{formatCurrency(Math.max(0, paidAmount), currency)}</Text>
-                <Text style={styles.amountSmall}>{formatCurrency(currentPrincipal, currency)}</Text>
+            ) : isSharedViewer && remoteEventsError ? (
+              <View style={redesignedStyles.feedback}>
+                <Text style={redesignedStyles.feedbackText}>No se pudo cargar la actividad compartida.</Text>
+                <TouchableOpacity onPress={() => { void refetchRemoteEvents(); }} accessibilityRole="button">
+                  <Text style={redesignedStyles.retry}>Reintentar</Text>
+                </TouchableOpacity>
               </View>
-            </View>
-
-            {/* 4 Key metrics */}
-            <View style={styles.metricsGrid}>
-              {metrics.map((m) => (
-                <View key={m.key} style={styles.metricCard}>
-                  <m.icon size={16} color={m.color} strokeWidth={2} />
-                  <Text style={[styles.metricValue, { color: m.color }]}>{m.value}</Text>
-                  <Text style={styles.metricLabel}>{m.label}</Text>
-                </View>
-              ))}
-            </View>
-            {analyticsUsesCashPerspective && analysisUnlinkedEventCount > 0 ? (
-              <Text style={styles.metricsFootnote}>
-                {analysisUnlinkedEventCount} evento{analysisUnlinkedEventCount === 1 ? "" : "s"} sin cuenta asociada siguen fuera de esta lectura de caja.
-              </Text>
-            ) : null}
-            {isSharedViewer ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Perspectiva del analisis</Text>
-                <View style={styles.pillRowWrap}>
-                  {(
-                    [
-                      { id: "obligation" as TimelinePerspective, label: "Impacto en obligacion" },
-                      { id: "cash" as TimelinePerspective, label: "Impacto en caja" },
-                    ] as const
-                  ).map((option) => (
-                    <TouchableOpacity
-                      key={option.id}
-                      style={[styles.filterPill, analyticsPerspective === option.id && styles.filterPillActive]}
-                      onPress={() => setAnalyticsPerspective(option.id)}
-                    >
-                      <Text style={[styles.filterPillText, analyticsPerspective === option.id && styles.filterPillTextActive]}>
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                {analyticsUsesCashPerspective ? (
-                  <Text style={styles.timelinePerspectiveHint}>
-                    En caja, solo cuentan los eventos que ya tienen cuenta asociada. Los demas siguen leyendo el impacto sobre la obligacion.
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-
-            <AnalyticsInsightCards
-              analysisEvents={analysisEvents}
-              analyticsUsesCashPerspective={analyticsUsesCashPerspective}
-              analysisAveragePaymentAmount={analysisAveragePaymentAmount}
-              analysisLargestEvent={analysisLargestEvent}
-              analysisLastEvent={analysisLastEvent}
-              analysisFirstEvent={analysisFirstEvent}
-              analysisAverageGapDays={analysisAverageGapDays}
-              analysisEventLabel={analysisEventLabel}
-              eventPaymentNoun={eventPaymentNoun}
-              todayLocal={todayLocal}
-              currency={currency}
+            ) : <>
+            <ObligationAnalyticsOverview
+              obligation={obligation}
+              currentPrincipal={currentPrincipal}
+              paidAmount={paidAmount}
+              paymentCount={paymentEvents.length}
+              progressPercent={displayProgressPercent}
+              paidLabel={paidMetricLabel}
+              isSharedViewer={isSharedViewer}
+              cashPerspective={analyticsUsesCashPerspective}
+              cashNet={analysisTotalRecorded}
+              cashIn={analysisPositiveTotal}
+              cashOut={analysisNegativeTotal}
+              linkedCount={analysisEvents.length}
+              unlinkedCount={analysisUnlinkedEventCount}
+              onChangePerspective={(cash) => setAnalyticsPerspective(cash ? "cash" : "obligation")}
             />
 
             <AnalyticsChartBars
-              title={analysisChartTitle}
+              title={analyticsUsesCashPerspective ? "Tu caja mes a mes" : `${eventPaymentNoun}s mes a mes`}
               series={analysisMonthlySeries}
               maxAbsValue={maxAnalysisMonthly}
               currency={currency}
               signedDisplay={analyticsUsesCashPerspective}
-              needsScroll={needsChartScroll}
               chartScope={chartScope}
               onChangeChartScope={setChartScope}
             />
 
-            <AnalyticsInstallmentGrid
-              paidInstallments={paidInstallments}
-              totalInstallments={totalInstallments}
-              installmentsDoneAdj={installmentsDoneAdj}
-              isSharedViewer={isSharedViewer}
-            />
-
             <AnalyticsTimeline
+              key={`${obligation.id}-${analyticsPerspective}`}
               timelineEvents={timelineEvents}
               filteredTimelineEvents={filteredTimelineEvents}
               timelineFilter={timelineFilter}
-              timelineToneFilter={timelineToneFilter}
               onChangeTimelineFilter={setTimelineFilter}
-              onChangeTimelineToneFilter={setTimelineToneFilter}
               analyticsDirection={analyticsDirection}
               isSharedViewer={isSharedViewer}
               currency={currency}
@@ -1286,6 +524,22 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
               onEventTap={onEventTap}
               onViewerEventTap={handleViewerEventTap}
             />
+
+            <TouchableOpacity
+              style={redesignedStyles.calculationRow}
+              onPress={() => setCalculationOpen((value) => !value)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: calculationOpen }}
+            >
+              <Text style={redesignedStyles.calculationLabel}>Cómo se calcula</Text>
+              <ChevronDown size={16} color={COLORS.storm} style={calculationOpen && redesignedStyles.chevronOpen} />
+            </TouchableOpacity>
+            {calculationOpen ? (
+              <Text style={redesignedStyles.calculationText}>
+                El pendiente es el monto acordado menos los pagos registrados, con los ajustes de capital. El porcentaje compara lo pagado con ese monto. La vista de tus cuentas incluye solo eventos vinculados a una cuenta; el gráfico suma esos movimientos por mes.
+              </Text>
+            ) : null}
+            </>}
 
           </ScrollView>
         </Animated.View>
@@ -1351,21 +605,25 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
           />
         ) : null}
       </ConfirmDialog>
-      <AnalyticsApprovalSheet
-        approvingRequest={approvingRequest}
-        currency={currency}
-        ownerAccountQuestion={ownerAccountQuestion}
-        ownerAccountLabel={ownerAccountLabel}
-        ownerAccounts={ownerAccounts}
-        approvalAccountId={approvalAccountId}
-        approvalProjectedAccount={approvalProjectedAccount}
-        approvalProjectedBalance={approvalProjectedBalance}
-        approvalDelta={approvalDelta}
-        acceptIsPending={acceptMutation.isPending}
-        onSelectAccount={setApprovalAccountId}
-        onConfirm={confirmInlineAccept}
-        onClose={() => { setApprovingRequest(null); setApprovalAccountId(null); }}
-      />
     </Modal>
   );
 }
+
+const redesignedStyles = StyleSheet.create({
+  header: { paddingHorizontal: SPACING.xl },
+  content: { gap: 0, paddingHorizontal: SPACING.xl },
+  feedback: { minHeight: 180, alignItems: "center", justifyContent: "center", gap: SPACING.md },
+  feedbackText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center" },
+  retry: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  calculationRow: {
+    minHeight: 56,
+    marginTop: SPACING.xxxl,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
+  },
+  calculationLabel: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.fog },
+  chevronOpen: { transform: [{ rotate: "180deg" }] },
+  calculationText: { paddingTop: SPACING.md, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, lineHeight: 21, color: COLORS.storm },
+});

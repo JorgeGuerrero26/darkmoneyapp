@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "La analítica de Créditos y Deudas ahora muestra primero lo pendiente, luego los importes acordados y pagados, la evolución mensual y toda la actividad en filas. En obligaciones compartidas puedes distinguir el avance de la deuda de los movimientos asociados a tus cuentas.",
       "La analítica de Suscripciones separa el costo del plan de los pagos reales, muestra su evolución mensual y mantiene cada moneda por separado cuando falta una conversión confiable.",
       "Al abrir una suscripción ves su importe y sus datos en filas. Editar y la acción principal quedan siempre a mano abajo; los pagos anotados siguen en el detalle.",
       "Patrones muestra primero los gastos fuera de costumbre y permite revisarlos juntos. Las subidas se comparan en soles, el gasto por categoría usa barras discretas y los hábitos sin descripción ya no llevan el nombre de la cuenta como título. (Pro)",
