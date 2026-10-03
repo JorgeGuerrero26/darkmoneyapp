@@ -143,10 +143,7 @@ export function RecurringIncomeDetailHistory({
 
 const styles = StyleSheet.create({
   group: {
-    marginTop: SPACING.lg,
-    paddingTop: SPACING.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: SURFACE.separator,
+    paddingTop: SPACING.md,
   },
   title: {
     fontFamily: FONT_FAMILY.bodySemibold,

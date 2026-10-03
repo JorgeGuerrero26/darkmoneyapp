@@ -9,6 +9,7 @@ import { SearchableSelectSheet } from "../../components/ui/SearchableSelectSheet
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { DetailTabs } from "../../components/ui/DetailTabs";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
@@ -40,6 +41,13 @@ import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 import type { RecurringIncomeSummary } from "../../types/domain";
 
+type RecurringIncomeDetailTab = "details" | "activity";
+
+const DETAIL_TABS: Array<{ id: RecurringIncomeDetailTab; label: string }> = [
+  { id: "details", label: "Detalles" },
+  { id: "activity", label: "Actividad" },
+];
+
 function parseRecurringIncomeId(raw: string | undefined): number | null {
   if (!raw) return null;
   const parsed = parseInt(raw, 10);
@@ -60,6 +68,7 @@ function RecurringIncomeDetailScreen() {
   const { showToast, showErrorToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
+  const [detailTab, setDetailTab] = useState<RecurringIncomeDetailTab>("details");
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -172,22 +181,30 @@ function RecurringIncomeDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
-        <ScreenHeader
-          title="Ingreso fijo"
-          onBack={handleBack}
-          rightAction={
-            item ? (
-              <HeaderActionGroup
-                actions={[{
-                  key: "menu",
-                  icon: MoreVertical,
-                  onPress: () => setMenuOpen(true),
-                  accessibilityLabel: "Más acciones",
-                }]}
-              />
-            ) : null
-          }
-        />
+        <>
+          <ScreenHeader
+            title="Ingreso fijo"
+            subtitle={item?.name}
+            onBack={handleBack}
+            rightAction={
+              item ? (
+                <HeaderActionGroup
+                  actions={[{
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
+                  }]}
+                />
+              ) : null
+            }
+          />
+          {item ? (
+            <View style={styles.detailTabs}>
+              <DetailTabs tabs={DETAIL_TABS} activeTab={detailTab} onChange={setDetailTab} />
+            </View>
+          ) : null}
+        </>
       }
       list={
         isLoading ? (
@@ -206,29 +223,33 @@ function RecurringIncomeDetailScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-            <RecurringIncomeDetailHero item={item} />
-            <RecurringIncomeDetailFields
-              item={item}
-              onPickPayer={() => setPayerPickerOpen(true)}
-              onPickAccount={() => setAccountPickerOpen(true)}
-              onPickCategory={() => setCategoryPickerOpen(true)}
-            />
-            <RecurringIncomeDetailBreakdown
-              grossAmount={item.grossAmount}
-              deductions={item.deductions}
-              netAmount={item.amount}
-              currencyCode={item.currencyCode}
-            />
-
-            <RecurringIncomeDetailHistory
-              workspaceId={activeWorkspaceId}
-              recurringIncomeId={item.id}
-              fallbackCurrencyCode={item.currencyCode}
-              expectedAmount={item.amount}
-              pendingDates={pendingDates}
-              onAnnotate={(date) => openArrival(date)}
-            />
+          <ScrollView key={detailTab} style={styles.scroll} contentContainerStyle={styles.content}>
+            {detailTab === "details" ? (
+              <>
+                <RecurringIncomeDetailHero item={item} />
+                <RecurringIncomeDetailFields
+                  item={item}
+                  onPickPayer={() => setPayerPickerOpen(true)}
+                  onPickAccount={() => setAccountPickerOpen(true)}
+                  onPickCategory={() => setCategoryPickerOpen(true)}
+                />
+                <RecurringIncomeDetailBreakdown
+                  grossAmount={item.grossAmount}
+                  deductions={item.deductions}
+                  netAmount={item.amount}
+                  currencyCode={item.currencyCode}
+                />
+              </>
+            ) : (
+              <RecurringIncomeDetailHistory
+                workspaceId={activeWorkspaceId}
+                recurringIncomeId={item.id}
+                fallbackCurrencyCode={item.currencyCode}
+                expectedAmount={item.amount}
+                pendingDates={pendingDates}
+                onAnnotate={(date) => openArrival(date)}
+              />
+            )}
           </ScrollView>
         )
       }
@@ -355,6 +376,7 @@ function RecurringIncomeDetailScreen() {
 
 
 const styles = StyleSheet.create({
+  detailTabs: { paddingHorizontal: SPACING.xl },
   scroll: { flex: 1 },
   content: {
     paddingHorizontal: SPACING.lg,
