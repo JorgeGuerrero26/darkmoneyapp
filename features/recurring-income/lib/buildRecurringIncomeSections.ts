@@ -1,7 +1,7 @@
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
-import type { RecurringIncomeSummary } from "../../../types/domain";
+import type { RecurringIncomeFrequency, RecurringIncomeSummary } from "../../../types/domain";
 
-export type RecurringIncomeSectionKey = "unconfirmed" | "upcoming" | "paused" | "cancelled";
+export type RecurringIncomeSectionKey = "unconfirmed" | `frequency-${RecurringIncomeFrequency}` | "paused" | "cancelled";
 
 export type RecurringIncomeListSection = ResourceSection<
   RecurringIncomeSummary,
@@ -18,15 +18,24 @@ type Args = {
   unconfirmedTotalLabel?: string | null;
 };
 
+const FREQUENCY_GROUPS: Array<{ value: RecurringIncomeFrequency; label: string }> = [
+  { value: "daily", label: "Diarios" },
+  { value: "weekly", label: "Semanales" },
+  { value: "monthly", label: "Mensuales" },
+  { value: "quarterly", label: "Trimestrales" },
+  { value: "yearly", label: "Anuales" },
+  { value: "custom", label: "Personalizados" },
+];
+
 /**
- * Las secciones de ingresos fijos, por estado.
+ * Primero las llegadas que requieren confirmación; después, las próximas por frecuencia.
  *
  * La primera se llama **"Por confirmar"** y no "Atrasados": un ingreso pudo llegar y faltar
  * anotarlo, o no haber llegado nunca. La app no puede distinguirlas, y las dos piden lo mismo
  * —que alguien lo mire—, así que la sección nombra la acción y no una acusación.
  *
- * Sustituye a cuatro pestañas de estado que ocupaban una fila entera y contradecían la nota de
- * abajo: si las pestañas ya filtran por estado, la agrupación por estado no se ve nunca.
+ * La frecuencia es el tipo de ingreso fijo disponible en todos los registros. Categoría es
+ * opcional, así que agrupar por ella escondería muchos ingresos bajo "Sin categoría".
  */
 export function buildRecurringIncomeSections({
   items,
@@ -56,13 +65,14 @@ export function buildRecurringIncomeSections({
     });
   }
 
-  if (upcoming.length > 0) {
+  for (const group of FREQUENCY_GROUPS) {
+    const data = upcoming.filter((item) => item.frequency === group.value);
+    if (data.length === 0) continue;
     sections.push({
-      key: "upcoming",
-      label: "Por llegar",
-      data: upcoming,
-      headerVariant:
-        sections.length === 0 && paused.length === 0 && cancelled.length === 0 ? "hidden" : "divider",
+      key: `frequency-${group.value}`,
+      label: `${group.label} (${data.length})`,
+      data,
+      headerVariant: "divider",
     });
   }
 
