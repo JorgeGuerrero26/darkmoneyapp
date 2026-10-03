@@ -56,7 +56,7 @@ export function buildBudgetSections(budgets: BudgetOverview[], todayYmd: string)
   return [
     ...(current.length > 0 ? [{
       key: "current" as const,
-      label: "Este mes",
+      label: "En curso",
       data: current,
       headerVariant: "divider" as const,
     }] : []),

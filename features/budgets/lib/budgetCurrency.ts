@@ -25,5 +25,6 @@ export function convertAmount(
   if (direct) return amount * direct;
   const inverse = rates.get(`${to}:${from}`);
   if (inverse) return amount / inverse;
-  return amount;
+  // Without an exchange rate the amount cannot be safely included in a base-currency total.
+  return null;
 }

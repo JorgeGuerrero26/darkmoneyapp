@@ -2,14 +2,12 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import * as Haptics from "expo-haptics";
-import { CheckSquare, CloudOff, Copy, Download, MoreVertical, Target, Trash2, X } from "lucide-react-native";
+import { CheckSquare, ChevronRight, CloudOff, Copy, Download, MoreVertical, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BudgetAnalyticsModal } from "../../components/domain/BudgetAnalyticsModal";
 import { BudgetForm } from "../../components/forms/BudgetForm";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
@@ -24,7 +22,7 @@ import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { summarizeNames } from "../../lib/summarize-names";
 import { UndoBanner } from "../../components/ui/UndoBanner";
-import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
+import { BudgetFilterSheet } from "../../features/budgets/components/BudgetFilterSheet";
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
 import { BudgetSwipeRow } from "../../features/budgets/components/BudgetSwipeRow";
 import { useEnsureBudgetPeriodsMutation } from "../../services/queries/budgets";
@@ -35,11 +33,17 @@ import { COLORS } from "../../constants/theme";
 import { buildBudgetSections, type BudgetListItem, type BudgetListSection } from "../../features/budgets/lib/buildBudgetSections";
 import { buildBudgetsHeadline, closedMonthsSummary } from "../../features/budgets/lib/budgetsHeadline";
 import { ResourceCard } from "../../components/ui/ResourceCard";
-import { isBudgetExpired } from "../../features/budgets/lib/budgetFilters";
+import {
+  BUDGET_SCOPE_LABELS,
+  BUDGET_STATUS_LABELS,
+  filterBudgetPeriods,
+  isBudgetExpired,
+  type BudgetScopeFilter,
+  type BudgetStatusFilter,
+} from "../../features/budgets/lib/budgetFilters";
 import { buildBudgetCSV } from "../../features/budgets/lib/budgetsCsv";
 import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
 import { buildRateMap, convertAmount } from "../../features/budgets/lib/budgetCurrency";
-import { buildBudgetsContextNote } from "../../features/budgets/lib/buildBudgetsContextNote";
 import { useAuth } from "../../lib/auth-context";
 import { todayPeru } from "../../lib/date";
 import { formatSubscriptionYmd } from "../../lib/subscription-helpers";
@@ -63,9 +67,6 @@ import {
 } from "../../services/queries/budgets";
 import type { BudgetOverview } from "../../types/domain";
 
-/** A partir de cuántos presupuestos aparece el buscador. Con tres, buscar es más lento que mirar. */
-const SEARCH_FROM = 8;
-
 function BudgetsScreen() {
   // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
   // vive en formatCurrency, que lee el store imperativamente).
@@ -85,11 +86,12 @@ function BudgetsScreen() {
   const { reason: notificationReason } = useNotificationReason();
 
   const [formVisible, setFormVisible] = useState(false);
-  const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
   const [duplicateBudget, setDuplicateBudget] = useState<BudgetOverview | null>(null);
-  const [analyticsBudgetId, setAnalyticsBudgetId] = useState<number | null>(null);
-  const [quickEditBudget, setQuickEditBudget] = useState<BudgetOverview | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<BudgetStatusFilter>("all");
+  const [scopeFilter, setScopeFilter] = useState<BudgetScopeFilter>("all");
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -156,31 +158,14 @@ function BudgetsScreen() {
   }, [activeBudgets, budgetMovementsError, metricsMap]);
 
   const todayYmd = todayPeru();
-  /**
-   * Solo la búsqueda filtra ya.
-   *
-   * `filterBudgets` escondía los vencidos salvo bajo su propio filtro, y esa regla ahora sería
-   * al revés de lo que hace falta: los meses cerrados son la sección "Meses cerrados", así que
-   * tienen que llegar hasta aquí para poder agruparse. Quien los separa es el constructor de
-   * secciones, no un filtro.
-   */
   const filteredBudgets = useMemo(() => {
-    const query = searchText.trim().toLowerCase();
-    if (!query) return correctedBudgets;
-    return correctedBudgets.filter((budget) =>
-      [
-        budget.name,
-        budget.categoryName ?? "",
-        budget.accountName ?? "",
-        // Buscar "deseos" tiene que encontrar el presupuesto que limita los deseos.
-        budget.spendTypeName ?? "",
-        budget.notes ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [correctedBudgets, searchText]);
+    return filterBudgetPeriods(correctedBudgets, {
+      search: searchText,
+      status: statusFilter,
+      scope: scopeFilter,
+      pinnedOnly,
+    }, todayYmd);
+  }, [correctedBudgets, pinnedOnly, scopeFilter, searchText, statusFilter, todayYmd]);
 
   /* Los vencidos se ocultan por una regla por defecto, no por un filtro que el usuario puso: sin
      esto, la lista vacía le ofrecía "Limpiar filtros" y no pasaba nada porque no había ninguno.
@@ -198,10 +183,10 @@ function BudgetsScreen() {
     () => buildBudgetsEmptyState({
       total: correctedBudgets.length,
       expired: expiredCount,
-      hasFilters: searchText.trim().length > 0,
+      hasFilters: searchText.trim().length > 0 || statusFilter !== "all" || scopeFilter !== "all" || pinnedOnly,
       lastPeriodEnd,
     }),
-    [correctedBudgets.length, expiredCount, lastPeriodEnd, searchText],
+    [correctedBudgets.length, expiredCount, lastPeriodEnd, pinnedOnly, scopeFilter, searchText, statusFilter],
   );
 
   // Tap en la notificación "presupuesto finalizado": abre el form de crear
@@ -216,9 +201,6 @@ function BudgetsScreen() {
     if (!source) return;
     setDuplicateBudget({ ...source, ...nextPeriodFor(source.periodStart, source.periodEnd) });
   }, [duplicateFrom, snapshot, router]);
-
-  /** "septiembre" -> "Septiembre": el mes abre la frase del encabezado. */
-  const capitalizeFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
   /**
    * Abre el período que toca en los presupuestos que se renuevan, al entrar a la pantalla.
@@ -243,31 +225,28 @@ function BudgetsScreen() {
   );
   const rateMap = useMemo(() => buildRateMap(snapshot?.exchangeRates ?? []), [snapshot?.exchangeRates]);
 
-  /**
-   * El encabezado suma SOLO los presupuestos que corren a la vez.
-   *
-   * Sumaba todo lo que hubiera en la lista, y la lista traía el mismo presupuesto una vez por
-   * mes: salía "S/ 1,752.32 de S/ 1,200.00" — tres límites de 400 apilados, un presupuesto que
-   * nunca existió. Alimentación y Transporte sí coexisten en septiembre, así que su suma
-   * describe un mes real.
-   */
-  const activeNow = useMemo(
-    () => groupBudgetsIntoRules(correctedBudgets, todayYmd)
+  // The headline follows the visible current rules, never their closed periods.
+  const currentBudgets = useMemo(
+    () => groupBudgetsIntoRules(filteredBudgets, todayYmd)
       .map((rule) => rule.current)
-      .filter((budget): budget is BudgetOverview => budget !== null)
-      // A moneda base antes de sumar: dos presupuestos en monedas distintas no se suman crudos.
-      .map((budget) => ({
-        ...budget,
-        spentAmount: convertAmount(budget.spentAmount, budget.currencyCode, baseCurrencyCode, rateMap),
-        limitAmount: convertAmount(budget.limitAmount, budget.currencyCode, baseCurrencyCode, rateMap),
-        currencyCode: baseCurrencyCode,
-      })),
-    [baseCurrencyCode, correctedBudgets, rateMap, todayYmd],
+      .filter((budget): budget is BudgetOverview => budget !== null),
+    [filteredBudgets, todayYmd],
   );
+  const activeNow = useMemo(
+    () => currentBudgets.flatMap((budget): BudgetOverview[] => {
+      const spentAmount = convertAmount(budget.spentAmount, budget.currencyCode, baseCurrencyCode, rateMap);
+      const limitAmount = convertAmount(budget.limitAmount, budget.currencyCode, baseCurrencyCode, rateMap);
+      return spentAmount == null || limitAmount == null
+        ? []
+        : [{ ...budget, spentAmount, limitAmount, currencyCode: baseCurrencyCode }];
+    }),
+    [baseCurrencyCode, currentBudgets, rateMap],
+  );
+  const excludedCurrentCount = currentBudgets.length - activeNow.length;
   const headline = useMemo(
     () => buildBudgetsHeadline({
       active: activeNow,
-      periodLabel: capitalizeFirst(format(new Date(), "LLLL", { locale: es })),
+      periodLabel: "En curso",
       formatAmount: (value) => formatCurrency(value, baseCurrencyCode),
     }),
     [activeNow, baseCurrencyCode],
@@ -279,21 +258,21 @@ function BudgetsScreen() {
     movementsLoading &&
     scopedMovements.length === 0;
 
-  const analyticsBudget = useMemo(
-    () => correctedBudgets.find((budget) => budget.id === analyticsBudgetId) ?? null,
-    [analyticsBudgetId, correctedBudgets],
-  );
-  const analyticsMetrics = analyticsBudgetId != null ? metricsMap.get(analyticsBudgetId) ?? null : null;
   const selectedBudgets = useMemo(
     () => filteredBudgets.filter((budget) => selectedIds.has(budget.id)),
     [filteredBudgets, selectedIds],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
+    const items: ActiveFilterItem[] = [];
     const query = searchText.trim();
-    if (!query) return [];
-    return [{ key: "search", label: `Búsqueda: ${query}`, onRemove: () => setSearchText("") }];
-  }, [searchText]);
+    if (query) items.push({ key: "search", label: `Búsqueda: ${query}`, onRemove: () => setSearchText("") });
+    if (statusFilter !== "all") items.push({ key: "status", label: BUDGET_STATUS_LABELS[statusFilter], onRemove: () => setStatusFilter("all") });
+    if (scopeFilter !== "all") items.push({ key: "scope", label: BUDGET_SCOPE_LABELS[scopeFilter], onRemove: () => setScopeFilter("all") });
+    if (pinnedOnly) items.push({ key: "pinned", label: "Fijados", onRemove: () => setPinnedOnly(false) });
+    return items;
+  }, [pinnedOnly, scopeFilter, searchText, statusFilter]);
+  const appliedFilterCount = Number(statusFilter !== "all") + Number(scopeFilter !== "all") + Number(pinnedOnly);
 
   const onRefresh = useCallback(async () => {
     refreshTriggeredRef.current = true;
@@ -330,6 +309,9 @@ function BudgetsScreen() {
 
   const clearFilters = useCallback(() => {
     setSearchText("");
+    setStatusFilter("all");
+    setScopeFilter("all");
+    setPinnedOnly(false);
   }, []);
 
   const toggleSelect = useCallback((id: number) => {
@@ -453,6 +435,7 @@ function BudgetsScreen() {
           variant="line"
           title={item.rule.name}
           subtitle={closedMonthsSummary(item.rule.closed)}
+          trailing={<ChevronRight size={18} color={COLORS.textDisabled} />}
           onPress={() => router.push({
             pathname: "/budget/[id]",
             params: { id: String(item.rule.latest.id), from: "budgets" },
@@ -484,18 +467,13 @@ function BudgetsScreen() {
     );
   }, [handleDelete, handleDuplicate, handleTogglePin, router, selectMode, selectedIds, toggleSelect]);
 
-  const contextNote = buildBudgetsContextNote({
-    visibleCount: filteredBudgets.length,
-    totalCount: correctedBudgets.length,
-  });
-
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
         <ScreenHeader
           title={selectMode ? `${selectedIds.size} seleccionados` : "Presupuestos"}
-          onBack={handleBack}
+          onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
             selectMode ? (
               <HeaderActionGroup
@@ -522,33 +500,38 @@ function BudgetsScreen() {
           }
         />
       }
-      /* Buscador, desplegable, cápsula "Vencidos ×" y "Limpiar": ~180px de filtros antes del
-         primer dato, para tres filas. Con una fila por presupuesto los meses cerrados ya no
-         compiten —están en su sección— así que el filtro se queda sin trabajo. El buscador
-         vuelve cuando de verdad haga falta buscar. */
       toolbar={
-        !selectMode && correctedBudgets.length > SEARCH_FROM ? (
+        !selectMode ? (
           <FilterToolbar
             options={[]}
             searchValue={searchText}
             onSearchChange={setSearchText}
             searchPlaceholder="Buscar presupuestos..."
+            extraAction={{
+              label: appliedFilterCount > 0 ? `${appliedFilterCount} filtros` : "Filtros",
+              active: appliedFilterCount > 0,
+              onPress: () => setFilterSheetOpen(true),
+            }}
           />
         ) : null
       }
       activeFilters={
-        !selectMode && searchText.trim() ? (
+        !selectMode && activeFilterItems.length > 0 ? (
           <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />
         ) : null
       }
-      context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
+      context={!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}
       summary={
-        !selectMode && activeNow.length > 0 ? (
+        !selectMode && currentBudgets.length > 0 ? (
           <MetricSummaryBar
-            value={formatCurrency(headline.spent, baseCurrencyCode)}
-            valueColor={headline.hasOverspend ? COLORS.expense : undefined}
-            support={`de ${formatCurrency(headline.limit, baseCurrencyCode)}`}
-            footnote={headline.support}
+            label={activeNow.length > 0 ? "GASTADO EN PRESUPUESTOS EN CURSO" : undefined}
+            value={activeNow.length > 0 ? formatCurrency(headline.spent, baseCurrencyCode) : null}
+            support={activeNow.length > 0
+              ? `de ${formatCurrency(headline.limit, baseCurrencyCode)} · ${activeNow.length} presupuesto${activeNow.length === 1 ? "" : "s"}`
+              : `Falta el tipo de cambio a ${baseCurrencyCode} para sumar estos presupuestos`}
+            footnote={excludedCurrentCount > 0 && activeNow.length > 0
+              ? `${excludedCurrentCount} sin tipo de cambio a ${baseCurrencyCode}`
+              : null}
           />
         ) : null
       }
@@ -632,7 +615,7 @@ function BudgetsScreen() {
       }
       fab={
         !selectMode ? (
-          <FAB onPress={() => { setEditBudget(null); setFormVisible(true); }} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
+          <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
         ) : null
       }
       overlays={
@@ -659,33 +642,26 @@ function BudgetsScreen() {
               },
             ]}
           />
+          <BudgetFilterSheet
+            visible={filterSheetOpen}
+            status={statusFilter}
+            scope={scopeFilter}
+            pinnedOnly={pinnedOnly}
+            onStatusChange={setStatusFilter}
+            onScopeChange={setScopeFilter}
+            onPinnedOnlyChange={setPinnedOnly}
+            onClose={() => setFilterSheetOpen(false)}
+          />
           <BudgetForm
             visible={formVisible}
             onClose={() => setFormVisible(false)}
             onSuccess={() => setFormVisible(false)}
           />
           <BudgetForm
-            visible={Boolean(editBudget)}
-            onClose={() => setEditBudget(null)}
-            onSuccess={() => setEditBudget(null)}
-            editBudget={editBudget ?? undefined}
-          />
-          <BudgetForm
             visible={Boolean(duplicateBudget)}
             onClose={() => setDuplicateBudget(null)}
             onSuccess={() => setDuplicateBudget(null)}
             duplicateBudget={duplicateBudget ?? undefined}
-          />
-          <BudgetAnalyticsModal
-            visible={Boolean(analyticsBudget)}
-            budget={analyticsBudget}
-            analytics={analyticsMetrics}
-            onClose={() => setAnalyticsBudgetId(null)}
-          />
-          <BudgetQuickEditSheet
-            visible={Boolean(quickEditBudget)}
-            budget={quickEditBudget}
-            onClose={() => setQuickEditBudget(null)}
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}

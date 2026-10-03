@@ -23,8 +23,49 @@ export function isBudgetExpired(budget: Pick<BudgetOverview, "periodEnd">, today
   return budget.periodEnd < todayYmd;
 }
 
-/* `filterBudgets` se fue en la fase 35. Escondía los vencidos salvo bajo su propio filtro, y al
-   pasar a una fila por presupuesto esa regla quedó al revés de lo que hace falta: los meses
-   cerrados tienen que llegar a la lista para agruparse en su sección. Quien los separa ahora es
-   buildBudgetSections. Los filtros por ámbito y estado tampoco volvieron: con una fila por
-   presupuesto no había nada que filtrar. */
+export type BudgetStatusFilter = "all" | "current" | "over" | "closed";
+export type BudgetScopeFilter = "all" | BudgetScopeKind;
+
+export const BUDGET_STATUS_LABELS: Record<BudgetStatusFilter, string> = {
+  all: "Todos",
+  current: "En curso",
+  over: "Excedidos",
+  closed: "Cerrados",
+};
+
+export const BUDGET_SCOPE_LABELS: Record<BudgetScopeFilter, string> = {
+  all: "Todos",
+  general: "General",
+  category: "Categoría",
+  account: "Cuenta",
+  category_account: "Categoría y cuenta",
+  spend_type: "Tipo de gasto",
+  spend_type_account: "Tipo de gasto y cuenta",
+};
+
+export type BudgetListFilters = {
+  search: string;
+  status: BudgetStatusFilter;
+  scope: BudgetScopeFilter;
+  pinnedOnly: boolean;
+};
+
+/** Filter periods before grouping them into current rules and closed history. */
+export function filterBudgetPeriods(
+  budgets: BudgetOverview[],
+  filters: BudgetListFilters,
+  todayYmd: string,
+): BudgetOverview[] {
+  const query = filters.search.trim().toLocaleLowerCase("es");
+  return budgets.filter((budget) => {
+    const current = budget.periodStart <= todayYmd && budget.periodEnd >= todayYmd;
+    if (filters.status === "current" && !current) return false;
+    if (filters.status === "over" && !(current && budget.spentAmount > budget.limitAmount)) return false;
+    if (filters.status === "closed" && !isBudgetExpired(budget, todayYmd)) return false;
+    if (filters.scope !== "all" && budget.scopeKind !== filters.scope) return false;
+    if (filters.pinnedOnly && !budget.isPinned) return false;
+    if (!query) return true;
+    return [budget.name, budget.categoryName, budget.accountName, budget.spendTypeName, budget.notes]
+      .some((value) => value?.toLocaleLowerCase("es").includes(query));
+  });
+}
