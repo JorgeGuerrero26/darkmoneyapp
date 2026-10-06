@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
-import { Platform } from "react-native";
-import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { supabase } from "../lib/supabase";
 import { todayPeru } from "../lib/date";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import { getNotificationsModule } from "../lib/notifications-runtime";
+import { registerForPushNotifications, savePushTokenToSupabase } from "../services/push-registration";
 
 type ExpoNotificationResponse = import("expo-notifications").NotificationResponse;
 type ExpoEventSubscription = import("expo-notifications").EventSubscription;
@@ -26,83 +24,8 @@ if (Notifications) {
   });
 }
 
-export type PushRegistrationReason =
-  | "not_device"
-  | "expo_go"
-  | "module_unavailable"
-  | "permissions_denied"
-  | "network_error";
-
-export type PushRegistrationResult =
-  | { ok: true; token: string }
-  | { ok: false; reason: PushRegistrationReason; detail?: string };
-
-export async function registerForPushNotifications(): Promise<PushRegistrationResult> {
-  console.log("[PushNotifications] executionEnv:", Constants.executionEnvironment);
-
-  // Nota: no usar Constants.isDevice — fue removido en expo-constants (SDK 54) y
-  // devuelve undefined, lo que hacía que el registro se saltara siempre creyendo
-  // que corría en emulador. El caso Expo Go se cubre abajo; el emulador real
-  // cae de forma segura en el try/catch de getExpoPushTokenAsync.
-  const isExpoGo = Constants.executionEnvironment === "storeClient";
-  if (isExpoGo) {
-    console.warn("[PushNotifications] Expo Go detected, skipping.");
-    return { ok: false, reason: "expo_go" };
-  }
-  if (!Notifications) {
-    console.warn("[PushNotifications] Notifications module unavailable.");
-    return { ok: false, reason: "module_unavailable" };
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  console.log("[PushNotifications] existing permission status:", existingStatus);
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-    console.log("[PushNotifications] requested permission, got:", finalStatus);
-  }
-
-  if (finalStatus !== "granted") {
-    console.warn("[PushNotifications] Permission not granted:", finalStatus);
-    return { ok: false, reason: "permissions_denied", detail: finalStatus };
-  }
-
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-    });
-  }
-
-  try {
-    const PROJECT_ID = "1290814f-9ea0-4f55-9973-3a3c32178cc5";
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      Constants.easConfig?.projectId ??
-      PROJECT_ID;
-    console.log("[PushNotifications] using projectId:", projectId);
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    console.log("[PushNotifications] got token:", token);
-    return { ok: true, token };
-  } catch (error) {
-    console.warn("[PushNotifications] token registration failed:", error);
-    const detail = error instanceof Error ? error.message : String(error ?? "");
-    return { ok: false, reason: "network_error", detail };
-  }
-}
-
-export async function savePushTokenToSupabase(userId: string, token: string) {
-  if (!supabase) return;
-  await supabase
-    .from("notification_preferences")
-    .upsert(
-      { user_id: userId, push_token: token, platform: Platform.OS, is_active: true },
-      { onConflict: "user_id" },
-    );
-}
+export type { PushRegistrationReason, PushRegistrationResult } from "../lib/push-registration-errors";
+export { registerForPushNotifications, savePushTokenToSupabase } from "../services/push-registration";
 
 export type PushNotificationHandlers = {
   /** Toque en notificación con data.type === "obligation_share_invite" */

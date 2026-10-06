@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
@@ -65,7 +65,8 @@ import { CHANGELOG, CHANGELOG_OLDER } from "../constants/changelog";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "../constants/time-zones";
 import { resolveTimeZone } from "../lib/calendar-day";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
-import { registerForPushNotifications, savePushTokenToSupabase } from "../hooks/usePushNotifications";
+import { registerForPushNotifications, savePushTokenToSupabase } from "../services/push-registration";
+import { pushRegistrationMessage, type PushRegistrationReason } from "../lib/push-registration-errors";
 
 const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] = [
   { label: "Administrador", value: "admin" },
@@ -186,6 +187,9 @@ function SettingsScreen() {
   // El sistema tiene bloqueados los permisos de notificación para la app:
   // muestra la ayuda contextual con acceso directo a los ajustes.
   const [pushPermissionBlocked, setPushPermissionBlocked] = useState(false);
+  const [pushRegistrationIssue, setPushRegistrationIssue] = useState<PushRegistrationReason | null>(null);
+  const [pushRegistering, setPushRegistering] = useState(false);
+  const pushTogglePending = useRef(false);
 
   // ── Biometrics ───────────────────────────────────────────────────────────
   const SECURE_EMAIL_KEY = "darkmoney_bio_email";
@@ -423,10 +427,14 @@ function SettingsScreen() {
   const biometricActive = biometricEnabled && bioCredsStored;
 
   async function handlePushToggle(nextValue: boolean) {
-    if (!profile?.id) return;
+    if (!profile?.id || pushTogglePending.current) return;
+    pushTogglePending.current = true;
+    setPushRegistering(true);
+    setPushRegistrationIssue(null);
+    setPushPermissionBlocked(false);
 
-    if (!nextValue) {
-      try {
+    try {
+      if (!nextValue) {
         await updateNotificationPreferencesMutation.mutateAsync({
           dailyDigestEnabled,
           predictiveAlertsEnabled,
@@ -434,13 +442,8 @@ function SettingsScreen() {
         });
         setPushPermissionBlocked(false);
         showToast("Avisos desactivados en este teléfono", "success");
-      } catch (err: unknown) {
-        showErrorToast("No se pudieron desactivar los avisos", err);
+        return;
       }
-      return;
-    }
-
-    try {
       const result = await registerForPushNotifications();
       if (result.ok) {
         await savePushTokenToSupabase(profile.id, result.token);
@@ -449,22 +452,14 @@ function SettingsScreen() {
         showToast("Listo: los avisos llegarán a este teléfono", "success");
         return;
       }
-      switch (result.reason) {
-        case "permissions_denied":
-          // El teléfono tiene bloqueadas las notificaciones para la app: mostrar
-          // la ayuda contextual con acceso directo a los ajustes del sistema.
-          setPushPermissionBlocked(true);
-          break;
-        case "network_error":
-          showToast("Sin conexión. Revisa tu internet e inténtalo de nuevo.", "warning");
-          break;
-        default:
-          // expo_go / not_device / module_unavailable: entornos de desarrollo.
-          showToast("Los avisos no están disponibles en este entorno.", "warning");
-          break;
-      }
+      setPushRegistrationIssue(result.reason);
+      setPushPermissionBlocked(result.reason === "permissions_denied");
+      showToast(pushRegistrationMessage(result.reason).title, "warning");
     } catch (err: unknown) {
-      showErrorToast("No se pudieron activar los avisos", err);
+      showErrorToast(nextValue ? "No se pudo guardar la activación de los avisos" : "No se pudieron desactivar los avisos", err);
+    } finally {
+      pushTogglePending.current = false;
+      setPushRegistering(false);
     }
   }
 
@@ -732,8 +727,9 @@ function SettingsScreen() {
           <SettingsGroup>
             <SettingsRow
               label="Push en este dispositivo"
+              support={pushRegistering ? "Actualizando avisos en este teléfono…" : undefined}
               trailing={
-                <Switch
+                pushRegistering ? <ActivityIndicator color={COLORS.storm} /> : <Switch
                   value={pushEnabled && Boolean(pushToken)}
                   onValueChange={(v) => void handlePushToggle(v)}
                   disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
@@ -742,6 +738,13 @@ function SettingsScreen() {
                 />
               }
             />
+
+            {pushRegistrationIssue && !pushPermissionBlocked ? (
+              <View style={styles.pushStatusBox}>
+                <Text style={styles.pushStatusTitle}>{pushRegistrationMessage(pushRegistrationIssue).title}</Text>
+                <Text style={styles.pushStatusDesc}>{pushRegistrationMessage(pushRegistrationIssue).description}</Text>
+              </View>
+            ) : null}
 
             {pushPermissionBlocked ? (
               <View style={styles.pushStatusBox}>
