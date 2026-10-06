@@ -2,7 +2,7 @@ import { Trash2 } from "lucide-react-native";
 
 import { ExchangeRateCard } from "../../../components/domain/ExchangeRateCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
-import { COLORS, GLASS, RADIUS } from "../../../constants/theme";
+import { COLORS, GLASS } from "../../../constants/theme";
 import type { ExchangeRateRecord } from "../../../services/queries/exchange-rates";
 
 type Props = {
@@ -10,7 +10,6 @@ type Props = {
   onPress: () => void;
   onDelete: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
   selectMode?: boolean;
 };
@@ -20,7 +19,6 @@ export function ExchangeRateSwipeRow({
   onPress,
   onDelete,
   onLongPress,
-  onTogglePin,
   selected = false,
   selectMode = false,
 }: Props) {

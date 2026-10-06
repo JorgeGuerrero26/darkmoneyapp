@@ -4,12 +4,7 @@ import { ArrowRight, RefreshCw } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import {
-  ResourceCard,
-  ResourceCardBadge,
-  ResourceCardIcon,
-  ResourceCardMetaText,
-} from "../ui/ResourceCard";
+import { ResourceCard, ResourceCardIcon } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import type { ExchangeRateRecord } from "../../services/queries/exchange-rates";
 
@@ -34,17 +29,11 @@ function ExchangeRateCardBase({ rate, onPress, onLongPress, selected = false }: 
       pinned={rate.isPinned}
       variant="row"
       title={title}
-      subtitle={formatEffectiveAt(rate.effectiveAt)}
+      subtitle={`${rate.source === "manual" ? "Manual" : "Sincronizado"} · ${formatEffectiveAt(rate.effectiveAt)}`}
       selected={selected}
       onPress={onPress}
       onLongPress={onLongPress}
-      leading={<ResourceCardIcon icon={RefreshCw} color={COLORS.pine} />}
-      meta={
-        <>
-          <ResourceCardBadge label={rate.source === "manual" ? "Manual" : "Sincronizado"} color={rate.source === "manual" ? COLORS.gold : COLORS.primary} />
-          {rate.notes ? <ResourceCardMetaText>{rate.notes}</ResourceCardMetaText> : null}
-        </>
-      }
+      leading={<ResourceCardIcon icon={RefreshCw} color={COLORS.storm} />}
       trailing={
         <View style={styles.trailing}>
           <View style={styles.rateLine}>

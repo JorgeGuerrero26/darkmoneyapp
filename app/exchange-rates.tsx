@@ -16,6 +16,7 @@ import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { BottomSheet } from "../components/ui/BottomSheet";
 import { FAB } from "../components/ui/FAB";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
+import { ExchangeRateDetailSheet } from "../features/exchange-rates/components/ExchangeRateDetailSheet";
 import { ExchangeRateFilterSheet } from "../features/exchange-rates/components/ExchangeRateFilterSheet";
 import { ExchangeRateSwipeRow } from "../features/exchange-rates/components/ExchangeRateSwipeRow";
 import { ExchangeRatesSummaryBar } from "../features/exchange-rates/components/ExchangeRatesSummaryBar";
@@ -59,13 +60,14 @@ function ExchangeRatesScreen() {
   const { activeWorkspace } = useWorkspace();
   const baseCurrencyCode = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
 
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ExchangeRateRecord | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
-  const [advancedFilter, setAdvancedFilter] = useState<ExchangeRateAdvancedFilter>("all");
+  const [advancedFilter, setAdvancedFilter] = useState<ExchangeRateAdvancedFilter[]>([]);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
@@ -96,16 +98,13 @@ function ExchangeRatesScreen() {
     setSelectedIds(new Set());
   }, []);
 
-  useEffect(() => {
-    if (selectMode && selectedIds.size === 0) {
-      setSelectMode(false);
-    }
-  }, [selectMode, selectedIds.size]);
+
 
   const activeRates = useMemo(
     () => rates.filter((rate) => !pendingDeleteIds.has(rate.id)),
     [pendingDeleteIds, rates],
   );
+  const detail = activeRates.find((item) => item.id === detailId) ?? null;
   const currencyOptions = useMemo(() => {
     const set = new Set<string>(SUPPORTED_CURRENCY_CODES);
     for (const rate of rates) {
@@ -123,11 +122,11 @@ function ExchangeRatesScreen() {
     [activeRates, advancedFilter, currencyFilter, searchText],
   );
   const sections = useMemo(() => buildExchangeRateSections(filteredRates), [filteredRates]);
-  const pairCount = useMemo(() => getExchangeRatePairCount(activeRates), [activeRates]);
+  const pairCount = useMemo(() => getExchangeRatePairCount(filteredRates), [filteredRates]);
   // Regla del proyecto: USD como referencia por defecto para comparaciones.
   const usdReference = useMemo(
-    () => getUsdReferenceRate(activeRates, baseCurrencyCode),
-    [activeRates, baseCurrencyCode],
+    () => getUsdReferenceRate(filteredRates, baseCurrencyCode),
+    [filteredRates, baseCurrencyCode],
   );
 
   const exportCSV = useCallback(async (ratesToExport: ExchangeRateRecord[]) => {
@@ -152,12 +151,9 @@ function ExchangeRatesScreen() {
         onRemove: () => setCurrencyFilter("all"),
       });
     }
-    if (advancedFilter !== "all") {
-      items.push({
-        key: "advanced",
-        label: exchangeRateAdvancedFilterLabel(advancedFilter),
-        onRemove: () => setAdvancedFilter("all"),
-      });
+    for (const filter of advancedFilter) {
+      items.push({ key: filter, label: exchangeRateAdvancedFilterLabel(filter),
+        onRemove: () => setAdvancedFilter((prev) => prev.filter((item) => item !== filter)) });
     }
     if (searchText.trim()) {
       items.push({
@@ -169,8 +165,8 @@ function ExchangeRatesScreen() {
     return items;
   }, [advancedFilter, currencyFilter, searchText]);
 
-  const extraFiltersCount = advancedFilter !== "all" ? 1 : 0;
-  const hasFilters = currencyFilter !== "all" || advancedFilter !== "all" || Boolean(searchText.trim());
+  const extraFiltersCount = advancedFilter.length;
+  const hasFilters = currencyFilter !== "all" || advancedFilter.length > 0 || Boolean(searchText.trim());
   const contextNote = buildExchangeRatesContextNote({
     visibleCount: filteredRates.length,
     totalCount: activeRates.length,
@@ -207,7 +203,7 @@ function ExchangeRatesScreen() {
 
   const clearFilters = useCallback(() => {
     setCurrencyFilter("all");
-    setAdvancedFilter("all");
+    setAdvancedFilter([]);
     setSearchText("");
   }, []);
 
@@ -347,14 +343,13 @@ function ExchangeRatesScreen() {
           toggleSelect(item.id);
           return;
         }
-        openEdit(item);
+        setDetailId(item.id);
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
         toggleSelect(item.id);
       }}
       onDelete={() => startUndoDelete(item)}
-      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
@@ -396,14 +391,15 @@ function ExchangeRatesScreen() {
           onChange={setCurrencyFilter}
           searchValue={searchText}
           onSearchChange={setSearchText}
+          extraAction={{ label: extraFiltersCount ? `${extraFiltersCount} filtros` : "Filtros", active: extraFiltersCount > 0, onPress: () => setFilterSheetOpen(true) }}
           searchPlaceholder="Buscar moneda, tasa o nota..."
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={!selectMode && activeRates.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={!selectMode && hasFilters && activeRates.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
-        !selectMode && activeRates.length > 0 ? (
-          <ExchangeRatesSummaryBar pairCount={pairCount} currencyCount={currencyOptions.length} usdReference={usdReference} />
+        !selectMode && filteredRates.length > 0 ? (
+          <ExchangeRatesSummaryBar pairCount={pairCount} currencyCount={new Set(filteredRates.flatMap((rate) => [rate.fromCurrencyCode, rate.toCurrencyCode])).size} usdReference={usdReference} />
         ) : null
       }
       bulkActions={
@@ -467,18 +463,33 @@ function ExchangeRatesScreen() {
               : "Agrega el primer par para convertir saldos entre monedas.",
             action: !hasFilters ? { label: "Nuevo tipo de cambio", onPress: openNew } : undefined,
           }}
+          contentContainerStyle={{ paddingHorizontal: 0 }}
           onRefresh={() => handleRefreshRates()}
         />
       }
       fab={!selectMode ? <FAB onPress={openNew} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
+          <ExchangeRateDetailSheet rate={detail}
+            onClose={() => setDetailId(null)}
+            onEdit={() => { const item = detail; setDetailId(null); if (item) openEdit(item); }}
+            onSync={() => {
+              const item = detail;
+              if (!item || syncRatePair.isPending) return;
+              syncRatePair.mutate({ fromCurrencyCode: item.fromCurrencyCode, toCurrencyCode: item.toCurrencyCode }, {
+                onSuccess: () => showToast("Tipo de cambio actualizado", "success"),
+                onError: (error) => showErrorToast("No se pudo actualizar el tipo de cambio", error),
+              });
+            }}
+            onPin={() => { const item = detail; if (item) handleTogglePin(item); }}
+            onDelete={() => { const item = detail; setDetailId(null); if (item) startUndoDelete(item); }}
+            syncing={syncRatePair.isPending} pinPending={togglePin.isPending} />
           <EntityActionSheet
             visible={menuOpen}
             onClose={() => setMenuOpen(false)}
             sheetTitle="Más acciones"
             summaryTitle="Tipos de cambio"
-            actions={[{
+            actions={[{ key: "select", label: "Seleccionar varios", variant: "secondary" as const, onPress: () => { setMenuOpen(false); setSelectMode(true); } }, {
               key: "export",
               label: "Exportar a CSV",
               variant: "secondary" as const,
@@ -497,6 +508,7 @@ function ExchangeRatesScreen() {
             onClose={closeForm}
             title={editItem ? `Editar ${editItem.fromCurrencyCode} → ${editItem.toCurrencyCode}` : "Nuevo tipo de cambio"}
             snapHeight={0.75}
+            entranceAnimation="springFade"
           >
             <ExchangeRateForm
               key={editItem?.id ?? "new"}

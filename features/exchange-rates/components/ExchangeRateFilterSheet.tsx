@@ -1,80 +1,34 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-
+import { StyleSheet, Text, View } from "react-native";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
+import { Button } from "../../../components/ui/Button";
 import { PillSelector } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
-import {
-  EXCHANGE_RATE_ADVANCED_FILTERS,
-  type ExchangeRateAdvancedFilter,
-} from "../lib/exchangeRateFilters";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../constants/theme";
+import type { ExchangeRateAdvancedFilter } from "../lib/exchangeRateFilters";
 
-type Props = {
-  visible: boolean;
-  onClose: () => void;
-  advancedFilter: ExchangeRateAdvancedFilter;
-  onAdvancedFilterChange: (value: ExchangeRateAdvancedFilter) => void;
-};
-
-export function ExchangeRateFilterSheet({
-  visible,
-  onClose,
-  advancedFilter,
-  onAdvancedFilterChange,
-}: Props) {
-  return (
-    <BottomSheet visible={visible} onClose={onClose} title="Filtros" snapHeight={0.48}>
-      <View style={styles.content}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>Actualización</Text>
-          <Text style={styles.sectionHint}>Filtra por fuente o por tipos de cambio pendientes de sincronizar.</Text>
-        </View>
-
-        <PillSelector
-          options={EXCHANGE_RATE_ADVANCED_FILTERS}
-          value={advancedFilter}
-          onChange={onAdvancedFilterChange}
-          horizontal={false}
-          wrap
-        />
-
-        <TouchableOpacity style={styles.applyBtn} onPress={onClose} activeOpacity={0.84}>
-          <Text style={styles.applyBtnText}>Aplicar</Text>
-        </TouchableOpacity>
-      </View>
-    </BottomSheet>
-  );
+type Props = { visible: boolean; onClose: () => void; advancedFilter: ExchangeRateAdvancedFilter[]; onAdvancedFilterChange: (values: ExchangeRateAdvancedFilter[]) => void };
+export function ExchangeRateFilterSheet({ visible, onClose, advancedFilter, onAdvancedFilterChange }: Props) {
+  const choose = (keys: ExchangeRateAdvancedFilter[], value: ExchangeRateAdvancedFilter) => {
+    onAdvancedFilterChange([...advancedFilter.filter((filter) => !keys.includes(filter)), ...(value === "all" ? [] : [value])]);
+  };
+  return <BottomSheet visible={visible} onClose={onClose} title="Filtros" snapHeight={0.6} entranceAnimation="springFade">
+    <View style={styles.content}>
+      <Text style={styles.label}>Fuente</Text>
+      <PillSelector options={[{value: "all", label: "Todas"}, {value: "manual", label: "Manual"}, {value: "synced", label: "Sincronizada"}]}
+        value={advancedFilter.find((filter) => filter === "manual" || filter === "synced") ?? "all"}
+        onChange={(value) => choose(["manual", "synced"], value as ExchangeRateAdvancedFilter)} horizontal={false} wrap />
+      <Text style={styles.label}>Actualización</Text>
+      <PillSelector options={[{value: "all", label: "Todas"}, {value: "updated_today", label: "Hoy"}, {value: "stale", label: "Por actualizar"}]}
+        value={advancedFilter.find((filter) => filter === "updated_today" || filter === "stale") ?? "all"}
+        onChange={(value) => choose(["updated_today", "stale"], value as ExchangeRateAdvancedFilter)} horizontal={false} wrap />
+      <Text style={styles.label}>Fijados</Text>
+      <PillSelector options={[{value: "all", label: "Todos"}, {value: "pinned", label: "Solo fijados"}]}
+        value={advancedFilter.includes("pinned") ? "pinned" : "all"}
+        onChange={(value) => choose(["pinned"], value as ExchangeRateAdvancedFilter)} horizontal={false} wrap />
+      <Button label="Ver tipos de cambio" onPress={onClose} />
+    </View>
+  </BottomSheet>;
 }
-
 const styles = StyleSheet.create({
-  content: {
-    gap: SPACING.md,
-  },
-  sectionHeader: {
-    gap: SPACING.xs,
-  },
-  sectionLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  sectionHint: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.body,
-    color: COLORS.textMuted,
-  },
-  applyBtn: {
-    marginTop: SPACING.sm,
-    minHeight: 46,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.primary,
-  },
-  applyBtnText: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.textInverse,
-  },
+  content: { gap: SPACING.md },
+  label: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.storm },
 });

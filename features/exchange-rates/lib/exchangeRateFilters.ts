@@ -27,20 +27,21 @@ export function filterExchangeRates(
   rates: ExchangeRateRecord[],
   currencyFilter: string,
   searchText: string,
-  advancedFilter: ExchangeRateAdvancedFilter = "all",
+  advancedFilter: ExchangeRateAdvancedFilter | ExchangeRateAdvancedFilter[] = "all",
   today = new Date(),
 ) {
   const query = searchText.trim().toLowerCase();
+  const filters = Array.isArray(advancedFilter) ? advancedFilter : [advancedFilter];
+  const sources = filters.filter((value) => value === "manual" || value === "synced");
+  const dates = filters.filter((value) => value === "updated_today" || value === "stale");
 
   return rates.filter((rate) => {
     const from = rate.fromCurrencyCode.toUpperCase();
     const to = rate.toCurrencyCode.toUpperCase();
     if (currencyFilter !== "all" && from !== currencyFilter && to !== currencyFilter) return false;
-    if (advancedFilter === "pinned" && !rate.isPinned) return false;
-    if (advancedFilter === "manual" && rate.source !== "manual") return false;
-    if (advancedFilter === "synced" && rate.source === "manual") return false;
-    if (advancedFilter === "updated_today" && !isExchangeRateSameLocalDay(rate.effectiveAt, today)) return false;
-    if (advancedFilter === "stale" && isExchangeRateSameLocalDay(rate.effectiveAt, today)) return false;
+    if (filters.includes("pinned") && !rate.isPinned) return false;
+    if (sources.length === 1 && (rate.source === "manual") !== sources.includes("manual")) return false;
+    if (dates.length === 1 && isExchangeRateSameLocalDay(rate.effectiveAt, today) !== dates.includes("updated_today")) return false;
     if (!query) return true;
 
     return (
@@ -71,7 +72,7 @@ export function buildExchangeRateSections(rates: ExchangeRateRecord[]): Exchange
     key,
     label: key.replace(":", " → "),
     data,
-    headerVariant: hideHeader ? "hidden" : "default",
+    headerVariant: hideHeader ? "hidden" : "divider",
   }));
 
   return [
@@ -79,7 +80,7 @@ export function buildExchangeRateSections(rates: ExchangeRateRecord[]): Exchange
       key: "__pinned__",
       label: `Fijados (${pinned.length})`,
       data: pinned,
-      headerVariant: "default" as const,
+      headerVariant: "divider" as const,
     }] : []),
     ...restSections,
   ];
