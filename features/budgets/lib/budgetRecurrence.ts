@@ -148,3 +148,10 @@ export function inferRecurrence(period: BudgetPeriod): BudgetRecurrence {
   if (days <= 400) return "yearly";
   return "none";
 }
+
+/** Los presupuestos antiguos guardan `none` aunque tengan una cadencia deducible. */
+export function displayBudgetRecurrence(period: BudgetPeriod & { recurrence?: BudgetRecurrence | null }): BudgetRecurrence {
+  return period.recurrence && period.recurrence !== "none"
+    ? period.recurrence
+    : inferRecurrence(period);
+}

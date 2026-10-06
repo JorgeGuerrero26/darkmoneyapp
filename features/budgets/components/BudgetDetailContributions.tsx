@@ -20,8 +20,6 @@ const COLLAPSED_LIMIT = 3;
 type Props = {
   contributions: BudgetContribution[];
   currencyCode: string;
-  /** "Septiembre": el encabezado nombra el mes en vez de decir "del período". */
-  periodLabel: string;
   /** Abre la lista completa filtrada, en lugar de crecer dentro del detalle. */
   onSeeAll: () => void;
 };
@@ -38,18 +36,17 @@ type Props = {
  * veintiocho porque es la del presupuesto, y el monto en clay, cuando gastar dentro de tu
  * presupuesto no es un error. Queda qué fue, cuándo y de qué cuenta salió.
  */
-export function BudgetDetailContributions({ contributions, currencyCode, periodLabel, onSeeAll }: Props) {
+export function BudgetDetailContributions({ contributions, currencyCode, onSeeAll }: Props) {
   const router = useRouter();
   const today = todayPeru();
 
   if (contributions.length === 0) {
     return (
       <View style={styles.group}>
-        <Text style={styles.title}>Movimientos de {periodLabel.toLowerCase()}</Text>
+        <Text style={styles.title}>Movimientos del período</Text>
         {/* "Imputados" es vocabulario de contabilidad, y el vacío no decía qué hacer. */}
         <Text style={styles.empty}>
-          Todavía no has anotado ningún gasto de esta categoría en este período. Los que registres
-          irán descontando del límite.
+          Todavía no hay gastos que entren en este presupuesto durante el período.
         </Text>
       </View>
     );
@@ -60,7 +57,7 @@ export function BudgetDetailContributions({ contributions, currencyCode, periodL
   return (
     <View style={styles.group}>
       <View style={styles.header}>
-        <Text style={styles.title}>Movimientos de {periodLabel.toLowerCase()}</Text>
+        <Text style={styles.title}>Movimientos del período</Text>
         <Text style={styles.count}>{contributions.length}</Text>
       </View>
 

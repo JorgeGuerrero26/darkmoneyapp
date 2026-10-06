@@ -97,21 +97,23 @@ function shortDate(ymd: string): string {
 export function budgetSeriesReading(
   closed: BudgetOverview[],
   formatAmount: (value: number) => string,
+  unit: "mes" | "período" = "mes",
 ): string {
   const conDatos = closed.filter((budget) => budget.movementCount > 0);
   if (conDatos.length === 0) return "";
   const pasados = conDatos.filter((budget) => budget.spentAmount > budget.limitAmount).length;
   const limite = formatAmount(conDatos[0].limitAmount);
+  const plural = unit === "mes" ? "meses" : "períodos";
 
   if (pasados === 0) {
     return conDatos.length === 1
-      ? "El último mes cerró dentro del límite."
-      : `Dentro del límite los ${conDatos.length} últimos meses.`;
+      ? `El último ${unit} cerró dentro del límite.`
+      : `Dentro del límite los ${conDatos.length} últimos ${plural}.`;
   }
   if (pasados === conDatos.length && conDatos.length >= 2) {
-    return `Te pasaste los ${conDatos.length} meses. El límite de ${limite} puede estar corto.`;
+    return `Te pasaste los ${conDatos.length} ${plural}. El límite de ${limite} puede estar corto.`;
   }
-  const meses = conDatos.length === 1 ? "el último mes" : `los ${conDatos.length} últimos meses`;
+  const meses = conDatos.length === 1 ? `el último ${unit}` : `los ${conDatos.length} últimos ${plural}`;
   const cola = pasados >= 2 ? ` El límite de ${limite} puede estar corto.` : "";
   return `Te pasaste en ${pasados} de ${meses}.${cola}`;
 }

@@ -1,37 +1,35 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../../components/ui/ErrorBoundary";
-import { Card } from "../../../components/ui/Card";
 import { SkeletonCard, SkeletonList } from "../../../components/ui/Skeleton";
 import { ScreenHeader } from "../../../components/layout/ScreenHeader";
 import { NotificationReasonBanner } from "../../../components/ui/NotificationReasonBanner";
 import { EntityActionSheet } from "../../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../../components/ui/HeaderActionGroup";
+import { DetailTabs } from "../../../components/ui/DetailTabs";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../../components/ui/ResourceModuleTemplate";
 import { BudgetForm } from "../../../components/forms/BudgetForm";
 import { BudgetQuickEditSheet } from "../../../features/budgets/components/BudgetQuickEditSheet";
 import { BudgetDetailHeader } from "../../../features/budgets/components/BudgetDetailHeader";
+import { BudgetDetailFields } from "../../../features/budgets/components/BudgetDetailFields";
+import { BudgetDetailActions } from "../../../features/budgets/components/BudgetDetailActions";
 import { BudgetDetailContributions } from "../../../features/budgets/components/BudgetDetailContributions";
 import { BudgetDetailHistory } from "../../../features/budgets/components/BudgetDetailHistory";
 import { useOriginBackNavigation } from "../../../hooks/useOriginBackNavigation";
 import { useNotificationReason } from "../../../hooks/useNotificationReason";
 import { useToast } from "../../../hooks/useToast";
-import { parseDisplayDate } from "../../../lib/date";
 import { useAuth } from "../../../lib/auth-context";
 import { useWorkspace } from "../../../lib/workspace-context";
 import { useUiStore } from "../../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../../services/queries/workspace-data";
 import {
   useDeleteBudgetMutation,
-  useDuplicateBudgetMutation,
   useTogglePinBudgetMutation,
 } from "../../../services/queries/budgets";
 import { useBudgetScopeMovementsQuery } from "../../../services/queries/budget-analytics";
@@ -39,7 +37,7 @@ import {
   applyBudgetComputedMetrics,
   buildBudgetMetricsMap,
 } from "../../../lib/budget-metrics";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../../constants/theme";
 import type { BudgetOverview } from "../../../types/domain";
 
 function parseBudgetId(raw: string | undefined): number | null {
@@ -48,10 +46,12 @@ function parseBudgetId(raw: string | undefined): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-/** "septiembre" -> "Septiembre". */
-function capitalizeFirst(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
+type BudgetDetailTab = "details" | "activity";
+
+const DETAIL_TABS: Array<{ id: BudgetDetailTab; label: string }> = [
+  { id: "details", label: "Detalles" },
+  { id: "activity", label: "Actividad" },
+];
 
 function BudgetDetailScreen() {
   // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
@@ -74,6 +74,7 @@ function BudgetDetailScreen() {
   const { showToast, showErrorToast } = useToast();
 
   const [editVisible, setEditVisible] = useState(false);
+  const [detailTab, setDetailTab] = useState<BudgetDetailTab>("details");
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickEditVisible, setQuickEditVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
@@ -112,26 +113,10 @@ function BudgetDetailScreen() {
     return applyBudgetComputedMetrics(rawBudget, metrics);
   }, [metricsMap, rawBudget]);
 
-  /* El mes que nombra la pantalla, dicho una vez: lo usan el encabezado y los movimientos. */
-  const periodLabel = budget
-    ? capitalizeFirst(format(parseDisplayDate(budget.periodStart), "LLLL", { locale: es }))
-    : "";
-
   const analytics = budget ? metricsMap.get(budget.id) ?? null : null;
 
   const deleteMutation = useDeleteBudgetMutation(activeWorkspaceId);
-  const duplicateMutation = useDuplicateBudgetMutation(activeWorkspaceId);
   const togglePinMutation = useTogglePinBudgetMutation(activeWorkspaceId);
-
-  const handleDuplicate = useCallback(async () => {
-    if (!budget) return;
-    try {
-      await duplicateMutation.mutateAsync(budget);
-      showToast("Presupuesto duplicado", "success", `${budget.name} · al próximo período`);
-    } catch (err: unknown) {
-      showErrorToast("No se pudo duplicar el presupuesto", err);
-    }
-  }, [budget, duplicateMutation, showToast]);
 
   const handleTogglePin = useCallback(() => {
     if (!budget) return;
@@ -160,13 +145,11 @@ function BudgetDetailScreen() {
       header={
         <>
           <ScreenHeader
-            title={budget?.name ?? "Presupuesto"}
+            title="Presupuesto"
+            subtitle={budget?.name}
             onBack={handleBack}
             rightAction={
               budget ? (
-                /* Cuatro íconos sin etiqueta —alfiler, copia, lápiz y papelera— piden
-                   adivinar, y uno de ellos borra. Lo administrativo baja al menú, donde cada
-                   acción se lee. Mismo patrón que cuenta, suscripción e ingreso fijo. */
                 <HeaderActionGroup
                   actions={[{
                     key: "menu",
@@ -179,6 +162,11 @@ function BudgetDetailScreen() {
             }
           />
           <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+          {budget ? (
+            <View style={styles.detailTabs}>
+              <DetailTabs tabs={DETAIL_TABS} activeTab={detailTab} onChange={setDetailTab} />
+            </View>
+          ) : null}
         </>
       }
       list={
@@ -198,44 +186,35 @@ function BudgetDetailScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
-            {/* Ajuste rápido, Duplicar y Fijar ocupaban una tarjeta entera con rótulo propio
-                para tres cosas que se hacen una vez en la vida del presupuesto. Y "Duplicar"
-                perdió su razón de ser con la cadencia: se duplicaba para tener el mes siguiente,
-                y ahora lo abre el sistema. Las tres bajan al menú, que estaba vacío. */}
-            <BudgetDetailHeader
-              budget={budget}
-              onReviewMovements={() => router.push({
-                pathname: "/budget/[id]/movements",
-                params: { id: String(budget.id), from: "budget" },
-              })}
-            />
-
-            <BudgetDetailContributions
-              contributions={analytics?.contributions ?? []}
-              currencyCode={budget.currencyCode}
-              periodLabel={periodLabel}
-              /* Dentro del presupuesto, no en Movimientos: allí el filtro no viajaba con la
-                 vista — de hecho ni se aplicaba, porque el bloque de filtros rápidos solo corre
-                 si llega `quickScope`, que no se mandaba. Y aunque llegara, en dos scrolls la
-                 pantalla se lee como la lista general. */
-              onSeeAll={() => router.push({
-                pathname: "/budget/[id]/movements",
-                params: { id: String(budget.id), from: "budget" },
-              })}
-            />
-
-            <BudgetDetailHistory current={budget} allBudgets={allBudgets} />
-
-            {budget.notes ? (
-              <Card>
-                <Text style={styles.sectionTitle}>Notas</Text>
-                <Text style={styles.notes}>{budget.notes}</Text>
-              </Card>
-            ) : null}
+          <ScrollView key={detailTab} style={styles.scroll} contentContainerStyle={styles.content}>
+            {detailTab === "details" ? (
+              <>
+                <BudgetDetailHeader budget={budget} onReviewMovements={() => setDetailTab("activity")} />
+                <BudgetDetailFields budget={budget} />
+              </>
+            ) : (
+              <>
+                <BudgetDetailContributions
+                  contributions={analytics?.contributions ?? []}
+                  currencyCode={budget.currencyCode}
+                  onSeeAll={() => router.push({
+                    pathname: "/budget/[id]/movements",
+                    params: { id: String(budget.id), from: "budget" },
+                  })}
+                />
+                <BudgetDetailHistory current={budget} allBudgets={allBudgets} />
+              </>
+            )}
           </ScrollView>
         )
       }
+      fab={budget ? (
+        <BudgetDetailActions
+          bottomInset={insets.bottom}
+          onEdit={() => setEditVisible(true)}
+          onAdjustLimit={() => setQuickEditVisible(true)}
+        />
+      ) : null}
       overlays={
         <>
           {budget ? (
@@ -258,18 +237,6 @@ function BudgetDetailScreen() {
               sheetTitle="Más acciones"
               summaryTitle={budget.name}
               actions={[
-                {
-                  key: "edit",
-                  label: "Editar presupuesto",
-                  variant: "secondary" as const,
-                  onPress: () => { setMenuOpen(false); setEditVisible(true); },
-                },
-                {
-                  key: "quick",
-                  label: "Ajustar el límite",
-                  variant: "secondary" as const,
-                  onPress: () => { setMenuOpen(false); setQuickEditVisible(true); },
-                },
                 {
                   key: "pin",
                   label: budget?.isPinned ? "Quitar de fijados" : "Fijar en la lista",
@@ -303,9 +270,12 @@ function BudgetDetailScreen() {
 
 
 const styles = StyleSheet.create({
+  detailTabs: { paddingHorizontal: SPACING.xl },
+  scroll: { flex: 1 },
   content: {
-    padding: SPACING.lg,
-    gap: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.lg,
+    gap: SPACING.xxl,
     paddingBottom: SPACING.xxxl,
   },
   center: {
@@ -324,18 +294,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: "center",
-  },
-  sectionTitle: {
-    fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-    marginBottom: SPACING.xs,
-  },
-  notes: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.text,
-    lineHeight: 20,
   },
 });
 

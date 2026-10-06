@@ -113,4 +113,9 @@ describe("budgetSeriesReading", () => {
     expect(budgetSeriesReading([mes(0, 0), mes(0, 0)], money)).toBe("");
     expect(budgetSeriesReading([mes(859.22), mes(0, 0)], money)).toContain("el último mes");
   });
+
+  it("usa períodos en lugar de meses para presupuestos semanales", () => {
+    expect(budgetSeriesReading([mes(500), mes(300)], money, "período"))
+      .toContain("los 2 últimos períodos");
+  });
 });

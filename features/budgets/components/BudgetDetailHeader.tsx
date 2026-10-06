@@ -7,6 +7,7 @@ import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
 import { parseDisplayDate, todayPeru } from "../../../lib/date";
 import { expectedPace } from "../lib/budgetRules";
+import { displayBudgetRecurrence } from "../lib/budgetRecurrence";
 import { budgetHeadState } from "../lib/budgetVerdict";
 import type { BudgetOverview } from "../../../types/domain";
 
@@ -33,7 +34,10 @@ type Props = {
 export function BudgetDetailHeader({ budget, onReviewMovements }: Props) {
   const today = todayPeru();
   const money = (value: number) => formatCurrency(value, budget.currencyCode);
-  const periodLabel = capitalize(format(parseDisplayDate(budget.periodStart), "LLLL", { locale: es }));
+  const monthly = displayBudgetRecurrence(budget) === "monthly";
+  const periodLabel = monthly
+    ? capitalize(format(parseDisplayDate(budget.periodStart), "LLLL", { locale: es }))
+    : `${format(parseDisplayDate(budget.periodStart), "d MMM", { locale: es })}–${format(parseDisplayDate(budget.periodEnd), "d MMM", { locale: es })}`;
   const state = budgetHeadState({ budget, todayYmd: today, formatAmount: money, periodLabel });
 
   if (state.kind === "no-data") {
@@ -43,7 +47,7 @@ export function BudgetDetailHeader({ budget, onReviewMovements }: Props) {
         <Text style={styles.emptyBody}>{state.body}</Text>
         {onReviewMovements ? (
           <Button
-            label={`Revisar movimientos de ${periodLabel.toLowerCase()}`}
+            label="Revisar actividad"
             variant="secondary"
             size="lg"
             onPress={onReviewMovements}

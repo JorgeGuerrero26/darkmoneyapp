@@ -1,5 +1,6 @@
 import {
   budgetRecurrenceSentence,
+  displayBudgetRecurrence,
   firstBudgetPeriod,
   inferRecurrence,
   nextBudgetPeriod,
@@ -89,5 +90,13 @@ describe("inferRecurrence", () => {
 
   it("un periodo larguisimo no es una cadencia, es un tramo suelto", () => {
     expect(inferRecurrence({ periodStart: "2026-01-01", periodEnd: "2028-12-31" })).toBe("none");
+  });
+});
+
+describe("displayBudgetRecurrence", () => {
+  it("muestra la cadencia inferida de períodos antiguos y respeta la configurada", () => {
+    const period = { periodStart: "2026-10-01", periodEnd: "2026-10-31" };
+    expect(displayBudgetRecurrence({ ...period, recurrence: "none" })).toBe("monthly");
+    expect(displayBudgetRecurrence({ ...period, recurrence: "weekly" })).toBe("weekly");
   });
 });

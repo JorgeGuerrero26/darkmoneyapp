@@ -6,6 +6,7 @@ import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
 import { parseDisplayDate } from "../../../lib/date";
 import { budgetRuleKey } from "../lib/budgetRules";
+import { displayBudgetRecurrence } from "../lib/budgetRecurrence";
 import { budgetSeriesReading } from "../lib/budgetVerdict";
 import type { BudgetOverview } from "../../../types/domain";
 
@@ -37,16 +38,19 @@ export function BudgetDetailHistory({ current, allBudgets }: Props) {
   if (history.length === 0) return null;
 
   const money = (value: number) => formatCurrency(value, current.currencyCode);
-  const reading = budgetSeriesReading(history, money);
+  const monthly = displayBudgetRecurrence(current) === "monthly";
+  const reading = budgetSeriesReading(history, money, monthly ? "mes" : "período");
 
   return (
     <View style={styles.group}>
-      <Text style={styles.title}>Meses anteriores</Text>
+      <Text style={styles.title}>{monthly ? "Meses anteriores" : "Períodos anteriores"}</Text>
 
       {history.map((budget) => {
         const percent = budget.limitAmount > 0 ? (budget.spentAmount / budget.limitAmount) * 100 : 0;
         const over = budget.spentAmount > budget.limitAmount;
-        const mes = capitalize(format(parseDisplayDate(budget.periodStart), "LLLL", { locale: es }));
+        const mes = monthly
+          ? capitalize(format(parseDisplayDate(budget.periodStart), "LLLL", { locale: es }))
+          : `${format(parseDisplayDate(budget.periodStart), "d MMM", { locale: es })}–${format(parseDisplayDate(budget.periodEnd), "d MMM", { locale: es })}`;
         /* Un mes cerrado sin movimientos no es un 0%: es que no se anotó nada. Pintarlo como
            barra vacía diría que cumpliste el límite, que es justo el error de esta revisión. */
         const sinDatos = budget.movementCount === 0;
@@ -95,7 +99,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   row: { flexDirection: "row", alignItems: "center", gap: SPACING.md, minHeight: 32 },
-  month: { width: 68, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.fog },
+  month: { width: 96, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.fog },
   track: {
     flex: 1,
     height: 6,
