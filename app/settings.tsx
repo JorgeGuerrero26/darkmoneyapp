@@ -666,7 +666,31 @@ function SettingsScreen() {
         </Text>
       </BottomSheet>
 
-      <BottomSheet visible={workspaceSheetOpen} onClose={() => setWorkspaceSheetOpen(false)} title="Workspaces">
+      <BottomSheet visible={workspaceSheetOpen} onClose={() => setWorkspaceSheetOpen(false)} title="Workspaces"
+        footer={
+          <View style={styles.wsActions}>
+            <Button
+              label="Crear workspace"
+              size="lg"
+              accessibilityRole="button"
+              onPress={() => {
+                setWorkspaceSheetOpen(false);
+                openCreateWsSheet();
+              }}
+            />
+            {canInvite ? (
+              <Button
+                label="Invitar miembro"
+                variant="secondary"
+                accessibilityRole="button"
+                onPress={() => {
+                  setWorkspaceSheetOpen(false);
+                  openInviteSheet();
+                }}
+              />
+            ) : null}
+          </View>
+        }>
         {workspaces.map((ws) => (
           <TouchableOpacity
             key={ws.id}
@@ -686,28 +710,6 @@ function SettingsScreen() {
             {ws.id === activeWorkspaceId ? <Check size={16} color={COLORS.ink} /> : null}
           </TouchableOpacity>
         ))}
-        <View style={styles.wsActions}>
-          {canInvite ? (
-            <TouchableOpacity
-              style={styles.wsActionBtn}
-              onPress={() => {
-                setWorkspaceSheetOpen(false);
-                openInviteSheet();
-              }}
-            >
-              <Text style={styles.wsActionText}>＋ Invitar miembro</Text>
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            style={styles.wsActionBtn}
-            onPress={() => {
-              setWorkspaceSheetOpen(false);
-              openCreateWsSheet();
-            }}
-          >
-            <Text style={styles.wsActionText}>＋ Crear workspace</Text>
-          </TouchableOpacity>
-        </View>
       </BottomSheet>
 
       {/* El tono es el REGISTRO con que la IA te habla, no lo que se le pide: la caché
@@ -1198,15 +1200,7 @@ const styles = StyleSheet.create({
     marginBottom: -SPACING.xs,
     paddingHorizontal: SPACING.xs,
   },
-  wsActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md, flexWrap: "wrap" },
-  wsActionBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-  },
-  wsActionText: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
+  wsActions: { gap: SPACING.sm, paddingHorizontal: SPACING.xl, paddingTop: SPACING.md, paddingBottom: SPACING.lg },
   pushStatusBox: {
     marginBottom: SPACING.md,
     padding: SPACING.md,
