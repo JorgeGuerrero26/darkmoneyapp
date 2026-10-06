@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { MoreVertical } from "lucide-react-native";
+import { MoreVertical, Pencil, Phone, Mail } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -16,21 +16,24 @@ import {
 } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
 import type { CounterpartyOverview } from "../../types/domain";
-import { Card } from "../../components/ui/Card";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ContactForm } from "../../components/forms/ContactForm";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 
 import { useContactAnalytics } from "../../features/contacts/lib/useContactAnalytics";
 import { ContactDetailHeader } from "../../features/contacts/components/ContactDetailHeader";
-import { ContactDetailQuickActions } from "../../features/contacts/components/ContactDetailQuickActions";
-import { ContactDetailRelationCard } from "../../features/contacts/components/ContactDetailRelationCard";
-import { ContactDetailFinancials } from "../../features/contacts/components/ContactDetailFinancials";
-import { ContactDetailProgrammed } from "../../features/contacts/components/ContactDetailProgrammed";
+import { ContactDetailFacts } from "../../features/contacts/components/ContactDetailFacts";
+import { ContactDetailActivity } from "../../features/contacts/components/ContactDetailActivity";
+import { contactActivitySections, type ContactActivityItem } from "../../features/contacts/lib/contactActivitySections";
+import { DetailActionBar } from "../../components/ui/DetailActionBar";
+import { DetailTabs } from "../../components/ui/DetailTabs";
+import { useUiStore } from "../../store/ui-store";
+
+const DETAIL_TABS = [{ id: "details", label: "Detalles" }, { id: "activity", label: "Actividad" }];
 
 function parseContactId(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -39,10 +42,13 @@ function parseContactId(raw: string | undefined): number | null {
 }
 
 function ContactDetailScreen() {
+  useUiStore((state) => state.privacyMode);
+  const router = useRouter();
+  const [detailTab, setDetailTab] = useState("details");
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { handleBack } = useOriginBackNavigation();
+  const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/contacts", originRoutes: { contacts: "/(app)/contacts" } });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast, showErrorToast } = useToast();
@@ -63,11 +69,18 @@ function ContactDetailScreen() {
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const analytics = useContactAnalytics({ contact, snapshot, baseCurrency });
 
-  const noContactData =
-    contact != null &&
-    !contact.phone?.trim() &&
-    !contact.email?.trim() &&
-    !contact.documentNumber?.trim();
+  const activitySections = useMemo(() => contactActivitySections(snapshot, contactId ?? 0), [snapshot, contactId]);
+  const phone = contact?.phone?.replace(/[^\d+]/g, "") ?? "";
+  const email = contact?.email?.trim() ?? "";
+  async function openContactUrl(url: string) {
+    try { await Linking.openURL(url); }
+    catch (error) { showErrorToast("No se pudo abrir la aplicaci\u00f3n", error); }
+  }
+  function openActivity(item: ContactActivityItem) {
+    if (item.kind === "obligation") router.push(`/obligation/${item.id}`);
+    else if (item.kind === "subscription") router.push(`/subscription/${item.id}`);
+    else router.push(`/recurring-income/${item.id}`);
+  }
 
   function handleArchive() {
     if (!contact) return;
@@ -109,9 +122,9 @@ function ContactDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
+        <>
         <ScreenHeader
-          title={contact?.name ?? "Contacto"}
-          subtitle={activeWorkspace?.name}
+          title="Contacto"
           onBack={handleBack}
           rightAction={
             contact ? (
@@ -128,6 +141,8 @@ function ContactDetailScreen() {
             ) : null
           }
         />
+        {contact ? <View style={styles.tabs}><DetailTabs tabs={DETAIL_TABS} activeTab={detailTab} onChange={setDetailTab} /></View> : null}
+        </>
       }
       list={
         isLoading ? (
@@ -145,52 +160,22 @@ function ContactDetailScreen() {
                 : "Es posible que el contacto haya sido eliminado."}
             </Text>
           </View>
+        ) : detailTab === "activity" && analytics ? (
+          <ContactDetailActivity analytics={analytics} movementCount={contact.movementCount} baseCurrency={baseCurrency} sections={activitySections} onOpen={openActivity} />
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
-            <ContactDetailHeader contact={contact} lastActivityAt={analytics?.lastActivityAt ?? null} />
-
-            <ContactDetailQuickActions
-              contact={contact}
-              onEdit={() => setEditFormVisible(true)}
-              onArchive={handleArchive}
-              onRestore={handleRestore}
-              onTogglePin={handleTogglePin}
-            />
-
-            {analytics ? (
-              <ContactDetailRelationCard
-                contact={contact}
-                analytics={analytics}
-                baseCurrency={baseCurrency}
-              />
-            ) : null}
-
-            <Card>
-              <Text style={styles.sectionTitle}>Datos de contacto</Text>
-              <ContactDataList contact={contact} onEdit={() => setEditFormVisible(true)} hasNoData={noContactData} />
-            </Card>
-
-            {analytics ? (
-              <ContactDetailFinancials
-                contact={contact}
-                analytics={analytics}
-                baseCurrency={baseCurrency}
-              />
-            ) : null}
-
-            {analytics ? (
-              <ContactDetailProgrammed analytics={analytics} baseCurrency={baseCurrency} />
-            ) : null}
-
-            {contact.notes ? (
-              <Card>
-                <Text style={styles.sectionTitle}>Notas</Text>
-                <Text style={styles.notes}>{contact.notes}</Text>
-              </Card>
-            ) : null}
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+            <ContactDetailHeader contact={contact} lastActivityAt={contact.lastActivityAt ?? null} />
+            <ContactDetailFacts contact={contact} onPhone={() => void openContactUrl(`tel:${phone}`)} onEmail={() => void openContactUrl(`mailto:${email}`)} />
           </ScrollView>
         )
       }
+      fab={contact ? (
+        <DetailActionBar bottomInset={insets.bottom} primarySide={phone || email ? "right" : "left"}
+          secondary={phone || email ? { label: "Editar", accessibilityLabel: "Editar contacto", icon: Pencil, onPress: () => setEditFormVisible(true) } : undefined}
+          primary={phone ? { label: "Llamar", accessibilityLabel: "Llamar al contacto", icon: Phone, onPress: () => void openContactUrl(`tel:${phone}`) }
+            : email ? { label: "Enviar correo", accessibilityLabel: "Enviar correo al contacto", icon: Mail, onPress: () => void openContactUrl(`mailto:${email}`) }
+            : { label: "Editar", accessibilityLabel: "Editar contacto", icon: Pencil, onPress: () => setEditFormVisible(true) }} />
+      ) : null}
       overlays={
         contact ? (
           <>
@@ -201,17 +186,20 @@ function ContactDetailScreen() {
               summaryTitle={contact.name}
               actions={[
                 {
-                  key: "edit",
-                  label: "Editar contacto",
-                  variant: "secondary",
-                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
-                },
-                {
                   key: "pin",
                   label: contact.isPinned ? "Quitar de fijados" : "Fijar en la lista",
                   variant: "ghost",
                   onPress: () => { setMenuOpen(false); handleTogglePin(); },
                 },
+                {
+                  key: "archive",
+                  label: contact.isArchived ? "Restaurar contacto" : "Archivar contacto",
+                  variant: "ghost",
+                  disabled: archiveMutation.isPending,
+                  onPress: () => { setMenuOpen(false); contact.isArchived ? handleRestore() : handleArchive(); },
+                },
+                ...(phone ? [{ key: "whatsapp", label: "Abrir WhatsApp", variant: "ghost" as const, onPress: () => { setMenuOpen(false); void openContactUrl(`https://wa.me/${phone.replace(/^\+/, "")}`); } }] : []),
+                ...(email ? [{ key: "email", label: "Enviar correo", variant: "ghost" as const, onPress: () => { setMenuOpen(false); void openContactUrl(`mailto:${email}`); } }] : []),
               ]}
             />
             <ContactForm
@@ -227,81 +215,13 @@ function ContactDetailScreen() {
   );
 }
 
-function ContactDataList({
-  contact,
-  onEdit,
-  hasNoData,
-}: {
-  contact: CounterpartyOverview;
-  onEdit: () => void;
-  hasNoData: boolean;
-}) {
-  if (hasNoData) {
-    return (
-      <View style={styles.emptyData}>
-        <Text style={styles.emptyDataHint}>Sin teléfono, correo ni documento registrados.</Text>
-        <Text style={styles.emptyDataCta} onPress={onEdit}>
-          Agregar datos de contacto
-        </Text>
-      </View>
-    );
-  }
-
-  const rows: { label: string; value: string }[] = [];
-  if (contact.phone?.trim()) rows.push({ label: "Teléfono", value: contact.phone.trim() });
-  if (contact.email?.trim()) rows.push({ label: "Correo", value: contact.email.trim() });
-  if (contact.documentNumber?.trim()) {
-    rows.push({ label: "DNI / RUC", value: contact.documentNumber.trim() });
-  }
-
-  return (
-    <>
-      {rows.map((row, index) => (
-        <View key={row.label}>
-          {index > 0 ? <View style={rowStyles.divider} /> : null}
-          <View style={rowStyles.row}>
-            <Text style={rowStyles.label}>{row.label}</Text>
-            <Text style={rowStyles.value}>{row.value}</Text>
-          </View>
-        </View>
-      ))}
-    </>
-  );
-}
-
 const styles = StyleSheet.create({
-  content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xl },
+  tabs: { paddingHorizontal: SPACING.xl },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: SPACING.xl, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: SPACING.lg, gap: SPACING.sm },
-  errorTitle: { color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold },
-  errorBody: { color: COLORS.textMuted, fontSize: FONT_SIZE.sm, textAlign: "center" },
-  sectionTitle: {
-    fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-    marginBottom: SPACING.xs,
-  },
-  notes: { fontSize: FONT_SIZE.sm, color: COLORS.text, lineHeight: 20 },
-  emptyData: { gap: SPACING.sm },
-  emptyDataHint: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontStyle: "italic" },
-  emptyDataCta: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.primary,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-});
-
-const rowStyles = StyleSheet.create({
-  row: { flexDirection: "row", justifyContent: "space-between", gap: SPACING.md },
-  label: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, flex: 1 },
-  value: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.text,
-    fontWeight: FONT_WEIGHT.medium,
-    flex: 2,
-    textAlign: "right",
-  },
-  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
+  errorTitle: { color: COLORS.ink, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
+  errorBody: { color: COLORS.storm, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, textAlign: "center" },
 });
 
 export default function ContactDetailScreenRoot() {
