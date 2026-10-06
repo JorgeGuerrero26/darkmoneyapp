@@ -882,11 +882,7 @@ function SettingsScreen() {
         <View style={styles.soOverlay}>
           <SafeBlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View style={styles.bioCard}>
-            <View style={styles.bioIconRing}>
-              <View style={styles.bioIconInner}>
-                <Fingerprint size={40} color={COLORS.primary} strokeWidth={1.5} />
-              </View>
-            </View>
+            <Fingerprint size={32} color={COLORS.storm} strokeWidth={2} />
             <Text style={styles.soTitle}>Activar acceso con huella</Text>
             <Text style={styles.soBody}>
               Ingresa tu contraseña una vez para vincularla a tu huella digital. No la guardaremos en ningún servidor.
@@ -1351,28 +1347,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 30,
     elevation: 20,
-  },
-  bioIconRing: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: SURFACE.cardActive,
-    borderWidth: 1.5,
-    borderColor: SURFACE.cardActiveBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-  },
-  bioIconInner: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: SURFACE.cardActive,
-    alignItems: "center",
-    justifyContent: "center",
   },
   bioFullBtn: { alignSelf: "stretch" },
 });
