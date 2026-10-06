@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import type { SectionListRenderItem } from "react-native";
 import { MoreVertical, CheckSquare, Download, RefreshCw, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,7 +17,6 @@ import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { BottomSheet } from "../components/ui/BottomSheet";
 import { FAB } from "../components/ui/FAB";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
-import { ExchangeRateDetailSheet } from "../features/exchange-rates/components/ExchangeRateDetailSheet";
 import { ExchangeRateFilterSheet } from "../features/exchange-rates/components/ExchangeRateFilterSheet";
 import { ExchangeRateSwipeRow } from "../features/exchange-rates/components/ExchangeRateSwipeRow";
 import { ExchangeRatesSummaryBar } from "../features/exchange-rates/components/ExchangeRatesSummaryBar";
@@ -25,6 +25,7 @@ import {
   exchangeRateAdvancedFilterLabel,
   filterExchangeRates,
   getExchangeRatePairCount,
+  getExchangeRateCurrencyOptions,
   isExchangeRateSameLocalDay,
   type ExchangeRateAdvancedFilter,
   type ExchangeRateListSection,
@@ -40,19 +41,17 @@ import {
   useDeleteExchangeRateMutation,
   useExchangeRatesQuery,
   useSyncExchangeRatePairMutation,
-  useToggleExchangeRatePinMutation,
-  useUpdateExchangeRateMutation,
   type ExchangeRateRecord,
 } from "../services/queries/exchange-rates";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ExchangeRateForm } from "../components/forms/ExchangeRateForm";
-import { SUPPORTED_CURRENCY_CODES } from "../constants/currencies";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 
 type CurrencyFilter = string;
 
 function ExchangeRatesScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation();
   const { showToast, showErrorToast } = useToast();
@@ -60,9 +59,7 @@ function ExchangeRatesScreen() {
   const { activeWorkspace } = useWorkspace();
   const baseCurrencyCode = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
 
-  const [detailId, setDetailId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<ExchangeRateRecord | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -79,10 +76,8 @@ function ExchangeRatesScreen() {
 
   const { data: rates = [], isLoading, refetch } = useExchangeRatesQuery();
   const createRate = useCreateExchangeRateMutation();
-  const updateRate = useUpdateExchangeRateMutation();
   const deleteRate = useDeleteExchangeRateMutation();
   const syncRatePair = useSyncExchangeRatePairMutation();
-  const togglePin = useToggleExchangeRatePinMutation();
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -104,15 +99,7 @@ function ExchangeRatesScreen() {
     () => rates.filter((rate) => !pendingDeleteIds.has(rate.id)),
     [pendingDeleteIds, rates],
   );
-  const detail = activeRates.find((item) => item.id === detailId) ?? null;
-  const currencyOptions = useMemo(() => {
-    const set = new Set<string>(SUPPORTED_CURRENCY_CODES);
-    for (const rate of rates) {
-      set.add(rate.fromCurrencyCode.toUpperCase());
-      set.add(rate.toCurrencyCode.toUpperCase());
-    }
-    return Array.from(set).sort();
-  }, [rates]);
+  const currencyOptions = useMemo(() => getExchangeRateCurrencyOptions(rates), [rates]);
   const filterOptions = useMemo(
     () => [{ label: "Todas", value: "all" }, ...currencyOptions.map((currency) => ({ label: currency, value: currency }))],
     [currencyOptions],
@@ -187,18 +174,11 @@ function ExchangeRatesScreen() {
   }, []);
 
   function openNew() {
-    setEditItem(null);
-    setShowForm(true);
-  }
-
-  function openEdit(item: ExchangeRateRecord) {
-    setEditItem(item);
     setShowForm(true);
   }
 
   function closeForm() {
     setShowForm(false);
-    setEditItem(null);
   }
 
   const clearFilters = useCallback(() => {
@@ -246,13 +226,6 @@ function ExchangeRatesScreen() {
     });
   }, []);
 
-  const handleTogglePin = useCallback((item: ExchangeRateRecord) => {
-    togglePin.mutate(
-      { id: item.id, isPinned: !item.isPinned },
-      { onError: (err: Error) => showErrorToast(item.isPinned ? "No se pudo desfijar el tipo de cambio" : "No se pudo fijar el tipo de cambio", err) },
-    );
-  }, [showToast, togglePin]);
-
   const selectedRates = useMemo(
     () => filteredRates.filter((item) => selectedIds.has(item.id)),
     [filteredRates, selectedIds],
@@ -287,18 +260,13 @@ function ExchangeRatesScreen() {
 
   const handleSave = useCallback(async (from: string, to: string, rate: number, notes: string) => {
     try {
-      if (editItem) {
-        await updateRate.mutateAsync({ id: editItem.id, fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
-        showToast("Tipo de cambio actualizado", "success");
-      } else {
-        await createRate.mutateAsync({ fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
-        showToast("Tipo de cambio creado", "success");
-      }
+      await createRate.mutateAsync({ fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
+      showToast("Tipo de cambio creado", "success");
       closeForm();
     } catch (error: unknown) {
       showErrorToast("No se pudo guardar el tipo de cambio", error);
     }
-  }, [createRate, editItem, showToast, updateRate]);
+  }, [createRate, showToast, showErrorToast]);
 
   const handleRefreshRates = useCallback(async (silent = false) => {
     if (activeRates.length === 0) {
@@ -343,7 +311,7 @@ function ExchangeRatesScreen() {
           toggleSelect(item.id);
           return;
         }
-        setDetailId(item.id);
+        router.push(`/exchange-rate/${item.id}?from=exchange-rates`);
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
@@ -353,7 +321,7 @@ function ExchangeRatesScreen() {
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [handleTogglePin, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -470,20 +438,6 @@ function ExchangeRatesScreen() {
       fab={!selectMode ? <FAB onPress={openNew} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
-          <ExchangeRateDetailSheet rate={detail}
-            onClose={() => setDetailId(null)}
-            onEdit={() => { const item = detail; setDetailId(null); if (item) openEdit(item); }}
-            onSync={() => {
-              const item = detail;
-              if (!item || syncRatePair.isPending) return;
-              syncRatePair.mutate({ fromCurrencyCode: item.fromCurrencyCode, toCurrencyCode: item.toCurrencyCode }, {
-                onSuccess: () => showToast("Tipo de cambio actualizado", "success"),
-                onError: (error) => showErrorToast("No se pudo actualizar el tipo de cambio", error),
-              });
-            }}
-            onPin={() => { const item = detail; if (item) handleTogglePin(item); }}
-            onDelete={() => { const item = detail; setDetailId(null); if (item) startUndoDelete(item); }}
-            syncing={syncRatePair.isPending} pinPending={togglePin.isPending} />
           <EntityActionSheet
             visible={menuOpen}
             onClose={() => setMenuOpen(false)}
@@ -506,20 +460,16 @@ function ExchangeRatesScreen() {
           <BottomSheet
             visible={showForm}
             onClose={closeForm}
-            title={editItem ? `Editar ${editItem.fromCurrencyCode} → ${editItem.toCurrencyCode}` : "Nuevo tipo de cambio"}
+            title="Nuevo tipo de cambio"
             snapHeight={0.75}
             entranceAnimation="springFade"
           >
             <ExchangeRateForm
-              key={editItem?.id ?? "new"}
-              initialFrom={editItem?.fromCurrencyCode ?? ""}
-              initialTo={editItem?.toCurrencyCode ?? ""}
-              initialRate={editItem ? String(editItem.rate) : ""}
-              initialNotes={editItem?.notes ?? ""}
+              key="new"
               currencyOptions={currencyOptions}
               onSave={(from, to, rate, notes) => void handleSave(from, to, rate, notes)}
               onCancel={closeForm}
-              loading={createRate.isPending || updateRate.isPending}
+              loading={createRate.isPending}
             />
           </BottomSheet>
           <UndoBanner

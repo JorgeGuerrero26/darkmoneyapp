@@ -1,5 +1,15 @@
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
 import type { ExchangeRateRecord } from "../../../services/queries/exchange-rates";
+import { SUPPORTED_CURRENCY_CODES } from "../../../constants/currencies";
+
+export function getExchangeRateCurrencyOptions(rates: ExchangeRateRecord[]) {
+  const currencies = new Set<string>(SUPPORTED_CURRENCY_CODES);
+  for (const rate of rates) {
+    currencies.add(rate.fromCurrencyCode.toUpperCase());
+    currencies.add(rate.toCurrencyCode.toUpperCase());
+  }
+  return Array.from(currencies).sort();
+}
 
 export type ExchangeRateListSection = ResourceSection<ExchangeRateRecord, string>;
 export type ExchangeRateAdvancedFilter = "all" | "pinned" | "manual" | "synced" | "updated_today" | "stale";
