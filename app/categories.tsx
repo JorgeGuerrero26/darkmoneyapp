@@ -128,8 +128,8 @@ function CategoriesScreen() {
     return items;
   }, [kindFilter, originFilter, pinnedOnly, searchText, statusFilter]);
 
-  const extraFiltersCount = Number(statusFilter !== "active") + Number(originFilter !== "all") + Number(pinnedOnly);
-  const hasFilters = kindFilter.length > 0 || extraFiltersCount > 0 || Boolean(searchText.trim());
+  const filtersCount = kindFilter.length + Number(statusFilter !== "active") + Number(originFilter !== "all") + Number(pinnedOnly);
+  const hasFilters = filtersCount > 0 || Boolean(searchText.trim());
   const contextNote = buildCategoriesContextNote({
     visibleCount: filteredCategories.length,
     totalCount: categories.length,
@@ -323,15 +323,12 @@ function CategoriesScreen() {
       }
       toolbar={selectMode ? null : (
         <FilterToolbar
-          options={CATEGORY_FILTERS.filter((option) => option.value !== "pinned")}
-          selectedValues={kindFilter}
-          onSelectedValuesChange={setKindFilter}
-          allValue="all"
+          options={[]}
           searchValue={searchText}
           onSearchChange={setSearchText}
           extraAction={{
-            label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
-            active: extraFiltersCount > 0,
+            label: filtersCount > 0 ? `${filtersCount} filtros` : "Filtros",
+            active: filtersCount > 0,
             onPress: () => setFilterSheetOpen(true),
           }}
           searchPlaceholder="Buscar categorías..."
@@ -439,6 +436,7 @@ function CategoriesScreen() {
           <CategoryFilterSheet
             visible={filterSheetOpen}
             onClose={() => setFilterSheetOpen(false)}
+            kinds={kindFilter} onKindsChange={setKindFilter}
             status={statusFilter} onStatusChange={setStatusFilter}
             origin={originFilter} onOriginChange={setOriginFilter}
             pinnedOnly={pinnedOnly} onPinnedOnlyChange={setPinnedOnly}
