@@ -78,6 +78,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
       onClose={onClose}
       title={isEditing ? "Editar tipo" : "Nuevo tipo de gasto"}
       snapHeight={0.5}
+      entranceAnimation="springFade"
       footer={
         <View style={styles.footer}>
           {!name.trim() ? <Text style={styles.note}>Falta el nombre</Text> : null}

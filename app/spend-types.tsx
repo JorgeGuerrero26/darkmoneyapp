@@ -1,14 +1,21 @@
-import { useCallback, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Tag, Trash2 } from "lucide-react-native";
+import { MoreVertical } from "lucide-react-native";
 
+import { useQueryClient } from "@tanstack/react-query";
+import { FilterToolbar } from "../components/ui/FilterToolbar";
+import { ActiveFilterBar } from "../components/ui/ActiveFilterBar";
+import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
+import { EntityActionSheet } from "../components/ui/EntityActionSheet";
+import { SpendTypeSwipeRow } from "../features/spend-types/components/SpendTypeSwipeRow";
+import { SpendTypeDetailSheet } from "../features/spend-types/components/SpendTypeDetailSheet";
+import { SpendTypeFilterSheet } from "../features/spend-types/components/SpendTypeFilterSheet";
+import { buildSpendTypeSections, filterSpendTypes, SPEND_TYPE_STATUSES, type SpendTypeStatus } from "../features/spend-types/lib/spendTypeList";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
-import { ResourceCard } from "../components/ui/ResourceCard";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../components/ui/ResourceSectionList";
-import { SwipeActionRow } from "../components/ui/SwipeActionRow";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { FAB } from "../components/ui/FAB";
@@ -16,6 +23,7 @@ import { SpendTypeForm } from "../components/forms/SpendTypeForm";
 import {
   useCreateSpendTypeMutation,
   useDeleteSpendTypeMutation,
+  useUpdateSpendTypeMutation,
   useSpendTypesQuery,
   type SpendType,
 } from "../services/queries/spend-types";
@@ -25,9 +33,8 @@ import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { MetricSummaryBar } from "../components/ui/MetricSummaryBar";
 import { useWorkspaceSnapshotQuery } from "../services/queries/workspace-data";
-import { buildSpendTypesSummary } from "../features/spend-types/lib/spendTypesSummary";
 import { ClassifyCategoriesSheet } from "../features/spend-types/components/ClassifyCategoriesSheet";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../constants/theme";
 
 /** Los tres del modelo clásico. Se ofrecen; no se escriben sin que nadie los pida. */
 const STARTERS = [
@@ -51,6 +58,7 @@ type Section = ResourceSection<SpendType>;
  * por defecto.
  */
 function SpendTypesScreen() {
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/more" });
   const { profile } = useAuth();
@@ -63,7 +71,6 @@ function SpendTypesScreen() {
     () => (snapshot?.categories ?? []).filter((category) => category.kind !== "income"),
     [snapshot?.categories],
   );
-  const expenseCategories = gastoCategorias.length;
 
   /* El peso real de cada categoría, de lo que la app ya tiene cargado para sus analíticas.
      Sirve para poner delante lo que decide el resultado: cinco categorías se llevan el 90 %. */
@@ -76,48 +83,40 @@ function SpendTypesScreen() {
     }
     return totals;
   }, [snapshot?.categoryPostedMovements]);
-  const categoriesWithType = gastoCategorias.filter(
-    (category) => category.defaultSpendTypeId != null,
-  ).length;
   const createMutation = useCreateSpendTypeMutation(activeWorkspaceId, profile?.id);
   const deleteMutation = useDeleteSpendTypeMutation(activeWorkspaceId);
 
+  const updateMutation = useUpdateSpendTypeMutation(activeWorkspaceId);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<SpendTypeStatus>("active");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const creatingRef = useRef(false);
+  const [creatingStarters, setCreatingStarters] = useState(false);
+  const visibleTypes = useMemo(() => filterSpendTypes(spendTypes, search, status), [spendTypes, search, status]);
+  const detail = spendTypes.find((item) => item.id === detailId) ?? null;
+  const hasFilters = search.trim().length > 0 || status !== "active";
   const [formVisible, setFormVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<SpendType | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SpendType | null>(null);
   const [classifyOpen, setClassifyOpen] = useState(false);
 
-  const summary = useMemo(
-    () => buildSpendTypesSummary(spendTypes.length, categoriesWithType, expenseCategories),
-    [categoriesWithType, expenseCategories, spendTypes.length],
-  );
-
-  /** Cuántas categorías traen este tipo por defecto. Es lo que hace que el tipo sirva o no. */
-  const categoriasPorTipo = useCallback(
-    (spendTypeId: number) => {
-      const n = gastoCategorias.filter((category) => category.defaultSpendTypeId === spendTypeId).length;
-      return n === 1 ? "1 categoría" : `${n} categorías`;
-    },
-    [gastoCategorias],
-  );
-
-  const sections = useMemo<Section[]>(
-    () => (spendTypes.length > 0
-      ? [{ key: "all", label: "Tus tipos", data: spendTypes, headerVariant: "divider" as const }]
-      : []),
-    [spendTypes],
-  );
+  const sections = useMemo(() => buildSpendTypeSections(visibleTypes), [visibleTypes]);
 
   const createStarters = useCallback(async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true; setCreatingStarters(true);
     try {
       for (const [index, starter] of STARTERS.entries()) {
+        if (spendTypes.some((item) => item.name.toLocaleLowerCase() === starter.name.toLocaleLowerCase())) continue;
         await createMutation.mutateAsync({ ...starter, sortOrder: index });
       }
       showToast("Tipos de gasto creados", "success", "Necesidades, deseos y ahorros");
     } catch (error) {
       showErrorToast("No se pudieron crear los tipos de gasto", error);
-    }
-  }, [createMutation, showToast]);
+    } finally { creatingRef.current = false; setCreatingStarters(false); }
+  }, [createMutation, showToast, showErrorToast, spendTypes]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -134,76 +133,26 @@ function SpendTypesScreen() {
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
-      header={<ScreenHeader title="Tipos de gasto" onBack={handleBack} />}
-      summary={
-        spendTypes.length > 0 ? (
-          /* La cifra no es cuántos tipos hay —eso se ve contando las filas— sino cuánto de tu
-             gasto van a poder explicar: un tipo que ninguna categoría usa no clasifica nada. */
-          <MetricSummaryBar
-            label="Categorías con tipo"
-            value={`${summary.covered} de ${summary.total}`}
-            support={summary.support}
-            actions={[
-              {
-                key: "classify",
-                label:
-                  summary.covered === 0
-                    ? "Clasificar categorías"
-                    : summary.coverage < 1
-                      ? "Seguir clasificando"
-                      : "Revisar clasificación",
-                onPress: () => setClassifyOpen(true),
-              },
-            ]}
-            help={{
-              title: "¿Para qué sirve el tipo?",
-              description:
-                "La categoría dice en qué se fue la plata: Alimentación, Transporte. El tipo dice si hacía falta: necesidad, deseo, ahorro. Son dos preguntas distintas, y por eso la misma categoría puede cambiar de tipo — el mercado es necesidad y la cena del viernes no.",
-            }}
-            footnote={
-              summary.coverage < 1
-                ? "Ponle su tipo a cada categoría y el inicio podrá decirte cuánto de tu gasto es necesidad."
-                : undefined
-            }
-          />
-        ) : null
-      }
+      header={<ScreenHeader title="Tipos de gasto" onBack={handleBack} rightAction={<HeaderActionGroup actions={[{ key: "menu", icon: MoreVertical, accessibilityLabel: "Más acciones", onPress: () => setMenuOpen(true) }]} />} />}
+      toolbar={<FilterToolbar options={[]} searchValue={search} onSearchChange={setSearch} searchPlaceholder="Buscar tipos de gasto..."
+        extraAction={{ label: status !== "active" ? "1 filtro" : "Filtros", active: status !== "active", onPress: () => setFiltersOpen(true) }} />}
+      activeFilters={<ActiveFilterBar items={[
+        ...(search.trim() ? [{ key: "search", label: search.trim(), onRemove: () => setSearch("") }] : []),
+        ...(status !== "active" ? [{ key: "status", label: SPEND_TYPE_STATUSES.find((item) => item.value === status)?.label ?? "Estado", onRemove: () => setStatus("active") }] : []),
+      ]} onClear={() => { setSearch(""); setStatus("active"); }} />}
+      summary={spendTypes.length > 0 ? <MetricSummaryBar support={`${visibleTypes.length} tipos · ${gastoCategorias.filter((category) => visibleTypes.some((type) => type.id === category.defaultSpendTypeId)).length} categorías asignadas`} /> : null}
       list={
         <ResourceSectionList<SpendType, Section>
           sections={sections}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <SwipeActionRow
-              revealWidth={88}
-              borderRadius={0}
-              rightAction={{
-                label: "Eliminar",
-                icon: Trash2,
-                onPress: () => setDeleteTarget(item),
-                color: COLORS.danger,
-                backgroundColor: COLORS.danger + "30",
-                haptic: "warning",
-              }}
-            >
-              {() => (
-                /* Fila de lista de verdad: el mismo patrón que Categorías —ícono neutro en su
-                   recuadro, lo que hay dentro, y chevron porque lleva a algún sitio—. Era una
-                   línea con un punto de color y nada más: rompía el patrón y, encima, el punto
-                   usaba la paleta reservada para dinero. Un tipo se distingue por su nombre. */
-                <ResourceCard
-                  variant="row"
-                  title={item.name}
-                  subtitle={categoriasPorTipo(item.id)}
-                  leading={
-                    <View style={styles.iconWrap}>
-                      <Tag size={20} color={COLORS.storm} strokeWidth={2} />
-                    </View>
-                  }
-                  onPress={() => { setEditTarget(item); setFormVisible(true); }}
-                />
-              )}
-            </SwipeActionRow>
-          )}
+          renderItem={({ item }) => <SpendTypeSwipeRow item={item}
+            categoryCount={gastoCategorias.filter((category) => category.defaultSpendTypeId === item.id).length}
+            onPress={() => setDetailId(item.id)} onDelete={() => setDeleteTarget(item)} />}
+          contentContainerStyle={{ paddingHorizontal: 0 }}
+          onRefresh={async () => { await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["spend-types", activeWorkspaceId] }),
+            queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+          ]); }}
           loading={{
             isLoading,
             skeleton: (
@@ -214,24 +163,31 @@ function SpendTypesScreen() {
             ),
           }}
           empty={{
-            title: "Sin tipos de gasto",
-            description:
-              "La categoría dice en qué se fue la plata; el tipo dice si hacía falta. Con eso el inicio puede decirte cuánto de lo que gastas es necesidad y cuánto es gusto.",
-            action: { label: "Crear necesidades, deseos y ahorros", onPress: () => void createStarters() },
+            title: hasFilters ? "Sin resultados" : "Sin tipos de gasto",
+            description: hasFilters ? "Prueba otros filtros." : "Organiza tus gastos en necesidades, deseos o ahorros.",
+            action: hasFilters ? { label: "Limpiar filtros", onPress: () => { setSearch(""); setStatus("active"); } }
+              : creatingStarters ? undefined : { label: "Crear necesidades, deseos y ahorros", onPress: () => void createStarters() },
           }}
-          listFooterComponent={
-            spendTypes.length > 0 ? (
-              <Text style={styles.footnote}>
-                Cada categoría puede tener su tipo por defecto, y un movimiento suelto puede
-                cambiarlo cuando toque.
-              </Text>
-            ) : null
-          }
+          listFooterComponent={creatingStarters ? <Text style={styles.footnote}>Creando tipos de gasto...</Text> : null}
+
         />
       }
       fab={<FAB onPress={() => { setEditTarget(null); setFormVisible(true); }} bottom={insets.bottom + 16} />}
       overlays={
         <>
+          <SpendTypeDetailSheet item={detail} categoryCount={gastoCategorias.filter((item) => item.defaultSpendTypeId === detailId).length}
+            onClose={() => setDetailId(null)}
+            onEdit={() => { setEditTarget(detail); setDetailId(null); setFormVisible(true); }}
+            onClassify={() => { setDetailId(null); setClassifyOpen(true); }}
+            onDelete={() => { setDeleteTarget(detail); setDetailId(null); }}
+            onToggle={() => { if (detail) updateMutation.mutate({ id: detail.id, input: { isActive: !detail.isActive } }, {
+              onError: (error) => showErrorToast("No se pudo cambiar el estado", error),
+              onSuccess: () => showToast("Tipo de gasto actualizado", "success"),
+            }); }} togglePending={updateMutation.isPending} />
+          <SpendTypeFilterSheet visible={filtersOpen} onClose={() => setFiltersOpen(false)} status={status} onChange={setStatus} />
+          <EntityActionSheet visible={menuOpen} onClose={() => setMenuOpen(false)} sheetTitle="Más acciones" summaryTitle="Tipos de gasto"
+            actions={[{ key: "classify", label: "Clasificar categorías", variant: "secondary", disabled: spendTypes.length === 0,
+              onPress: () => { setMenuOpen(false); setClassifyOpen(true); } }]} />
           <SpendTypeForm
             visible={formVisible}
             onClose={() => { setFormVisible(false); setEditTarget(null); }}
@@ -265,14 +221,6 @@ function SpendTypesScreen() {
 }
 
 const styles = StyleSheet.create({
-  iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.lg,
-    backgroundColor: SURFACE.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   footnote: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,

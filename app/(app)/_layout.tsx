@@ -90,6 +90,7 @@ const HIDDEN_ROUTES = [
   "recurring-income",
   "categories",
   "exchange-rates",
+  "spend-types",
   "settings",
   "profile",
   "about",

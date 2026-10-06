@@ -139,7 +139,7 @@ export default function MoreScreen() {
           subtitle: spendTypeCount > 0
             ? `${spendTypeCount} tipo${spendTypeCount === 1 ? "" : "s"}`
             : "Necesidades, deseos, ahorros",
-          route: "/spend-types?from=more",
+          route: "/(app)/spend-types?from=more",
         },
         {
           title: "Tipos de cambio",
