@@ -2,37 +2,31 @@ import { Power, Trash2 } from "lucide-react-native";
 
 import { CategoryCard } from "../../../components/domain/CategoryCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
-import { COLORS, RADIUS } from "../../../constants/theme";
+import { COLORS } from "../../../constants/theme";
 import type { CategoryOverview } from "../../../types/domain";
 
 type Props = {
   category: CategoryOverview;
-  color: string;
   kindLabel: string;
   canDelete: boolean;
   toggleDisabled?: boolean;
   onPress: () => void;
   onToggle: () => void;
-  onAnalytics: () => void;
   onDelete: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
   selectMode?: boolean;
 };
 
 export function CategorySwipeRow({
   category,
-  color,
   kindLabel,
   canDelete,
   toggleDisabled,
   onPress,
   onToggle,
-  onAnalytics,
   onDelete,
   onLongPress,
-  onTogglePin,
   selected = false,
   selectMode = false,
 }: Props) {
@@ -42,11 +36,9 @@ export function CategorySwipeRow({
     return (
       <CategoryCard
         category={category}
-        color={color}
         kindLabel={kindLabel}
         onPress={onPress}
         onLongPress={onLongPress}
-        onAnalytics={onAnalytics}
         selected={selected}
       />
     );
@@ -75,7 +67,6 @@ export function CategorySwipeRow({
       {({ close, isOpen }) => (
         <CategoryCard
           category={category}
-          color={color}
           kindLabel={kindLabel}
           onPress={() => {
             if (isOpen()) {
@@ -85,7 +76,6 @@ export function CategorySwipeRow({
             onPress();
           }}
           onLongPress={onLongPress}
-          onAnalytics={onAnalytics}
         />
       )}
     </SwipeActionRow>

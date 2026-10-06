@@ -18,6 +18,7 @@ import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate"
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
+import { CategoryDetailSheet } from "../features/categories/components/CategoryDetailSheet";
 import { CategoryForm } from "../components/forms/CategoryForm";
 import { CategoryAnalyticsModal } from "../components/domain/CategoryAnalyticsModal";
 import { CategoryFilterSheet } from "../features/categories/components/CategoryFilterSheet";
@@ -33,6 +34,7 @@ import {
   type CategoryListSection,
 } from "../features/categories/lib/categoryFilters";
 import { buildCategoriesContextNote } from "../features/categories/lib/buildCategoriesContextNote";
+import { useSpendTypesQuery } from "../services/queries/spend-types";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { buildCategoriesCsv } from "../lib/categories-csv";
@@ -44,16 +46,9 @@ import {
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
 import { useToggleCategoryPinMutation } from "../services/queries/categories-counterparties";
-import { COLORS } from "../constants/theme";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { CategoryOverview } from "../types/domain";
-
-const KIND_COLORS = {
-  expense: COLORS.expense,
-  income: COLORS.income,
-  both: COLORS.primary,
-} as const;
 
 function CategoriesScreen() {
   const insets = useSafeAreaInsets();
@@ -65,16 +60,18 @@ function CategoriesScreen() {
 
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: overviewList = [], isLoading } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
   const toggleMutation = useToggleCategoryMutation(activeWorkspaceId);
   const deleteMutation = useDeleteCategoryMutation(activeWorkspaceId);
   const togglePinMutation = useToggleCategoryPinMutation(activeWorkspaceId);
 
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editCategory, setEditCategory] = useState<CategoryOverview | null>(null);
   const [analyticsTarget, setAnalyticsTarget] = useState<CategoryOverview | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
-  const [kindFilter, setKindFilter] = useState<CategoryFilter>("all");
+  const [kindFilter, setKindFilter] = useState<CategoryFilter[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
@@ -100,16 +97,13 @@ function CategoriesScreen() {
     setSelectedIds(new Set());
   }, []);
 
-  useEffect(() => {
-    if (selectMode && selectedIds.size === 0) {
-      setSelectMode(false);
-    }
-  }, [selectMode, selectedIds.size]);
+
 
   const categories = useMemo(
     () => overviewList.filter((category) => !pendingDeleteIds.has(category.id)),
     [overviewList, pendingDeleteIds],
   );
+  const detail = categories.find((item) => item.id === detailId) ?? null;
   const filteredCategories = useMemo(
     () => filterCategories(categories, kindFilter, searchText, showInactive),
     [categories, kindFilter, searchText, showInactive],
@@ -126,12 +120,9 @@ function CategoriesScreen() {
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = [];
-    if (kindFilter !== "all") {
-      items.push({
-        key: "kind",
-        label: CATEGORY_FILTERS.find((filter) => filter.value === kindFilter)?.label ?? "Tipo",
-        onRemove: () => setKindFilter("all"),
-      });
+    for (const filter of kindFilter) {
+      items.push({ key: filter, label: CATEGORY_FILTERS.find((item) => item.value === filter)?.label ?? "Tipo",
+        onRemove: () => setKindFilter((prev) => prev.filter((item) => item !== filter)) });
     }
     if (showInactive) {
       items.push({
@@ -151,7 +142,7 @@ function CategoriesScreen() {
   }, [kindFilter, searchText, showInactive]);
 
   const extraFiltersCount = showInactive ? 1 : 0;
-  const hasFilters = kindFilter !== "all" || showInactive || Boolean(searchText.trim());
+  const hasFilters = kindFilter.length > 0 || showInactive || Boolean(searchText.trim());
   const contextNote = buildCategoriesContextNote({
     visibleCount: filteredCategories.length,
     totalCount: categories.length,
@@ -179,7 +170,7 @@ function CategoriesScreen() {
   }, [activeWorkspaceId, queryClient]);
 
   const clearFilters = useCallback(() => {
-    setKindFilter("all");
+    setKindFilter([]);
     setShowInactive(false);
     setSearchText("");
   }, []);
@@ -300,14 +291,12 @@ function CategoriesScreen() {
   }, [exitSelectMode, overviewList, selectedItems, showToast, startUndoDelete]);
 
   const renderCategory: SectionListRenderItem<CategoryOverview, CategoryListSection> = useCallback(({ item }) => {
-    const color = item.color ?? KIND_COLORS[item.kind] ?? COLORS.primary;
     const kindLabel = CATEGORY_KIND_LABELS[item.kind] ?? item.kind;
     const canDelete = categoryCanDelete(item, overviewList);
 
     return (
       <CategorySwipeRow
         category={item}
-        color={color}
         kindLabel={kindLabel}
         canDelete={canDelete}
         toggleDisabled={toggleMutation.isPending}
@@ -316,17 +305,14 @@ function CategoriesScreen() {
             toggleSelect(item.id);
             return;
           }
-          if (item.isSystem) setAnalyticsTarget(item);
-          else setEditCategory(item);
+          setDetailId(item.id);
         }}
         onLongPress={() => {
           if (!selectMode) setSelectMode(true);
           toggleSelect(item.id);
         }}
         onToggle={() => handleToggleActive(item)}
-        onAnalytics={() => setAnalyticsTarget(item)}
         onDelete={() => startUndoDelete(item)}
-        onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
         selected={selectedIds.has(item.id)}
         selectMode={selectMode}
       />
@@ -359,8 +345,9 @@ function CategoriesScreen() {
       toolbar={selectMode ? null : (
         <FilterToolbar
           options={CATEGORY_FILTERS}
-          value={kindFilter}
-          onChange={setKindFilter}
+          selectedValues={kindFilter}
+          onSelectedValuesChange={setKindFilter}
+          allValue="all"
           searchValue={searchText}
           onSearchChange={setSearchText}
           extraAction={{
@@ -372,7 +359,7 @@ function CategoriesScreen() {
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={!selectMode && categories.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={!selectMode && hasFilters && categories.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
         !selectMode && filteredCategories.length > 0 ? (
           <CategorySummaryBar
@@ -441,12 +428,23 @@ function CategoriesScreen() {
               : "Crea tu primera categoría con el botón +",
             action: !hasFilters ? { label: "Nueva categoría", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
+          contentContainerStyle={{ paddingHorizontal: 0 }}
           onRefresh={onRefresh}
         />
       }
       fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
+          <CategoryDetailSheet category={detail}
+            onClose={() => setDetailId(null)}
+            onEdit={() => { const item = detail; setDetailId(null); if (item) setEditCategory(item); }}
+            onAnalytics={() => { const item = detail; setDetailId(null); if (item) setAnalyticsTarget(item); }}
+            onToggle={() => { const item = detail; if (item) handleToggleActive(item); }}
+            onPin={() => { const item = detail; if (item) handleTogglePin(item); }}
+            onDelete={() => { const item = detail; setDetailId(null); if (item && categoryCanDelete(item, overviewList)) startUndoDelete(item); }}
+            canDelete={Boolean(detail && categoryCanDelete(detail, overviewList))}
+            spendTypeName={spendTypes.find((type) => type.id === detail?.defaultSpendTypeId)?.name}
+            togglePending={toggleMutation.isPending} pinPending={togglePinMutation.isPending} />
           <EntityActionSheet
             visible={menuOpen}
             onClose={() => setMenuOpen(false)}

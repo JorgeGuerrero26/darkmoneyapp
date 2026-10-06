@@ -2,7 +2,7 @@ import type { ResourceSection } from "../../../components/ui/ResourceSectionList
 import type { CategoryKind, CategoryOverview } from "../../../types/domain";
 
 export type CategoryFilter = "all" | "pinned" | CategoryKind;
-export type CategoryListSection = ResourceSection<CategoryOverview, "pinned" | "custom" | "system" | "unused">;
+export type CategoryListSection = ResourceSection<CategoryOverview, CategoryKind | "inactive">;
 
 export const CATEGORY_FILTERS: Array<{ label: string; value: CategoryFilter }> = [
   { label: "Todas", value: "all" },
@@ -26,16 +26,18 @@ export function categoryCanDelete(category: CategoryOverview, allCategories: Cat
 
 export function filterCategories(
   categories: CategoryOverview[],
-  kindFilter: CategoryFilter,
+  kindFilter: CategoryFilter | CategoryFilter[],
   searchText: string,
   showInactive: boolean,
 ) {
   const query = searchText.trim().toLowerCase();
-  const pinnedOnly = kindFilter === "pinned";
+  const filters = Array.isArray(kindFilter) ? kindFilter : [kindFilter];
+  const pinnedOnly = filters.includes("pinned");
+  const kinds = filters.filter((filter) => filter !== "all" && filter !== "pinned");
 
   return categories.filter((category) => {
     if (pinnedOnly && !category.isPinned) return false;
-    if (kindFilter !== "all" && kindFilter !== "pinned" && category.kind !== kindFilter) return false;
+    if (kinds.length > 0 && !kinds.includes(category.kind)) return false;
     if (!showInactive && !category.isActive) return false;
 
     if (!query) return true;
@@ -47,45 +49,17 @@ export function filterCategories(
 }
 
 export function buildCategorySections(categories: CategoryOverview[]): CategoryListSection[] {
-  // Más usada primero. Con el mismo uso, se conserva el orden que traía (alfabético), así el
-  // resultado es estable entre renders en vez de bailar.
-  const porUso = (a: CategoryOverview, b: CategoryOverview) => b.movementCount - a.movementCount;
-  const sinUso = (category: CategoryOverview) => category.movementCount === 0;
-
-  const pinned = categories.filter((category) => category.isPinned).sort(porUso);
-  const rest = categories.filter((category) => !category.isPinned);
-  const custom = rest.filter((category) => !category.isSystem && !sinUso(category)).sort(porUso);
-  const system = rest.filter((category) => category.isSystem && !sinUso(category)).sort(porUso);
-  // Las que no usas, juntas al final: no compiten con las que sí, y son las que vas a revisar.
-  const unused = rest.filter(sinUso);
-  const hasPinned = pinned.length > 0;
-  const visibleGroups = [custom, system].filter((group) => group.length > 0).length;
-  const sectionsBeforeOk = hasPinned;
-
-  return [
-    ...(hasPinned ? [{
-      key: "pinned" as const,
-      label: `Fijadas (${pinned.length})`,
-      data: pinned,
-      headerVariant: "default" as const,
-    }] : []),
-    ...(custom.length > 0 ? [{
-      key: "custom" as const,
-      label: `Personalizadas (${custom.length})`,
-      data: custom,
-      headerVariant: sectionsBeforeOk || visibleGroups > 1 ? "default" as const : "hidden" as const,
-    }] : []),
-    ...(system.length > 0 ? [{
-      key: "system" as const,
-      label: `Del sistema (${system.length})`,
-      data: system,
-      headerVariant: "divider" as const,
-    }] : []),
-    ...(unused.length > 0 ? [{
-      key: "unused" as const,
-      label: `Sin movimientos (${unused.length})`,
-      data: unused,
-      headerVariant: "divider" as const,
-    }] : []),
+  const groups: Array<{key: CategoryKind | "inactive"; label: string; data: CategoryOverview[]}> = [
+    ...(["expense", "income", "both"] as const).map((kind) => ({
+      key: kind, label: kind === "expense" ? "Gastos" : kind === "income" ? "Ingresos" : "Mixtas",
+      data: categories.filter((item) => item.isActive && item.kind === kind),
+    })),
+    { key: "inactive", label: "Inactivas", data: categories.filter((item) => !item.isActive) },
   ];
+  return groups.filter((group) => group.data.length > 0).map((group) => ({
+    ...group,
+    trailing: String(group.data.length),
+    data: [...group.data].sort((a, b) => Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) || b.movementCount - a.movementCount || a.name.localeCompare(b.name)),
+    headerVariant: "divider",
+  }));
 }

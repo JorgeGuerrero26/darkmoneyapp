@@ -17,7 +17,7 @@ export function CategoryFilterSheet({
   onShowInactiveChange,
 }: Props) {
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Filtros" snapHeight={0.42}>
+    <BottomSheet visible={visible} onClose={onClose} title="Filtros" entranceAnimation="springFade" snapHeight={0.42}>
       <View style={styles.content}>
         <Text style={styles.sectionLabel}>Estado</Text>
         <View style={styles.switchRow}>
@@ -28,7 +28,7 @@ export function CategoryFilterSheet({
           <Switch
             value={showInactive}
             onValueChange={onShowInactiveChange}
-            trackColor={{ false: COLORS.border, true: COLORS.primary }}
+            trackColor={{ false: COLORS.border, true: COLORS.storm }}
             thumbColor={EXTENDED_PALETTE.white}
           />
         </View>
@@ -83,11 +83,11 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.ink,
   },
   applyBtnText: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.textInverse,
+    color: COLORS.bg,
   },
 });
