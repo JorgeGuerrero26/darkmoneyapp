@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import type { SectionListRenderItem } from "react-native";
 import { CheckSquare, Download, MoreVertical, Power, Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,9 +19,7 @@ import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate"
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
-import { CategoryDetailSheet } from "../features/categories/components/CategoryDetailSheet";
 import { CategoryForm } from "../components/forms/CategoryForm";
-import { CategoryAnalyticsModal } from "../components/domain/CategoryAnalyticsModal";
 import { CategoryFilterSheet } from "../features/categories/components/CategoryFilterSheet";
 import { CategorySummaryBar } from "../features/categories/components/CategorySummaryBar";
 import { CategorySwipeRow } from "../features/categories/components/CategorySwipeRow";
@@ -31,10 +30,11 @@ import {
   CATEGORY_KIND_LABELS,
   filterCategories,
   type CategoryFilter,
+  type CategoryStatusFilter,
+  type CategoryOriginFilter,
   type CategoryListSection,
 } from "../features/categories/lib/categoryFilters";
 import { buildCategoriesContextNote } from "../features/categories/lib/buildCategoriesContextNote";
-import { useSpendTypesQuery } from "../services/queries/spend-types";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { buildCategoriesCsv } from "../lib/categories-csv";
@@ -43,14 +43,13 @@ import {
   useCategoriesOverviewQuery,
   useDeleteCategoryMutation,
   useToggleCategoryMutation,
-  useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
-import { useToggleCategoryPinMutation } from "../services/queries/categories-counterparties";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { CategoryOverview } from "../types/domain";
 
 function CategoriesScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation();
   const queryClient = useQueryClient();
@@ -58,21 +57,18 @@ function CategoriesScreen() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast, showErrorToast } = useToast();
 
-  const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
-  const { data: overviewList = [], isLoading } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
-  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
+  const { data: overviewList = [], isLoading, isError } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
+  const hasLoadError = isError && overviewList.length === 0;
   const toggleMutation = useToggleCategoryMutation(activeWorkspaceId);
   const deleteMutation = useDeleteCategoryMutation(activeWorkspaceId);
-  const togglePinMutation = useToggleCategoryPinMutation(activeWorkspaceId);
 
-  const [detailId, setDetailId] = useState<number | null>(null);
   const [createFormVisible, setCreateFormVisible] = useState(false);
-  const [editCategory, setEditCategory] = useState<CategoryOverview | null>(null);
-  const [analyticsTarget, setAnalyticsTarget] = useState<CategoryOverview | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [kindFilter, setKindFilter] = useState<CategoryFilter[]>([]);
-  const [showInactive, setShowInactive] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<CategoryStatusFilter>("active");
+  const [originFilter, setOriginFilter] = useState<CategoryOriginFilter>("all");
+  const [pinnedOnly, setPinnedOnly] = useState(false);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
@@ -97,20 +93,15 @@ function CategoriesScreen() {
     setSelectedIds(new Set());
   }, []);
 
-
-
   const categories = useMemo(
     () => overviewList.filter((category) => !pendingDeleteIds.has(category.id)),
     [overviewList, pendingDeleteIds],
   );
-  const detail = categories.find((item) => item.id === detailId) ?? null;
   const filteredCategories = useMemo(
-    () => filterCategories(categories, kindFilter, searchText, showInactive),
-    [categories, kindFilter, searchText, showInactive],
+    () => filterCategories(categories, [...kindFilter, ...(pinnedOnly ? ["pinned" as const] : [])], searchText, statusFilter, originFilter),
+    [categories, kindFilter, pinnedOnly, searchText, statusFilter, originFilter],
   );
   const sections = useMemo(() => buildCategorySections(filteredCategories), [filteredCategories]);
-  const categoryPostedMovements = snapshot?.categoryPostedMovements ?? [];
-  const baseCurrencyCode = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
 
   const summary = useMemo(() => ({
     totalCount: filteredCategories.length,
@@ -124,13 +115,9 @@ function CategoriesScreen() {
       items.push({ key: filter, label: CATEGORY_FILTERS.find((item) => item.value === filter)?.label ?? "Tipo",
         onRemove: () => setKindFilter((prev) => prev.filter((item) => item !== filter)) });
     }
-    if (showInactive) {
-      items.push({
-        key: "inactive",
-        label: "Inactivas visibles",
-        onRemove: () => setShowInactive(false),
-      });
-    }
+    if (statusFilter !== "active") items.push({ key: "status", label: statusFilter === "all" ? "Todos los estados" : "Inactivas", onRemove: () => setStatusFilter("active") });
+    if (originFilter !== "all") items.push({ key: "origin", label: originFilter === "system" ? "Del sistema" : "Personalizadas", onRemove: () => setOriginFilter("all") });
+    if (pinnedOnly) items.push({ key: "pinned", label: "Fijadas", onRemove: () => setPinnedOnly(false) });
     if (searchText.trim()) {
       items.push({
         key: "search",
@@ -139,10 +126,10 @@ function CategoriesScreen() {
       });
     }
     return items;
-  }, [kindFilter, searchText, showInactive]);
+  }, [kindFilter, originFilter, pinnedOnly, searchText, statusFilter]);
 
-  const extraFiltersCount = showInactive ? 1 : 0;
-  const hasFilters = kindFilter.length > 0 || showInactive || Boolean(searchText.trim());
+  const extraFiltersCount = Number(statusFilter !== "active") + Number(originFilter !== "all") + Number(pinnedOnly);
+  const hasFilters = kindFilter.length > 0 || extraFiltersCount > 0 || Boolean(searchText.trim());
   const contextNote = buildCategoriesContextNote({
     visibleCount: filteredCategories.length,
     totalCount: categories.length,
@@ -171,7 +158,9 @@ function CategoriesScreen() {
 
   const clearFilters = useCallback(() => {
     setKindFilter([]);
-    setShowInactive(false);
+    setStatusFilter("active");
+    setOriginFilter("all");
+    setPinnedOnly(false);
     setSearchText("");
   }, []);
 
@@ -212,16 +201,6 @@ function CategoriesScreen() {
       return next;
     });
   }, []);
-
-  const handleTogglePin = useCallback((category: CategoryOverview) => {
-    togglePinMutation.mutate(
-      { id: category.id, isPinned: !category.isPinned },
-      {
-        onError: (err) =>
-          showErrorToast(category.isPinned ? "No se pudo desfijar la categoría" : "No se pudo fijar la categoría", err),
-      },
-    );
-  }, [showErrorToast, togglePinMutation]);
 
   const handleToggleActive = useCallback((category: CategoryOverview) => {
     if (category.isSystem) return;
@@ -305,7 +284,7 @@ function CategoriesScreen() {
             toggleSelect(item.id);
             return;
           }
-          setDetailId(item.id);
+          router.push(`/category/${item.id}?from=categories`);
         }}
         onLongPress={() => {
           if (!selectMode) setSelectMode(true);
@@ -317,7 +296,7 @@ function CategoriesScreen() {
         selectMode={selectMode}
       />
     );
-  }, [handleToggleActive, handleTogglePin, overviewList, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
+  }, [handleToggleActive, router, overviewList, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -344,7 +323,7 @@ function CategoriesScreen() {
       }
       toolbar={selectMode ? null : (
         <FilterToolbar
-          options={CATEGORY_FILTERS}
+          options={CATEGORY_FILTERS.filter((option) => option.value !== "pinned")}
           selectedValues={kindFilter}
           onSelectedValuesChange={setKindFilter}
           allValue="all"
@@ -422,11 +401,11 @@ function CategoriesScreen() {
             ),
           }}
           empty={{
-            title: hasFilters ? "Sin resultados" : "Sin categorías",
-            description: hasFilters
+            title: hasLoadError ? "No se pudieron cargar las categorías" : hasFilters ? "Sin resultados" : "Sin categorías",
+            description: hasLoadError ? "Vuelve a intentarlo para cargar tu lista." : hasFilters
               ? "Prueba otros filtros o activa inactivas."
               : "Crea tu primera categoría con el botón +",
-            action: !hasFilters ? { label: "Nueva categoría", onPress: () => setCreateFormVisible(true) } : undefined,
+            action: hasLoadError ? { label: "Reintentar", onPress: () => void onRefresh() } : !hasFilters ? { label: "Nueva categoría", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
           contentContainerStyle={{ paddingHorizontal: 0 }}
           onRefresh={onRefresh}
@@ -435,16 +414,6 @@ function CategoriesScreen() {
       fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
-          <CategoryDetailSheet category={detail}
-            onClose={() => setDetailId(null)}
-            onEdit={() => { const item = detail; setDetailId(null); if (item) setEditCategory(item); }}
-            onAnalytics={() => { const item = detail; setDetailId(null); if (item) setAnalyticsTarget(item); }}
-            onToggle={() => { const item = detail; if (item) handleToggleActive(item); }}
-            onPin={() => { const item = detail; if (item) handleTogglePin(item); }}
-            onDelete={() => { const item = detail; setDetailId(null); if (item && categoryCanDelete(item, overviewList)) startUndoDelete(item); }}
-            canDelete={Boolean(detail && categoryCanDelete(detail, overviewList))}
-            spendTypeName={spendTypes.find((type) => type.id === detail?.defaultSpendTypeId)?.name}
-            togglePending={toggleMutation.isPending} pinPending={togglePinMutation.isPending} />
           <EntityActionSheet
             visible={menuOpen}
             onClose={() => setMenuOpen(false)}
@@ -470,19 +439,15 @@ function CategoriesScreen() {
           <CategoryFilterSheet
             visible={filterSheetOpen}
             onClose={() => setFilterSheetOpen(false)}
-            showInactive={showInactive}
-            onShowInactiveChange={setShowInactive}
+            status={statusFilter} onStatusChange={setStatusFilter}
+            origin={originFilter} onOriginChange={setOriginFilter}
+            pinnedOnly={pinnedOnly} onPinnedOnlyChange={setPinnedOnly}
+            onClear={clearFilters}
           />
           <CategoryForm
             visible={createFormVisible}
             onClose={() => setCreateFormVisible(false)}
             onSuccess={() => setCreateFormVisible(false)}
-          />
-          <CategoryForm
-            visible={Boolean(editCategory)}
-            onClose={() => setEditCategory(null)}
-            onSuccess={() => setEditCategory(null)}
-            editCategory={editCategory ?? undefined}
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
@@ -499,14 +464,7 @@ function CategoriesScreen() {
             durationMs={5000}
             bottomOffset={insets.bottom + 80}
           />
-          <CategoryAnalyticsModal
-            historyError={snapshot?.catalogHistoryErrors?.categories}
-            visible={Boolean(analyticsTarget)}
-            onClose={() => setAnalyticsTarget(null)}
-            category={analyticsTarget}
-            movements={categoryPostedMovements}
-            baseCurrencyCode={baseCurrencyCode}
-          />
+
         </>
       }
     />

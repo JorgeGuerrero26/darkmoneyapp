@@ -28,3 +28,16 @@ it("protege categorías del sistema o con registros y subcategorías", () => {
   expect(categoryCanDelete(category(1), [category(2, { parentId: 1 })])).toBe(false);
   expect(categoryCanDelete(category(1), [])).toBe(true);
 });
+
+it("combina estado, origen y fijadas sin confundir inactivas con todas", () => {
+  const input = [
+    category(1, { isSystem: true, isPinned: true }),
+    category(2, { isSystem: true, isPinned: true, isActive: false }),
+    category(3, { isPinned: true, isActive: false }),
+    category(4, { isActive: false }),
+  ];
+  expect(filterCategories(input, ["pinned"], "", "inactive", "system").map((item) => item.id)).toEqual([2]);
+  expect(filterCategories(input, [], "", "inactive", "custom").map((item) => item.id)).toEqual([3, 4]);
+  expect(filterCategories(input, [], "", "active", "custom")).toEqual([]);
+  expect(filterCategories(input, [], "", "all", "system").map((item) => item.id)).toEqual([1, 2]);
+});

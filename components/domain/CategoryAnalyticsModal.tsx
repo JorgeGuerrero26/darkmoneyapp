@@ -7,16 +7,17 @@ import { buildCategoryAnalytics } from "../../features/categories/lib/category-a
 import { formatCurrency } from "../ui/AmountDisplay";
 import { BottomSheet } from "../ui/BottomSheet";
 import { AnalyticsRow } from "../ui/AnalyticsRow";
+import { SkeletonCard, SkeletonList } from "../ui/Skeleton";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 
-type Props = { visible: boolean; onClose: () => void; category: CategoryOverview | null; movements: CategoryPostedMovement[]; baseCurrencyCode: string; historyError?: string };
+type Props = { visible: boolean; onClose: () => void; category: CategoryOverview | null; movements: CategoryPostedMovement[]; baseCurrencyCode: string; historyError?: string; loading?: boolean };
 const monthLabel = (ym: string) => { const [year, month] = ym.split("-").map(Number); return format(new Date(year, month - 1, 1), "MMM yy", { locale: es }); };
 
-export function CategoryAnalyticsModal({ visible, onClose, category, movements, baseCurrencyCode, historyError }: Props) {
+export function CategoryAnalyticsModal({ visible, onClose, category, movements, baseCurrencyCode, historyError, loading = false }: Props) {
   const analytics = useMemo(() => category ? buildCategoryAnalytics(movements, category.id, baseCurrencyCode) : null, [category, movements, baseCurrencyCode]);
   if (!category || !analytics) return null;
   return <BottomSheet visible={visible} onClose={onClose} title={`Analítica · ${category.name}`} snapHeight={0.9} entranceAnimation="springFade" contentStyle={styles.body}>
-    {historyError ? <Text style={styles.note}>{historyError} Actualiza la lista para volver a intentarlo.</Text> : <>
+    {loading ? <SkeletonList><SkeletonCard /><SkeletonCard /></SkeletonList> : historyError ? <Text style={styles.note}>{historyError} Actualiza la lista para volver a intentarlo.</Text> : <>
       <View style={styles.section}>
         <Text style={styles.note}>Actividad de los últimos 12 meses</Text>
         <Text style={styles.amount}>{formatCurrency(analytics.totalLast12, baseCurrencyCode)}</Text>

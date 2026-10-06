@@ -2,6 +2,8 @@ import type { ResourceSection } from "../../../components/ui/ResourceSectionList
 import type { CategoryKind, CategoryOverview } from "../../../types/domain";
 
 export type CategoryFilter = "all" | "pinned" | CategoryKind;
+export type CategoryStatusFilter = "active" | "inactive" | "all";
+export type CategoryOriginFilter = "all" | "custom" | "system";
 export type CategoryListSection = ResourceSection<CategoryOverview, CategoryKind | "inactive">;
 
 export const CATEGORY_FILTERS: Array<{ label: string; value: CategoryFilter }> = [
@@ -28,17 +30,20 @@ export function filterCategories(
   categories: CategoryOverview[],
   kindFilter: CategoryFilter | CategoryFilter[],
   searchText: string,
-  showInactive: boolean,
+  status: boolean | CategoryStatusFilter,
+  origin: CategoryOriginFilter = "all",
 ) {
   const query = searchText.trim().toLowerCase();
   const filters = Array.isArray(kindFilter) ? kindFilter : [kindFilter];
   const pinnedOnly = filters.includes("pinned");
   const kinds = filters.filter((filter) => filter !== "all" && filter !== "pinned");
+  const resolvedStatus = typeof status === "boolean" ? status ? "all" : "active" : status;
 
   return categories.filter((category) => {
     if (pinnedOnly && !category.isPinned) return false;
     if (kinds.length > 0 && !kinds.includes(category.kind)) return false;
-    if (!showInactive && !category.isActive) return false;
+    if (resolvedStatus !== "all" && category.isActive !== (resolvedStatus === "active")) return false;
+    if (origin !== "all" && category.isSystem !== (origin === "system")) return false;
 
     if (!query) return true;
     return (

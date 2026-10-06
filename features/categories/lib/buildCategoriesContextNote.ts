@@ -12,5 +12,5 @@ export function buildCategoriesContextNote({
   if (hasFilters) {
     return `Mostrando ${visibleCount} de ${totalCount} categorías.`;
   }
-  return "Toca una categoría para editarla. Desliza para activar, desactivar o eliminar cuando aplique.";
+  return "Toca una categoría para ver su detalle. Desliza para activar, desactivar o eliminar cuando aplique.";
 }
