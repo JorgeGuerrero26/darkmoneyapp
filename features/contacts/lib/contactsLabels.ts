@@ -3,6 +3,24 @@ import type { CounterpartyType } from "../../../types/domain";
 
 export type ActiveContactFilter = CounterpartyType | "pinned";
 export type ContactTypeFilter = ActiveContactFilter | "all";
+export type ContactStatusFilter = "active" | "archived" | "all";
+
+export const CONTACT_STATUS_LABELS: Record<ContactStatusFilter, string> = {
+  active: "Activos",
+  archived: "Archivados",
+  all: "Todos",
+};
+
+export const CONTACT_TYPE_ORDER: CounterpartyType[] = ["person", "company", "merchant", "service", "bank", "other"];
+
+export const CONTACT_GROUP_LABELS: Record<CounterpartyType, string> = {
+  person: "Personas",
+  company: "Empresas",
+  merchant: "Comercios",
+  service: "Servicios",
+  bank: "Bancos",
+  other: "Otros",
+};
 
 export const TYPE_FILTERS: { label: string; value: ContactTypeFilter }[] = [
   { label: "Todos", value: "all" },

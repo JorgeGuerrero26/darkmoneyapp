@@ -3,7 +3,7 @@ import type { SectionListRenderItem } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Archive, CheckSquare, Download, Trash2 } from "lucide-react-native";
+import { Archive, CheckSquare, Download, MoreVertical, Trash2, Users } from "lucide-react-native";
 import { format } from "date-fns";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
@@ -13,14 +13,13 @@ import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
-import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
-import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
+import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { UndoBanner } from "../../components/ui/UndoBanner";
-import { ContactCard, type ContactMetrics } from "../../components/domain/ContactCard";
+import { ContactCard } from "../../components/domain/ContactCard";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { useAuth } from "../../lib/auth-context";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
@@ -28,24 +27,25 @@ import { useWorkspace } from "../../lib/workspace-context";
 import {
   useWorkspaceSnapshotQuery,
   useDeleteCounterpartyMutation,
-  useToggleCounterpartyPinMutation,
   useUpdateCounterpartyMutation,
 } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
-import { COLORS } from "../../constants/theme";
 import type { CounterpartyOverview } from "../../types/domain";
 import {
   TYPE_FILTERS,
+  CONTACT_STATUS_LABELS,
+  type ContactStatusFilter,
   type ActiveContactFilter,
   type ContactTypeFilter,
 } from "../../features/contacts/lib/contactsLabels";
 import { buildContactCSV } from "../../features/contacts/lib/contactsCsv";
 import { applyContactFilter } from "../../features/contacts/lib/contactsFilter";
 import { buildContactMetricsById, contactHasOpenBalance } from "../../features/contacts/lib/contactMetrics";
-import { buildContactsContextNote } from "../../features/contacts/lib/contactsContextNote";
-
-type ContactListSection = ResourceSection<CounterpartyOverview, "pinned" | "with-balance" | "active" | "archived">;
+import { buildContactSections, type ContactListSection } from "../../features/contacts/lib/buildContactSections";
+import { ContactFilterSheet } from "../../features/contacts/components/ContactFilterSheet";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 function ContactsScreen() {
   const insets = useSafeAreaInsets();
@@ -58,13 +58,14 @@ function ContactsScreen() {
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
   const deleteMutation = useDeleteCounterpartyMutation(activeWorkspaceId);
-  const togglePinMutation = useToggleCounterpartyPinMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CounterpartyOverview | null>(null);
   const [searchText, setSearchText] = useState("");
   const [contactFilters, setContactFilters] = useState<ActiveContactFilter[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<ContactStatusFilter>("active");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Bulk selection
   const [selectMode, setSelectMode] = useState(false);
@@ -85,12 +86,6 @@ function ContactsScreen() {
     setSelectMode(false);
     setSelectedIds(new Set());
   }, []);
-
-  useEffect(() => {
-    if (selectMode && selectedIds.size === 0) {
-      setSelectMode(false);
-    }
-  }, [selectMode, selectedIds.size]);
 
   // Undo-delete: contactos ocultos pendientes de eliminación real
   const UNDO_DELETE_MS = 5000;
@@ -172,63 +167,16 @@ function ContactsScreen() {
     const filtered = applyContactFilter(counterparties, {
       search: searchText,
       filters: contactFilters,
-      showArchived,
+      status: statusFilter,
     });
     if (pendingDeleteIds.size === 0) return filtered;
     return filtered.filter((contact) => !pendingDeleteIds.has(contact.id));
-  }, [contactFilters, counterparties, pendingDeleteIds, searchText, showArchived]);
+  }, [contactFilters, counterparties, pendingDeleteIds, searchText, statusFilter]);
 
-  const pinnedContacts = filteredContacts.filter((contact) => contact.isPinned && !contact.isArchived);
-  const activeContacts = filteredContacts.filter((contact) => !contact.isArchived);
-  const unpinnedActiveContacts = filteredContacts.filter((contact) => !contact.isArchived && !contact.isPinned);
-  const archivedContacts = filteredContacts.filter((contact) => contact.isArchived);
-
-  const contactSections = useMemo<ContactListSection[]>(() => {
-    const sections: ContactListSection[] = [];
-    if (pinnedContacts.length > 0) {
-      sections.push({
-        key: "pinned",
-        label: `Fijados (${pinnedContacts.length})`,
-        data: pinnedContacts,
-        headerVariant: "default",
-      });
-    }
-    // Con saldo abierto primero: es el motivo por el que abres esta pantalla. Dentro de cada
-    // grupo se conserva el orden que traía, que ya venía ordenado.
-    const conSaldo = unpinnedActiveContacts.filter((contact) => {
-      const metrics = contactMetricsById.get(contact.id);
-      return contactHasOpenBalance(metrics);
-    });
-    const sinSaldo = unpinnedActiveContacts.filter((contact) => !conSaldo.includes(contact));
-
-    if (conSaldo.length > 0) {
-      sections.push({
-        key: "with-balance",
-        label: `Con saldo abierto (${conSaldo.length})`,
-        data: conSaldo,
-        headerVariant: "default",
-      });
-    }
-    if (sinSaldo.length > 0) {
-      sections.push({
-        key: "active",
-        label: "Sin saldo pendiente",
-        data: sinSaldo,
-        // Sin encabezado si es el único grupo: no hay nada de lo que distinguirlo.
-        headerVariant: conSaldo.length > 0 || pinnedContacts.length > 0 ? "divider" : "hidden",
-      });
-    }
-    if (archivedContacts.length > 0) {
-      sections.push({
-        key: "archived",
-        label: `Archivados (${archivedContacts.length})`,
-        data: archivedContacts,
-        headerVariant: "divider",
-        headerIcon: Archive,
-      });
-    }
-    return sections;
-  }, [archivedContacts, contactMetricsById, pinnedContacts, unpinnedActiveContacts]);
+  const contactSections = useMemo<ContactListSection[]>(
+    () => buildContactSections(filteredContacts),
+    [filteredContacts],
+  );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = contactFilters.map((filterValue) => ({
@@ -237,24 +185,24 @@ function ContactsScreen() {
       onRemove: () => setContactFilters((current) => current.filter((value) => value !== filterValue)),
     }));
 
-    if (showArchived) {
+    if (statusFilter !== "active") {
       items.push({
         key: "archived",
-        label: "Archivados",
-        onRemove: () => setShowArchived(false),
+        label: statusFilter === "all" ? "Incluye archivados" : CONTACT_STATUS_LABELS[statusFilter],
+        onRemove: () => setStatusFilter("active"),
       });
     }
 
     if (searchText.trim()) {
       items.push({
         key: "search",
-        label: `Busqueda: ${searchText.trim()}`,
+        label: `Búsqueda: ${searchText.trim()}`,
         onRemove: () => setSearchText(""),
       });
     }
 
     return items;
-  }, [contactFilters, searchText, showArchived]);
+  }, [contactFilters, searchText, statusFilter]);
 
   const summary = useMemo(() => {
     const linkedContacts = filteredContacts.filter((contact) => {
@@ -272,28 +220,13 @@ function ContactsScreen() {
     }).length;
     return {
       total: filteredContacts.length,
-      active: activeContacts.length,
+      withBalance: filteredContacts.filter((contact) => contactHasOpenBalance(contactMetricsById.get(contact.id))).length,
       linked: linkedContacts,
     };
-  }, [activeContacts.length, contactMetricsById, filteredContacts]);
+  }, [contactMetricsById, filteredContacts]);
 
-  const hasFilters = contactFilters.length > 0 || showArchived || Boolean(searchText.trim());
-
-  const hiddenArchivedCount = useMemo(
-    () => (showArchived ? 0 : counterparties.filter((contact) => contact.isArchived).length),
-    [counterparties, showArchived],
-  );
-
-  const contextNote = useMemo(
-    () =>
-      buildContactsContextNote({
-        filteredContacts,
-        metricsById: contactMetricsById,
-        hasFilters,
-        hiddenArchivedCount,
-      }),
-    [contactMetricsById, filteredContacts, hasFilters, hiddenArchivedCount],
-  );
+  const hasFilters = contactFilters.length > 0 || statusFilter !== "active" || Boolean(searchText.trim());
+  const extraFiltersCount = Number(statusFilter !== "active") + Number(contactFilters.includes("pinned"));
 
   const { handleBack } = useOriginBackNavigation();
 
@@ -321,13 +254,6 @@ function ContactsScreen() {
     );
   }, [archiveMutation, showToast]);
 
-  const handleTogglePin = useCallback((contact: CounterpartyOverview) => {
-    togglePinMutation.mutate(
-      { id: contact.id, isPinned: !contact.isPinned },
-      { onError: (error) => showErrorToast(contact.isPinned ? "No se pudo desfijar el contacto" : "No se pudo fijar el contacto", error) },
-    );
-  }, [showToast, togglePinMutation]);
-
   const handleDelete = useCallback((contact: CounterpartyOverview) => {
     if (!canDeleteContact(contact)) {
       showToast("Este contacto tiene movimientos o créditos/deudas asociados. Archívalo en su lugar.", "warning");
@@ -342,7 +268,7 @@ function ContactsScreen() {
 
   function clearContactFilters() {
     setContactFilters([]);
-    setShowArchived(false);
+    setStatusFilter("active");
     setSearchText("");
   }
 
@@ -425,12 +351,11 @@ function ContactsScreen() {
       onArchive={() => handleArchive(item.id)}
       onDelete={() => handleDelete(item)}
       onRestore={() => handleRestore(item.id)}
-      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       canDelete={canDeleteContact(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, handleTogglePin, router, selectMode, selectedIds, toggleSelect]);
+  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, router, selectMode, selectedIds, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -443,10 +368,10 @@ function ContactsScreen() {
             selectMode ? null : (
               <HeaderActionGroup
                 actions={[{
-                  key: "export",
-                  icon: Download,
-                  onPress: () => exportCSV(filteredContacts),
-                  accessibilityLabel: "Exportar CSV",
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
                 }]}
               />
             )
@@ -455,41 +380,35 @@ function ContactsScreen() {
       }
       toolbar={selectMode ? null : (
         <FilterToolbar
-          options={TYPE_FILTERS}
-          selectedValues={contactFilters}
+          options={TYPE_FILTERS.filter((option) => option.value !== "pinned")}
+          selectedValues={contactFilters.filter((value) => value !== "pinned")}
           onSelectedValuesChange={(values) => {
-            setContactFilters(values.filter((value): value is ActiveContactFilter => value !== "all"));
+            setContactFilters((current) => [
+              ...current.filter((value) => value === "pinned"),
+              ...values.filter((value): value is ActiveContactFilter => value !== "all" && value !== "pinned"),
+            ]);
           }}
           allValue={"all" satisfies ContactTypeFilter}
           searchValue={searchText}
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar contactos..."
-          actions={[{
-            key: "archived",
-            icon: Archive,
-            active: showArchived,
-            onPress: () => setShowArchived((value) => !value),
-            accessibilityLabel: showArchived ? "Ocultar archivados" : "Mostrar archivados",
-          }]}
+          extraAction={{
+            label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
+            active: extraFiltersCount > 0,
+            onPress: () => setFilterSheetOpen(true),
+          }}
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearContactFilters} />}
-      context={
-        !selectMode && filteredContacts.length > 0 && contextNote ? (
-          <ResourceContextNote>{contextNote}</ResourceContextNote>
-        ) : null
-      }
       summary={
         !selectMode && filteredContacts.length > 0 ? (
           <MetricSummaryBar
-            // Sin cifra grande: un conteo de contactos no merece 32px ni es dinero. Lo que sí
-            // importa —cuántos tienen movimientos o deudas— va en la frase.
             support={[
               `${summary.total} contacto${summary.total === 1 ? "" : "s"}`,
-              summary.linked > 0
-                ? `${summary.linked} con movimientos o deudas`
-                : "ninguno con movimientos todavía",
-            ].join(" · ")}
+              summary.withBalance > 0
+                ? `${summary.withBalance} con saldo pendiente`
+                : summary.linked > 0 ? `${summary.linked} con actividad` : null,
+            ].filter(Boolean).join(" · ")}
           />
         ) : null
       }
@@ -533,7 +452,8 @@ function ContactsScreen() {
       list={
         <ResourceSectionList
           sections={contactSections}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item) => `${item.workspaceId}:contact:${item.id}`}
+          contentContainerStyle={{ paddingHorizontal: 0 }}
           renderItem={renderContactItem}
           loading={{
             isLoading,
@@ -546,18 +466,54 @@ function ContactsScreen() {
             ),
           }}
           empty={{
+            icon: Users,
             title: hasFilters ? "Sin resultados" : "Sin contactos",
             description: hasFilters
               ? "Prueba quitando filtros o ajustando la búsqueda."
               : "Agrega clientes, proveedores y más.",
-            action: !hasFilters ? { label: "Nuevo contacto", onPress: () => setCreateFormVisible(true) } : undefined,
+            action: hasFilters
+              ? { label: "Limpiar filtros", onPress: clearContactFilters }
+              : { label: "Nuevo contacto", onPress: () => setCreateFormVisible(true) },
           }}
           onRefresh={onRefresh}
         />
       }
-      fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
+      fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} /> : null}
       overlays={
         <>
+          <EntityActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            sheetTitle="Más acciones"
+            summaryTitle="Contactos"
+            actions={[
+              {
+                key: "export",
+                label: "Exportar a CSV",
+                variant: "secondary",
+                disabled: filteredContacts.length === 0,
+                onPress: () => { setMenuOpen(false); void exportCSV(filteredContacts); },
+              },
+              {
+                key: "select",
+                label: "Seleccionar varios",
+                variant: "ghost",
+                disabled: filteredContacts.length === 0,
+                onPress: () => { setMenuOpen(false); setSelectMode(true); },
+              },
+            ]}
+          />
+          <ContactFilterSheet
+            visible={filterSheetOpen}
+            status={statusFilter}
+            pinnedOnly={contactFilters.includes("pinned")}
+            onStatusChange={setStatusFilter}
+            onPinnedOnlyChange={(pinned) => setContactFilters((current) => pinned
+              ? [...current.filter((value) => value !== "pinned"), "pinned"]
+              : current.filter((value) => value !== "pinned"))}
+            onClear={clearContactFilters}
+            onClose={() => setFilterSheetOpen(false)}
+          />
           <ContactForm
             visible={createFormVisible}
             onClose={() => setCreateFormVisible(false)}
@@ -597,7 +553,7 @@ function ContactsScreen() {
           <ConfirmDialog
             visible={bulkArchiveConfirm}
             title={`Archivar ${selectedIds.size} contactos`}
-            body="Los contactos seleccionados pasarán a estado archivado. Podrás verlos activando el icono de archivados."
+            body="Los contactos seleccionados pasarán a estado archivado. Podrás verlos desde Filtros → Archivados."
             confirmLabel="Archivar"
             cancelLabel="Cancelar"
             onCancel={() => setBulkArchiveConfirm(false)}

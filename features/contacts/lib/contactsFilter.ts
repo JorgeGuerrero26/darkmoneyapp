@@ -1,22 +1,23 @@
 import type { CounterpartyOverview, CounterpartyType } from "../../../types/domain";
-import type { ActiveContactFilter } from "./contactsLabels";
+import type { ActiveContactFilter, ContactStatusFilter } from "./contactsLabels";
 
 type FilterArgs = {
   search: string;
   filters: ActiveContactFilter[];
-  showArchived: boolean;
+  status: ContactStatusFilter;
 };
 
 export function applyContactFilter(
   contacts: CounterpartyOverview[],
-  { search, filters, showArchived }: FilterArgs,
+  { search, filters, status }: FilterArgs,
 ) {
   const query = search.trim().toLowerCase();
   const pinnedOnly = filters.includes("pinned");
   const typeFilters = filters.filter((filter): filter is CounterpartyType => filter !== "pinned");
 
   return contacts.filter((contact) => {
-    if (!showArchived && contact.isArchived) return false;
+    if (status === "active" && contact.isArchived) return false;
+    if (status === "archived" && !contact.isArchived) return false;
     if (pinnedOnly && !contact.isPinned) return false;
     if (typeFilters.length > 0 && !typeFilters.includes(contact.type)) return false;
     if (query) {

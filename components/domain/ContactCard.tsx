@@ -1,16 +1,14 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
 
 import {
   ResourceCard,
-  ResourceCardBadge,
   ResourceCardIcon,
-  ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
-import { TYPE_ICON, TYPE_LABELS } from "../../features/contacts/lib/contactsLabels";
+import { COLORS } from "../../constants/theme";
+import { TYPE_ICON } from "../../features/contacts/lib/contactsLabels";
+import { contactRowSubtitle } from "../../features/contacts/lib/contactRowSubtitle";
 import type { CounterpartyOverview } from "../../types/domain";
 import type { CurrencyAmount } from "../../lib/catalog-money";
 
@@ -34,7 +32,6 @@ type Props = {
   onArchive: () => void;
   onDelete: () => void;
   onRestore: () => void;
-  onTogglePin?: () => void;
   onLongPress?: () => void;
   selected?: boolean;
   selectMode?: boolean;
@@ -45,59 +42,27 @@ function ContactCardContent({
   metrics,
   onPress,
   onLongPress,
-  onTogglePin,
   selected,
 }: {
   contact: CounterpartyOverview;
   metrics?: ContactMetrics;
   onPress: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
 }) {
   const ContactIcon = TYPE_ICON[contact.type];
-  const typeLabel = TYPE_LABELS[contact.type] ?? contact.type;
-  const primaryDetail =
-    contact.phone?.trim() ||
-    contact.email?.trim() ||
-    (contact.documentNumber?.trim() ? `Doc. ${contact.documentNumber.trim()}` : null);
-  const movementCount = metrics?.movementCount ?? contact.movementCount;
 
   return (
     <ResourceCard
-      // Fila sobre lienzo, no tarjeta: la lista de contactos es larga y cada tarjeta cobraba
-      // 16px de aire y dos bordes. Mismo tratamiento que la lista de movimientos.
       variant="row"
       pinned={contact.isPinned}
       title={contact.name}
-      subtitle={primaryDetail || typeLabel}
+      subtitle={contactRowSubtitle(contact, metrics)}
       archived={contact.isArchived}
       onPress={onPress}
       onLongPress={onLongPress}
       selected={selected}
-      /* Chrome neutro, no color de dinero.
-         "Persona" iba en el color de marca y "Cobra"/"Debe" en el verde y el rojo que en esta
-         app significan plata entrando y saliendo — sobre un badge que no es un monto. Un
-         contacto se distingue por su nombre, no por su color; el color queda libre para lo que
-         de verdad es dinero. La deuda sigue dicha, con palabras, en la sección que la agrupa. */
       leading={<ResourceCardIcon icon={ContactIcon} color={COLORS.storm} />}
-      meta={
-        <>
-          {primaryDetail ? <ResourceCardBadge label={typeLabel} color={COLORS.storm} /> : null}
-          {(metrics?.hasReceivable ?? Boolean(metrics?.receivablePendingTotal)) ? <ResourceCardBadge label="Cobra" color={COLORS.storm} /> : null}
-          {(metrics?.hasPayable ?? Boolean(metrics?.payablePendingTotal)) ? <ResourceCardBadge label="Debe" color={COLORS.storm} /> : null}
-          {movementCount > 0 ? <ResourceCardMetaText>{movementCount} mov.</ResourceCardMetaText> : null}
-          {metrics?.subscriptionCount ? <ResourceCardMetaText>{metrics.subscriptionCount} subs.</ResourceCardMetaText> : null}
-          {metrics?.recurringIncomeCount ? <ResourceCardMetaText>{metrics.recurringIncomeCount} ingresos</ResourceCardMetaText> : null}
-        </>
-      }
-      trailing={
-        contact.isArchived ? (
-          <View style={styles.archivedPill}>
-            <Text style={styles.archivedText}>Archivado</Text>
-          </View>
-        ) : null
-      }
     />
   );
 }
@@ -110,7 +75,6 @@ function ContactCardBase({
   onArchive,
   onDelete,
   onRestore,
-  onTogglePin,
   onLongPress,
   selected = false,
   selectMode = false,
@@ -122,7 +86,6 @@ function ContactCardBase({
         metrics={metrics}
         onPress={onPress}
         onLongPress={onLongPress}
-        onTogglePin={onTogglePin}
         selected={selected}
       />
     );
@@ -167,26 +130,11 @@ function ContactCardBase({
             onPress();
           }}
           onLongPress={onLongPress}
-          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>
   );
 }
-
-const styles = StyleSheet.create({
-  archivedPill: {
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.storm + "18",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  archivedText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-  },
-});
 
 /** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
 export const ContactCard = memo(ContactCardBase);
