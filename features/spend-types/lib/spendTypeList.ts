@@ -1,5 +1,16 @@
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
 import type { SpendType } from "../../../services/queries/spend-types";
+import type { CategoryPostedMovement } from "../../../types/domain";
+
+export function buildCategorySpendTotals(movements: CategoryPostedMovement[]) {
+  const totals = new Map<number, number>();
+  for (const movement of movements) {
+    const amount = movement.amountInBaseCurrency ?? movement.sourceAmount ?? 0;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    totals.set(movement.categoryId, (totals.get(movement.categoryId) ?? 0) + amount);
+  }
+  return totals;
+}
 
 export type SpendTypeStatus = "active" | "inactive" | "all";
 export const SPEND_TYPE_STATUSES: { value: SpendTypeStatus; label: string }[] = [

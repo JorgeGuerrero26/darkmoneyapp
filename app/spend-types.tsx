@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MoreVertical } from "lucide-react-native";
@@ -9,9 +10,8 @@ import { ActiveFilterBar } from "../components/ui/ActiveFilterBar";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { EntityActionSheet } from "../components/ui/EntityActionSheet";
 import { SpendTypeSwipeRow } from "../features/spend-types/components/SpendTypeSwipeRow";
-import { SpendTypeDetailSheet } from "../features/spend-types/components/SpendTypeDetailSheet";
 import { SpendTypeFilterSheet } from "../features/spend-types/components/SpendTypeFilterSheet";
-import { buildSpendTypeSections, filterSpendTypes, SPEND_TYPE_STATUSES, type SpendTypeStatus } from "../features/spend-types/lib/spendTypeList";
+import { buildCategorySpendTotals, buildSpendTypeSections, filterSpendTypes, SPEND_TYPE_STATUSES, type SpendTypeStatus } from "../features/spend-types/lib/spendTypeList";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
@@ -23,7 +23,6 @@ import { SpendTypeForm } from "../components/forms/SpendTypeForm";
 import {
   useCreateSpendTypeMutation,
   useDeleteSpendTypeMutation,
-  useUpdateSpendTypeMutation,
   useSpendTypesQuery,
   type SpendType,
 } from "../services/queries/spend-types";
@@ -58,6 +57,7 @@ type Section = ResourceSection<SpendType>;
  * por defecto.
  */
 function SpendTypesScreen() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/more" });
@@ -74,31 +74,19 @@ function SpendTypesScreen() {
 
   /* El peso real de cada categoría, de lo que la app ya tiene cargado para sus analíticas.
      Sirve para poner delante lo que decide el resultado: cinco categorías se llevan el 90 %. */
-  const spendByCategory = useMemo(() => {
-    const totals = new Map<number, number>();
-    for (const movement of snapshot?.categoryPostedMovements ?? []) {
-      const amount = movement.amountInBaseCurrency ?? movement.sourceAmount ?? 0;
-      if (!Number.isFinite(amount) || amount <= 0) continue;
-      totals.set(movement.categoryId, (totals.get(movement.categoryId) ?? 0) + amount);
-    }
-    return totals;
-  }, [snapshot?.categoryPostedMovements]);
+  const spendByCategory = useMemo(() => buildCategorySpendTotals(snapshot?.categoryPostedMovements ?? []), [snapshot?.categoryPostedMovements]);
   const createMutation = useCreateSpendTypeMutation(activeWorkspaceId, profile?.id);
   const deleteMutation = useDeleteSpendTypeMutation(activeWorkspaceId);
 
-  const updateMutation = useUpdateSpendTypeMutation(activeWorkspaceId);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<SpendTypeStatus>("active");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [detailId, setDetailId] = useState<number | null>(null);
   const creatingRef = useRef(false);
   const [creatingStarters, setCreatingStarters] = useState(false);
   const visibleTypes = useMemo(() => filterSpendTypes(spendTypes, search, status), [spendTypes, search, status]);
-  const detail = spendTypes.find((item) => item.id === detailId) ?? null;
   const hasFilters = search.trim().length > 0 || status !== "active";
   const [formVisible, setFormVisible] = useState(false);
-  const [editTarget, setEditTarget] = useState<SpendType | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SpendType | null>(null);
   const [classifyOpen, setClassifyOpen] = useState(false);
 
@@ -147,7 +135,7 @@ function SpendTypesScreen() {
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => <SpendTypeSwipeRow item={item}
             categoryCount={gastoCategorias.filter((category) => category.defaultSpendTypeId === item.id).length}
-            onPress={() => setDetailId(item.id)} onDelete={() => setDeleteTarget(item)} />}
+            onPress={() => router.push(`/spend-type/${item.id}?from=spend-types`)} onDelete={() => setDeleteTarget(item)} />}
           contentContainerStyle={{ paddingHorizontal: 0 }}
           onRefresh={async () => { await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["spend-types", activeWorkspaceId] }),
@@ -172,26 +160,16 @@ function SpendTypesScreen() {
 
         />
       }
-      fab={<FAB onPress={() => { setEditTarget(null); setFormVisible(true); }} bottom={insets.bottom + 16} />}
+      fab={<FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />}
       overlays={
         <>
-          <SpendTypeDetailSheet item={detail} categoryCount={gastoCategorias.filter((item) => item.defaultSpendTypeId === detailId).length}
-            onClose={() => setDetailId(null)}
-            onEdit={() => { setEditTarget(detail); setDetailId(null); setFormVisible(true); }}
-            onClassify={() => { setDetailId(null); setClassifyOpen(true); }}
-            onDelete={() => { setDeleteTarget(detail); setDetailId(null); }}
-            onToggle={() => { if (detail) updateMutation.mutate({ id: detail.id, input: { isActive: !detail.isActive } }, {
-              onError: (error) => showErrorToast("No se pudo cambiar el estado", error),
-              onSuccess: () => showToast("Tipo de gasto actualizado", "success"),
-            }); }} togglePending={updateMutation.isPending} />
           <SpendTypeFilterSheet visible={filtersOpen} onClose={() => setFiltersOpen(false)} status={status} onChange={setStatus} />
           <EntityActionSheet visible={menuOpen} onClose={() => setMenuOpen(false)} sheetTitle="Más acciones" summaryTitle="Tipos de gasto"
             actions={[{ key: "classify", label: "Clasificar categorías", variant: "secondary", disabled: spendTypes.length === 0,
               onPress: () => { setMenuOpen(false); setClassifyOpen(true); } }]} />
           <SpendTypeForm
             visible={formVisible}
-            onClose={() => { setFormVisible(false); setEditTarget(null); }}
-            editSpendType={editTarget}
+            onClose={() => setFormVisible(false)}
           />
           <ClassifyCategoriesSheet
             visible={classifyOpen}

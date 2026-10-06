@@ -1077,6 +1077,7 @@ function NavigationGuard() {
         <Stack.Screen name="movement/[id]" />
         <Stack.Screen name="account/[id]" />
         <Stack.Screen name="category/[id]" options={{ presentation: "card" }} />
+        <Stack.Screen name="spend-type/[id]" options={{ presentation: "card" }} />
         <Stack.Screen name="obligation/[id]" options={{ animation: "none" }} />
       </Stack>
     </ThemeProvider>
