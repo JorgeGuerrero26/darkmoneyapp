@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -8,6 +8,8 @@ type Action = {
   accessibilityLabel: string;
   icon: LucideIcon;
   onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
 };
 
 type Props = {
@@ -55,13 +57,14 @@ function ActionButton({ action, primary = false }: { action: Action; primary?: b
   const Icon = action.icon;
   return (
     <TouchableOpacity
-      style={[styles.btn, primary ? styles.primary : styles.secondary]}
+      style={[styles.btn, primary ? styles.primary : styles.secondary, (action.disabled || action.loading) && styles.disabled]}
       onPress={action.onPress}
+      disabled={action.disabled || action.loading}
       activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={action.accessibilityLabel}
     >
-      <Icon size={16} color={primary ? COLORS.actionText : COLORS.fog} />
+      {action.loading ? <ActivityIndicator size="small" color={primary ? COLORS.actionText : COLORS.fog} /> : <Icon size={16} color={primary ? COLORS.actionText : COLORS.fog} />}
       <Text style={[styles.btnLabel, primary ? styles.primaryLabel : styles.secondaryLabel]}>{action.label}</Text>
     </TouchableOpacity>
   );
@@ -88,6 +91,7 @@ const styles = StyleSheet.create({
   btnLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
   primaryLabel: { color: COLORS.actionText },
   secondaryLabel: { color: COLORS.fog },
+  disabled: { opacity: 0.6 },
   footRow: {
     minHeight: 40,
     flexDirection: "row",
