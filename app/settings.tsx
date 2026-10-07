@@ -30,6 +30,9 @@ import { humanizeError } from "../lib/errors";
 import { useUiStore } from "../store/ui-store";
 import { useDashboardAiTone } from "../features/dashboard/hooks/useDashboardAiTone";
 import { EmailDetectionSheet } from "../features/settings/components/EmailDetectionSheet";
+import { ProBadge, ProFeatureSheet } from "../components/ui/ProFeatureSheet";
+import { EMAIL_DETECTION_PRO_DESCRIPTION, openDarkMoneyProPlans } from "../features/settings/lib/email-detection-pro";
+import { useEmailDetectionProAccessQuery } from "../services/queries/email-detection-access";
 import { DASHBOARD_AI_TONE_OPTIONS } from "../features/dashboard/lib/dashboard-ai-content";
 import {
   fetchUserWorkspaces,
@@ -163,7 +166,24 @@ function SettingsScreen() {
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
 
   // ── Detección por correo ─────────────────────────────────────────────────
-  const inboundAliasQuery = useInboundEmailAliasQuery(profile?.id ?? null, activeWorkspaceId);
+  const emailProAccess = useEmailDetectionProAccessQuery(profile?.id ?? null);
+  const hasEmailPro = emailProAccess.data === true && !emailProAccess.isError;
+  const inboundAliasQuery = useInboundEmailAliasQuery(profile?.id ?? null, activeWorkspaceId, hasEmailPro);
+  const [emailProSheetOpen, setEmailProSheetOpen] = useState(false);
+
+  const handleOpenEmailDetection = async () => {
+    const result = await emailProAccess.refetch();
+    if (result.isError) {
+      showErrorToast("No se pudo verificar tu acceso PRO", result.error);
+      return;
+    }
+    if (result.data === true) setInboundSheetOpen(true);
+    else setEmailProSheetOpen(true);
+  };
+  const handleViewEmailPro = () => {
+    setEmailProSheetOpen(false);
+    void openDarkMoneyProPlans().catch((error) => showErrorToast("No se pudo abrir los planes PRO", error));
+  };
   const rotateInboundAlias = useRotateInboundEmailAliasMutation(
     profile?.id ?? null,
     activeWorkspaceId,
@@ -172,7 +192,7 @@ function SettingsScreen() {
   const inboundActionPending = useRef(false);
 
   const handleCopyInboundAddress = async () => {
-    if (!inboundAliasQuery.data || inboundActionPending.current) return;
+    if (!hasEmailPro || !inboundAliasQuery.data || inboundActionPending.current) return;
     inboundActionPending.current = true;
     setCopyingInboundAddress(true);
     try {
@@ -187,7 +207,7 @@ function SettingsScreen() {
   };
 
   const handleRotateInboundAlias = async () => {
-    if (inboundActionPending.current) return false;
+    if (!hasEmailPro || inboundActionPending.current) return false;
     inboundActionPending.current = true;
     const replacingAddress = Boolean(inboundAliasQuery.data);
     try {
@@ -291,6 +311,12 @@ function SettingsScreen() {
   const [timeZoneSheetOpen, setTimeZoneSheetOpen] = useState(false);
   const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false);
   const [inboundSheetOpen, setInboundSheetOpen] = useState(false);
+  useEffect(() => {
+    if (inboundSheetOpen && emailProAccess.data === false) {
+      setInboundSheetOpen(false);
+      setEmailProSheetOpen(true);
+    }
+  }, [inboundSheetOpen, emailProAccess.data]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, "owner">>("member");
   const [inviteNote, setInviteNote] = useState("");
@@ -827,9 +853,10 @@ function SettingsScreen() {
             ) : null}
 
             <SettingsRow
-              onPress={() => setInboundSheetOpen(true)}
+              onPress={() => { void handleOpenEmailDetection(); }}
               label="Detectar pagos por correo"
-              support={inboundAliasQuery.data ? "Dirección creada · Configurar reenvío" : inboundAliasQuery.isLoading ? "Cargando dirección…" : inboundAliasQuery.isError ? "No se pudo cargar la dirección" : "Sin dirección todavía"}
+              trailing={emailProAccess.isFetching ? <ActivityIndicator size="small" color={COLORS.storm} /> : <ProBadge />}
+              support={emailProAccess.isError ? "No se pudo verificar tu plan · Reintentar" : emailProAccess.data === undefined ? "Consultando tu plan…" : !hasEmailPro ? "Disponible con DarkMoney PRO" : inboundAliasQuery.data ? "Dirección creada · Configurar reenvío" : inboundAliasQuery.isLoading ? "Cargando dirección…" : inboundAliasQuery.isError ? "No se pudo cargar la dirección" : "Sin dirección todavía"}
               last
             />
           </SettingsGroup>
@@ -987,7 +1014,7 @@ function SettingsScreen() {
       </BottomSheet>
 
       <EmailDetectionSheet
-        visible={inboundSheetOpen}
+        visible={inboundSheetOpen && hasEmailPro}
         onClose={() => setInboundSheetOpen(false)}
         workspaceName={activeWorkspace?.name ?? "Sin workspace"}
         address={inboundAliasQuery.data ? inboundEmailAddress(inboundAliasQuery.data) : null}
@@ -995,10 +1022,17 @@ function SettingsScreen() {
         isError={inboundAliasQuery.isError}
         isGenerating={rotateInboundAlias.isPending}
         isCopying={copyingInboundAddress}
-        canGenerate={Boolean(profile?.id && activeWorkspaceId)}
+        canGenerate={Boolean(profile?.id && activeWorkspaceId && hasEmailPro)}
         onRetry={() => { void inboundAliasQuery.refetch(); }}
         onCopy={() => { void handleCopyInboundAddress(); }}
         onGenerate={handleRotateInboundAlias}
+      />
+      <ProFeatureSheet
+        visible={emailProSheetOpen}
+        title="Detecta tus pagos por correo"
+        description={EMAIL_DETECTION_PRO_DESCRIPTION}
+        onClose={() => setEmailProSheetOpen(false)}
+        onViewPro={handleViewEmailPro}
       />
       <BottomSheet
         visible={inviteSheetOpen}

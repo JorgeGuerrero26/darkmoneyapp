@@ -36,6 +36,7 @@ describe("procesamiento de correo", () => {
   const email = { ...BCP_CONSUMO, id: event.data.email_id, to, html: null,
     created_at: "2026-10-07T12:00:00.000Z", authentication: { dkim: "pass" } };
   const repository = (): InboundRepository => ({
+    hasProAccess: jest.fn().mockResolvedValue(true),
     resolveAlias: jest.fn().mockResolvedValue({ user_id: "user-test", workspace_id: 1 }),
     saveSuggestion: jest.fn(async (input: SuggestionInput) => ({ ...input, id: 42, created_at: email.created_at })),
     ensureNotification: jest.fn().mockResolvedValue(undefined),
@@ -45,6 +46,33 @@ describe("procesamiento de correo", () => {
     await processReceivedEvent(event, repo, async () => email);
     expect(repo.saveSuggestion).toHaveBeenCalledWith(expect.objectContaining({ amount: 52.5, status: "pending", package_name: "email:inbound" }));
     expect(repo.ensureNotification).toHaveBeenCalledWith("user-test", expect.objectContaining({ id: 42 }));
+  });
+  it("pausa Free antes de recuperar el correo y retoma el mismo alias al renovar", async () => {
+    const repo = repository(), retrieve = jest.fn().mockResolvedValue(email);
+    (repo.hasProAccess as jest.Mock).mockResolvedValue(false);
+    await expect(processReceivedEvent(event, repo, retrieve)).resolves.toMatchObject({ ok: true, ignored: "detección por correo requiere PRO" });
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+    expect(repo.ensureNotification).not.toHaveBeenCalled();
+    (repo.hasProAccess as jest.Mock).mockResolvedValue(true);
+    await processReceivedEvent(event, repo, retrieve);
+    expect(repo.saveSuggestion).toHaveBeenCalledTimes(1);
+  });
+  it("bloquea Free cuando el alias solo aparece en received_for", async () => {
+    const repo = repository();
+    (repo.hasProAccess as jest.Mock).mockResolvedValue(false);
+    await processReceivedEvent({ ...event, data: { ...event.data, to: ["usuario-ficticio@gmail.com"] } }, repo,
+      async () => ({ ...email, to: ["usuario-ficticio@gmail.com"], received_for: to }));
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+    expect(repo.ensureNotification).not.toHaveBeenCalled();
+  });
+  it("revalida un plan que vence durante la consulta y reintenta si falla verificarlo", async () => {
+    const repo = repository();
+    (repo.hasProAccess as jest.Mock).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await processReceivedEvent(event, repo, async () => email);
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+    (repo.hasProAccess as jest.Mock).mockRejectedValueOnce(new Error("temporary"));
+    await expect(processReceivedEvent(event, repo, async () => email)).rejects.toThrow("temporary");
   });
   it("ignora aliases revocados y correos de prueba antes de guardar", async () => {
     const repo = repository(), retrieve = jest.fn().mockResolvedValue(email);

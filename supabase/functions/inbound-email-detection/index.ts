@@ -11,6 +11,11 @@ import { retrieveReceivedEmail, verifyResendWebhook } from "./resend.ts";
 function createRepository(): InboundRepository {
   const admin = serviceClient();
   return {
+    async hasProAccess(userId) {
+      const { data, error } = await admin.rpc("has_email_detection_pro_access", { p_user_id: userId });
+      if (error) throw new Error(`entitlement-query-${error.code}`);
+      return data === true;
+    },
     async resolveAlias(token) {
       const { data, error } = await admin.from("inbound_email_aliases")
         .select("user_id, workspace_id").eq("token", token).is("revoked_at", null).maybeSingle();

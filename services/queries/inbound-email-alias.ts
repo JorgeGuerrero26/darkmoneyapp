@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
+import { assertEmailDetectionProAccess } from "./email-detection-access";
 
 /**
  * Alias de correo entrante: el usuario crea un filtro en Gmail que reenvía los correos de
@@ -27,10 +28,10 @@ export function inboundEmailAddress(token: string): string {
   return `recibos+${token}@${INBOUND_EMAIL_DOMAIN}`;
 }
 
-export function useInboundEmailAliasQuery(userId: string | null, workspaceId: number | null) {
+export function useInboundEmailAliasQuery(userId: string | null, workspaceId: number | null, enabled = true) {
   return useQuery({
     queryKey: ["inbound-email-alias", userId, workspaceId],
-    enabled: Boolean(supabase && userId && workspaceId),
+    enabled: Boolean(supabase && userId && workspaceId && enabled),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from("inbound_email_aliases")
@@ -55,6 +56,7 @@ export function useRotateInboundEmailAliasMutation(
     mutationKey: ["rotate-inbound-email-alias"],
     mutationFn: async () => {
       if (!supabase || !userId || !workspaceId) throw new Error("Sesión no disponible.");
+      await assertEmailDetectionProAccess();
 
       const { error: revokeError } = await supabase
         .from("inbound_email_aliases")

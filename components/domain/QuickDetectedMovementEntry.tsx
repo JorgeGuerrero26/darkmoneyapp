@@ -47,6 +47,9 @@ import {
 } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
 import { EMAIL_SOURCE_PACKAGE } from "../../services/queries/inbound-email-alias";
+import { assertEmailDetectionProAccess, useEmailDetectionProAccessQuery } from "../../services/queries/email-detection-access";
+import { ProFeatureSheet } from "../ui/ProFeatureSheet";
+import { EMAIL_DETECTION_PRO_DESCRIPTION, openDarkMoneyProPlans } from "../../features/settings/lib/email-detection-pro";
 import { buildPatternMaps, scoreCategoryFromDescription } from "../../lib/movement-patterns";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
@@ -124,6 +127,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const haptics = useHaptics();
   const suggestionQuery = useDetectedMovementSuggestionQuery(suggestionId);
   const suggestion = suggestionQuery.data;
+  const isPendingEmail = suggestion?.packageName === EMAIL_SOURCE_PACKAGE &&
+    (suggestion.status === "pending" || suggestion.status === "needs_review");
+  const emailProAccess = useEmailDetectionProAccessQuery(profile?.id ?? null, visible && isPendingEmail);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
@@ -670,7 +676,12 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     if (submittingRef.current) return;
     submittingRef.current = true;
     try {
+      if (suggestion.packageName === EMAIL_SOURCE_PACKAGE) {
+        await assertEmailDetectionProAccess();
+      }
       await submitInner(force);
+    } catch (error) {
+      showErrorToast("No se pudo guardar el movimiento", error);
     } finally {
       submittingRef.current = false;
     }
@@ -1099,6 +1110,24 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         </View>
       </BottomSheet>
     );
+  }
+
+  if (isPendingEmail && (emailProAccess.data !== true || emailProAccess.isError)) {
+    if (emailProAccess.data === false && !emailProAccess.isError) {
+      return <ProFeatureSheet visible={visible} onClose={onClose}
+        title="Revisa tus pagos con PRO" description={EMAIL_DETECTION_PRO_DESCRIPTION}
+        onViewPro={() => {
+          onClose();
+          void openDarkMoneyProPlans().catch((error) => showErrorToast("No se pudo abrir los planes PRO", error));
+        }}
+      />;
+    }
+    return <BottomSheet visible={visible} onClose={onClose} title="Movimiento detectado" entranceAnimation="springFade" snapHeight={0.44}>
+      <View style={styles.resolvedContainer}>
+        <Text style={styles.resolvedTitle}>{emailProAccess.isError ? "No pudimos verificar tu acceso PRO" : "Verificando tu acceso PRO…"}</Text>
+        {emailProAccess.isError ? <Button label="Reintentar" onPress={() => { void emailProAccess.refetch(); }} /> : null}
+      </View>
+    </BottomSheet>;
   }
 
   return (

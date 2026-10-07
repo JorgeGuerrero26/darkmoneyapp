@@ -14,6 +14,7 @@ export type SuggestionInput = Alias & {
 };
 export type InboundRepository = {
   resolveAlias(token: string): Promise<Alias | null>;
+  hasProAccess(userId: string): Promise<boolean>;
   saveSuggestion(input: SuggestionInput): Promise<Suggestion>;
   ensureNotification(userId: string, suggestion: Suggestion): Promise<void>;
 };
@@ -35,6 +36,9 @@ export async function processReceivedEvent(
   }
   let alias = token ? await repository.resolveAlias(token) : null;
   if (token && !alias) return { ok: true, ignored: "alias revocado o desconocido" };
+  if (alias && !(await repository.hasProAccess(alias.user_id))) {
+    return { ok: true, ignored: "detección por correo requiere PRO" };
+  }
   const emailId = event.data?.email_id;
   if (!emailId) throw new Error("Falta ID de correo");
   const email = await retrieve(emailId);
@@ -46,6 +50,10 @@ export async function processReceivedEvent(
     alias = await repository.resolveAlias(token);
   }
   if (!alias) return { ok: true, ignored: "alias revocado o desconocido" };
+  // Revalida tras recuperar el cuerpo: el acceso puede vencer durante la consulta a Resend.
+  if (!(await repository.hasProAccess(alias.user_id))) {
+    return { ok: true, ignored: "detección por correo requiere PRO" };
+  }
   // Resultado del servidor receptor; nunca confía en un header proporcionado por el remitente.
   const authenticated = email.authentication?.dkim === "pass" || email.authentication?.dmarc === "pass";
   if (!authenticated && (email.authentication?.dkim === "fail" || email.authentication?.dmarc === "fail")) {
