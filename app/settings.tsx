@@ -29,6 +29,7 @@ import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
 import { humanizeError } from "../lib/errors";
 import { useUiStore } from "../store/ui-store";
 import { useDashboardAiTone } from "../features/dashboard/hooks/useDashboardAiTone";
+import { EmailDetectionSheet } from "../features/settings/components/EmailDetectionSheet";
 import { DASHBOARD_AI_TONE_OPTIONS } from "../features/dashboard/lib/dashboard-ai-content";
 import {
   fetchUserWorkspaces,
@@ -167,19 +168,37 @@ function SettingsScreen() {
     profile?.id ?? null,
     activeWorkspaceId,
   );
+  const [copyingInboundAddress, setCopyingInboundAddress] = useState(false);
+  const inboundActionPending = useRef(false);
 
   const handleCopyInboundAddress = async () => {
-    if (!inboundAliasQuery.data) return;
-    await Clipboard.setStringAsync(inboundEmailAddress(inboundAliasQuery.data));
-    showToast("Dirección copiada", "success");
+    if (!inboundAliasQuery.data || inboundActionPending.current) return;
+    inboundActionPending.current = true;
+    setCopyingInboundAddress(true);
+    try {
+      await Clipboard.setStringAsync(inboundEmailAddress(inboundAliasQuery.data));
+      showToast("Dirección copiada", "success");
+    } catch (err) {
+      showErrorToast("No se pudo copiar la dirección", err);
+    } finally {
+      inboundActionPending.current = false;
+      setCopyingInboundAddress(false);
+    }
   };
 
   const handleRotateInboundAlias = async () => {
+    if (inboundActionPending.current) return false;
+    inboundActionPending.current = true;
+    const replacingAddress = Boolean(inboundAliasQuery.data);
     try {
       await rotateInboundAlias.mutateAsync();
-      showToast("Dirección nueva lista", "success", "Actualiza el filtro de Gmail");
+      showToast("Dirección lista", "success", replacingAddress ? "Actualiza el reenvío y los filtros de Gmail" : "Ahora conecta el reenvío de Gmail");
+      return true;
     } catch (err) {
       showErrorToast("No se pudo crear la dirección nueva", err);
+      return false;
+    } finally {
+      inboundActionPending.current = false;
     }
   };
 
@@ -810,7 +829,7 @@ function SettingsScreen() {
             <SettingsRow
               onPress={() => setInboundSheetOpen(true)}
               label="Detectar pagos por correo"
-              support={inboundAliasQuery.data ? inboundEmailAddress(inboundAliasQuery.data) : "Sin dirección todavía"}
+              support={inboundAliasQuery.data ? "Dirección creada · Configurar reenvío" : inboundAliasQuery.isLoading ? "Cargando dirección…" : inboundAliasQuery.isError ? "No se pudo cargar la dirección" : "Sin dirección todavía"}
               last
             />
           </SettingsGroup>
@@ -967,53 +986,20 @@ function SettingsScreen() {
         })}
       </BottomSheet>
 
-      <BottomSheet visible={inboundSheetOpen} onClose={() => setInboundSheetOpen(false)} title="Detectar pagos por correo">
-        {inboundAliasQuery.data ? (
-          <>
-            <Text selectable style={styles.inboundAddress}>
-              {inboundEmailAddress(inboundAliasQuery.data)}
-            </Text>
-            <Button
-              label="Copiar dirección"
-              variant="secondary"
-              size="md"
-              onPress={() => void handleCopyInboundAddress()}
-            />
-            <Text style={styles.inboundHelp}>
-              En Gmail, desde una computadora:{"\n"}
-              1. Configuración › Reenvío › Añadir esta dirección.{"\n"}
-              2. Confirma el reenvío con el correo que envía Gmail.{"\n"}
-              3. Crea un filtro para los comprobantes de tu banco y selecciona
-              «Reenviar a esta dirección».{"\n"}
-              Los formatos disponibles son BCP y Yape. Las sugerencias aparecen en
-              Notificaciones y requieren tu confirmación.
-            </Text>
-            <Button
-              label="Generar una nueva"
-              variant="ghost"
-              size="md"
-              loading={rotateInboundAlias.isPending}
-              loadingLabel="Generando…"
-              onPress={() => void handleRotateInboundAlias()}
-            />
-          </>
-        ) : (
-          <>
-            <Text style={styles.inboundHelp}>
-              Genera una dirección privada y reenvía ahí los correos de tu banco. DarkMoney
-              no accede al resto de tu correo, y nada se registra sin que tú lo confirmes.
-            </Text>
-            <Button
-              label="Generar dirección"
-              variant="secondary"
-              size="md"
-              loading={rotateInboundAlias.isPending}
-              loadingLabel="Generando…"
-              onPress={() => void handleRotateInboundAlias()}
-            />
-          </>
-        )}
-      </BottomSheet>
+      <EmailDetectionSheet
+        visible={inboundSheetOpen}
+        onClose={() => setInboundSheetOpen(false)}
+        workspaceName={activeWorkspace?.name ?? "Sin workspace"}
+        address={inboundAliasQuery.data ? inboundEmailAddress(inboundAliasQuery.data) : null}
+        isLoading={inboundAliasQuery.isFetching}
+        isError={inboundAliasQuery.isError}
+        isGenerating={rotateInboundAlias.isPending}
+        isCopying={copyingInboundAddress}
+        canGenerate={Boolean(profile?.id && activeWorkspaceId)}
+        onRetry={() => { void inboundAliasQuery.refetch(); }}
+        onCopy={() => { void handleCopyInboundAddress(); }}
+        onGenerate={handleRotateInboundAlias}
+      />
       <BottomSheet
         visible={inviteSheetOpen}
         onClose={() => setInviteSheetOpen(false)}
@@ -1186,19 +1172,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     color: COLORS.storm,
     textAlign: "center",
-  },
-  inboundAddress: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.pine,
-    marginBottom: SPACING.sm,
-  },
-  inboundHelp: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.body,
-    color: COLORS.storm,
-    lineHeight: 18,
-    marginBottom: SPACING.sm,
   },
   sectionTitle: {
     fontSize: FONT_SIZE.xs,

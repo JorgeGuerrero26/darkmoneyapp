@@ -74,8 +74,10 @@ export function useRotateInboundEmailAliasMutation(
       if (error) throw new Error(error.message);
       return data.token as string;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["inbound-email-alias"] });
+    onSuccess: (token) => {
+      const queryKey = ["inbound-email-alias", userId, workspaceId];
+      queryClient.setQueryData(queryKey, token);
+      void queryClient.invalidateQueries({ queryKey, exact: true });
     },
   });
 }
