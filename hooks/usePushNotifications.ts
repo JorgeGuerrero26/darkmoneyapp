@@ -4,7 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { todayPeru } from "../lib/date";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import { getNotificationsModule } from "../lib/notifications-runtime";
-import { registerForPushNotifications, savePushTokenToSupabase } from "../services/push-registration";
+import { refreshEnabledPushToken } from "../services/push-registration";
 
 type ExpoNotificationResponse = import("expo-notifications").NotificationResponse;
 type ExpoEventSubscription = import("expo-notifications").EventSubscription;
@@ -156,13 +156,10 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
     if (!userId || !Notifications) return;
     let cancelled = false;
 
-    // Register and save token
+    // Refresh only opted-in devices; opening the app must not enable push.
     void (async () => {
       try {
-        const result = await registerForPushNotifications();
-        if (!cancelled && result.ok) {
-          await savePushTokenToSupabase(userId, result.token);
-        }
+        await refreshEnabledPushToken(userId, () => cancelled);
       } catch (error) {
         console.warn("[PushNotifications] bootstrap failed:", error);
       }

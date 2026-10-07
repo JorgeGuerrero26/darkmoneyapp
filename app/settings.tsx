@@ -67,6 +67,7 @@ import { resolveTimeZone } from "../lib/calendar-day";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { registerForPushNotifications, savePushTokenToSupabase } from "../services/push-registration";
 import { pushRegistrationMessage, type PushRegistrationReason } from "../lib/push-registration-errors";
+import { notificationDeliveryState } from "../lib/notification-delivery-state";
 
 const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] = [
   { label: "Administrador", value: "admin" },
@@ -422,8 +423,7 @@ function SettingsScreen() {
     (activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin");
   const dailyDigestEnabled = notificationPreferencesQuery.data?.dailyDigestEnabled !== false;
   const predictiveAlertsEnabled = notificationPreferencesQuery.data?.predictiveAlertsEnabled !== false;
-  const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
-  const pushToken = notificationPreferencesQuery.data?.pushToken ?? null;
+  const { pushReady, dailyDigestActive, predictiveAlertsActive } = notificationDeliveryState(notificationPreferencesQuery.data);
   const biometricActive = biometricEnabled && bioCredsStored;
 
   async function handlePushToggle(nextValue: boolean) {
@@ -464,21 +464,23 @@ function SettingsScreen() {
   }
 
   async function handleDailyDigestToggle(nextValue: boolean) {
+    if (!pushReady || pushTogglePending.current || updateNotificationPreferencesMutation.isPending) return;
     try {
       await updateNotificationPreferencesMutation.mutateAsync({
         dailyDigestEnabled: nextValue,
         predictiveAlertsEnabled,
       });
       showToast(
-        nextValue ? "Digest diario activado" : "Digest diario desactivado",
+        nextValue ? "Resumen diario activado" : "Resumen diario desactivado",
         "success",
       );
     } catch (err: unknown) {
-      showErrorToast(nextValue ? "No se pudo activar el digest diario" : "No se pudo desactivar el digest diario", err);
+      showErrorToast(nextValue ? "No se pudo activar el resumen diario" : "No se pudo desactivar el resumen diario", err);
     }
   }
 
   async function handlePredictiveAlertsToggle(nextValue: boolean) {
+    if (!pushReady || pushTogglePending.current || updateNotificationPreferencesMutation.isPending) return;
     try {
       await updateNotificationPreferencesMutation.mutateAsync({
         dailyDigestEnabled,
@@ -730,7 +732,7 @@ function SettingsScreen() {
               support={pushRegistering ? "Actualizando avisos en este teléfono…" : undefined}
               trailing={
                 pushRegistering ? <ActivityIndicator color={COLORS.storm} /> : <Switch
-                  value={pushEnabled && Boolean(pushToken)}
+                  value={pushReady}
                   onValueChange={(v) => void handlePushToggle(v)}
                   disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
@@ -765,11 +767,14 @@ function SettingsScreen() {
 
             <SettingsRow
               label="Resumen diario"
+              support={pushReady
+                ? "Un aviso al día con pagos, presupuestos y pendientes."
+                : "Un resumen de tus finanzas al día. Requiere push activo."}
               trailing={
                 <Switch
-                  value={dailyDigestEnabled}
+                  value={dailyDigestActive}
                   onValueChange={(v) => void handleDailyDigestToggle(v)}
-                  disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                  disabled={!pushReady || pushRegistering || updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
                   thumbColor={EXTENDED_PALETTE.white}
                 />
@@ -778,12 +783,14 @@ function SettingsScreen() {
 
             <SettingsRow
               label="Alertas predictivas"
-              support="Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos."
+              support={pushReady
+                ? "Aviso si tu saldo previsto no cubre el mes o tus pagos."
+                : "Avisos si tu saldo no cubre tus pagos. Requiere push activo."}
               trailing={
                 <Switch
-                  value={predictiveAlertsEnabled}
+                  value={predictiveAlertsActive}
                   onValueChange={(v) => void handlePredictiveAlertsToggle(v)}
-                  disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                  disabled={!pushReady || pushRegistering || updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
                   thumbColor={EXTENDED_PALETTE.white}
                 />

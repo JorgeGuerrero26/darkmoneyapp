@@ -1,5 +1,5 @@
 import { classifyPushRegistrationError } from "../lib/push-registration-errors";
-import { registerForPushNotifications, savePushTokenToSupabase } from "../services/push-registration";
+import { registerForPushNotifications, savePushTokenToSupabase, refreshEnabledPushToken } from "../services/push-registration";
 import { Platform } from "react-native";
 
 const mockNotifications = {
@@ -10,13 +10,21 @@ const mockNotifications = {
   AndroidImportance: { MAX: 5 },
 };
 const mockUpsert = jest.fn();
+const mockReadPreference = jest.fn();
+const mockUpdateActive = jest.fn();
+const mockUpdateUser = jest.fn(() => ({ eq: mockUpdateActive }));
+const mockUpdate = jest.fn(() => ({ eq: mockUpdateUser }));
 jest.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 jest.mock("expo-constants", () => ({
   __esModule: true,
   default: { executionEnvironment: "standalone", easConfig: { projectId: "test-project" } },
 }));
 jest.mock("../lib/notifications-runtime", () => ({ getNotificationsModule: () => mockNotifications }));
-jest.mock("../lib/supabase", () => ({ supabase: { from: () => ({ upsert: mockUpsert }) } }));
+jest.mock("../lib/supabase", () => ({ supabase: { from: () => ({
+  upsert: mockUpsert,
+  select: () => ({ eq: () => ({ maybeSingle: mockReadPreference }) }),
+  update: mockUpdate,
+}) } }));
 jest.mock("../lib/error-logger", () => ({ logWarn: jest.fn() }));
 
 beforeEach(() => {
@@ -26,6 +34,8 @@ beforeEach(() => {
   mockNotifications.requestPermissionsAsync.mockResolvedValue({ status: "granted" });
   mockNotifications.getExpoPushTokenAsync.mockResolvedValue({ data: "test-token" });
   mockUpsert.mockResolvedValue({ error: null });
+  mockReadPreference.mockResolvedValue({ data: { is_active: true }, error: null });
+  mockUpdateActive.mockResolvedValue({ error: null });
 });
 
 test("missing iOS signing entitlement is not reported as an internet failure", async () => {
@@ -119,4 +129,33 @@ test("the token timeout does not interrupt a user's permission decision", async 
   } finally {
     jest.useRealTimers();
   }
+});
+
+test.each([null, { is_active: false }])("startup does not enable push for preference %p", async (data) => {
+  mockReadPreference.mockResolvedValueOnce({ data, error: null });
+  await refreshEnabledPushToken("user", () => false);
+  expect(mockNotifications.getPermissionsAsync).not.toHaveBeenCalled();
+  expect(mockUpdate).not.toHaveBeenCalled();
+  expect(mockUpsert).not.toHaveBeenCalled();
+});
+
+test("startup refresh only updates the token of a device that is still enabled", async () => {
+  await refreshEnabledPushToken("user", () => false);
+  expect(mockUpdate).toHaveBeenCalledWith({ push_token: "test-token", platform: "ios" });
+  expect(mockUpdateUser).toHaveBeenCalledWith("user_id", "user");
+  expect(mockUpdateActive).toHaveBeenCalledWith("is_active", true);
+  expect(mockUpsert).not.toHaveBeenCalled();
+});
+
+test("startup leaves preferences untouched after the hook unmounts", async () => {
+  let cancelled = false;
+  let finish!: (value: { data: string }) => void;
+  mockNotifications.getExpoPushTokenAsync.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const pending = refreshEnabledPushToken("user", () => cancelled);
+  await Promise.resolve();
+  await Promise.resolve();
+  cancelled = true;
+  finish({ data: "test-token" });
+  await pending;
+  expect(mockUpdate).not.toHaveBeenCalled();
 });

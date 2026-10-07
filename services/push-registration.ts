@@ -76,3 +76,20 @@ export async function savePushTokenToSupabase(userId: string, token: string): Pr
     throw error;
   }
 }
+
+/** Refresh an opted-in token without ever enabling push during app startup. */
+export async function refreshEnabledPushToken(userId: string, isCancelled: () => boolean): Promise<void> {
+  if (!supabase || isCancelled()) return;
+  const { data, error } = await supabase.from("notification_preferences")
+    .select("is_active").eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  if (data?.is_active !== true || isCancelled()) return;
+  const result = await registerForPushNotifications();
+  if (!result.ok || isCancelled()) return;
+  // The user can disable push while token registration is pending. A conditional
+  // update preserves that choice and never creates a preference row on startup.
+  const { error: saveError } = await supabase.from("notification_preferences")
+    .update({ push_token: result.token, platform: Platform.OS })
+    .eq("user_id", userId).eq("is_active", true);
+  if (saveError) throw saveError;
+}

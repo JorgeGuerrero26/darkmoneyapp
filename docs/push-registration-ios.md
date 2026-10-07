@@ -26,6 +26,12 @@ no encontró ningún dispositivo registrado como iOS.
   límite; el usuario puede tardar en decidir. Agotar la espera no cancela el registro nativo,
   pero una respuesta tardía no guarda ni activa avisos por su cuenta.
 - Ajustes muestra progreso durante la activación y bloquea intentos simultáneos.
+- «Resumen diario» y «Alertas predictivas» muestran su propósito y requieren push activo
+  con token para mostrarse encendidos o modificarse. Sus preferencias se conservan mientras
+  push está apagado. El servidor de resumen ya exige `is_active = true` y token registrado.
+- El bootstrap solo actualiza tokens de usuarios que ya activaron push. Su escritura se
+  condiciona a `is_active = true`, sin cambiar ese campo: abrir la app o terminar un registro
+  pendiente no debe reactivar avisos que el usuario apagó.
 - Los fallos quedan en `app_error_logs`, fuente `push-registration`, con etapa y motivo.
   El token obtenido no se imprime en consola.
 
