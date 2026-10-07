@@ -1,202 +1,79 @@
 /**
- * Recibe los correos de constancia que el usuario reenvía desde Gmail y los convierte en
- * sugerencias pendientes de confirmación. Recupera en iOS la detección que en Android hace
- * NotificationListenerService.
- *
- * Deploy:
- *   npx supabase functions deploy inbound-email-detection --no-verify-jwt --project-ref cawrdzrcipgibcoefltr
- *
- * Required secrets:
- *   SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY
- *   INBOUND_EMAIL_WEBHOOK_SECRET   (va en la query string del webhook: ?s=<secreto>)
- *
- * --no-verify-jwt es obligatorio: quien llama es SendGrid, no un usuario con sesión.
- *
- * Proveedor: **SendGrid Inbound Parse**, que POSTea el correo como multipart/form-data con el
- * cuerpo incluido. Se eligió sobre Resend porque el webhook de Resend NO trae el cuerpo (solo
- * metadata) y habría hecho falta una segunda llamada autenticada.
- *
- * Autenticación, en tres capas independientes:
- *   1. `?s=<INBOUND_EMAIL_WEBHOOK_SECRET>` en la URL del webhook. Inbound Parse no firma sus
- *      POST, así que este secreto es lo que impide que cualquiera postee acá.
- *   2. El token del alias en la dirección destino, que dice de quién es el correo.
- *   3. El remitente original tiene que ser un banco conocido (lo valida el parser).
- * Y por diseño nada entra a los saldos sin que el usuario confirme.
+ * Resend email.received -> sugerencia pendiente -> aviso interno en iOS y Android.
+ * Secretos: RESEND_INBOUND_API_KEY (Full access), RESEND_INBOUND_WEBHOOK_SECRET (whsec_...).
+ * Deploy: npx supabase functions deploy inbound-email-detection --no-verify-jwt --use-api
+ * La firma de Resend autentica el webhook; el usuario siempre confirma el movimiento.
  */
-import { corsHeaders, jsonResponse, serviceClient } from "../_shared/obligation-share-utils.ts";
-import { buildDedupeKey, extractOperationNumber, parseReceiptEmail } from "./logic.ts";
+import { jsonResponse, serviceClient } from "../_shared/obligation-share-utils.ts";
+import { processReceivedEvent, type InboundRepository } from "./handler.ts";
+import { retrieveReceivedEmail, verifyResendWebhook } from "./resend.ts";
 
-/** Ventanas de dedupe contra la detección de Android (mismas que usa el Kotlin). */
-const PENDING_WINDOW_MS = 10 * 60_000;
-const REGISTERED_WINDOW_MS = 2 * 60 * 60_000;
-
-/** recibos+<token>@darkmoney.company */
-function extractAliasToken(candidates: string[]): string | null {
-  for (const candidate of candidates) {
-    const match = /recibos\+([A-Za-z0-9_-]{16,})@/i.exec(candidate);
-    if (match) return match[1];
-  }
-  return null;
-}
-
-/**
- * Comparación en tiempo constante. Con `===` el tiempo de respuesta filtra cuántos caracteres
- * del secreto acertó quien prueba, que es justo lo que se explota para adivinarlo byte a byte.
- */
-function secretMatches(provided: string, expected: string): boolean {
-  if (provided.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < provided.length; i++) {
-    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
-/**
- * El cuerpo del correo trae datos financieros, así que NUNCA se registra. Solo el remitente,
- * que es lo que hace falta para diagnosticar por qué un correo no se reconoció.
- */
-async function logEvent(
-  admin: ReturnType<typeof serviceClient>,
-  level: "error" | "warn" | "info",
-  message: string,
-  context: Record<string, unknown>,
-  userId: string | null = null,
-) {
-  try {
-    await admin.from("app_error_logs").insert({
-      user_id: userId,
-      level,
-      source: "inbound-email",
-      message,
-      context,
-      platform: "edge",
-    });
-  } catch {
-    // Un fallo de log jamás debe tumbar el procesamiento del correo.
-  }
+function createRepository(): InboundRepository {
+  const admin = serviceClient();
+  return {
+    async resolveAlias(token) {
+      const { data, error } = await admin.from("inbound_email_aliases")
+        .select("user_id, workspace_id").eq("token", token).is("revoked_at", null).maybeSingle();
+      if (error) throw new Error(`alias-query-${error.code}`);
+      if (!data) return null;
+      // Un alias no conserva acceso cuando el usuario deja el workspace.
+      const { data: member, error: membershipError } = await admin.from("workspace_members")
+        .select("workspace_id").eq("user_id", data.user_id).eq("workspace_id", data.workspace_id).maybeSingle();
+      if (membershipError) throw new Error(`membership-query-${membershipError.code}`);
+      return member ? { user_id: data.user_id, workspace_id: Number(data.workspace_id) } : null;
+    },
+    async saveSuggestion(input) {
+      const fields = "id, status, amount, currency_code, description, app_label, created_at";
+      const { data, error } = await admin.from("notification_detected_movement_suggestions")
+        .insert(input).select(fields).single();
+      if (!error) return data;
+      if (error.code !== "23505") throw new Error(`suggestion-insert-${error.code}`);
+      const { data: existing, error: readError } = await admin.from("notification_detected_movement_suggestions")
+        .select(fields).eq("user_id", input.user_id).eq("workspace_id", input.workspace_id)
+        .eq("dedupe_key", input.dedupe_key).single();
+      if (readError) throw new Error(`suggestion-retry-${readError.code}`);
+      return existing;
+    },
+    async ensureNotification(userId, suggestion) {
+      const { data: existing, error: readError } = await admin.from("notifications")
+        .select("id").eq("user_id", userId).eq("kind", "detected_movement_suggestion")
+        .eq("related_entity_type", "detected_movement_suggestion").eq("related_entity_id", suggestion.id).maybeSingle();
+      if (readError) throw new Error(`notification-query-${readError.code}`);
+      if (existing) return; // Conserva read_at/status cuando el usuario ya leyó el aviso.
+      const { error } = await admin.from("notifications").insert({
+        user_id: userId,
+        title: `Movimiento detectado en ${suggestion.app_label} · por correo`,
+        body: `${suggestion.currency_code === "PEN" ? "S/" : "$"} ${Number(suggestion.amount).toFixed(2)} · ${suggestion.description}`,
+        status: "sent", scheduled_for: suggestion.created_at, kind: "detected_movement_suggestion", channel: "in_app",
+        related_entity_type: "detected_movement_suggestion", related_entity_id: suggestion.id,
+        payload: { suggestionId: suggestion.id, amount: Number(suggestion.amount), currencyCode: suggestion.currency_code,
+          appLabel: suggestion.app_label, status: suggestion.status, source: "email" },
+      });
+      if (error && error.code !== "23505") throw new Error(`notification-insert-${error.code}`);
+    },
+  };
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ ok: false, error: "Método no permitido." }, 405);
-
-  const expectedSecret = Deno.env.get("INBOUND_EMAIL_WEBHOOK_SECRET")?.trim();
-  if (!expectedSecret) return jsonResponse({ ok: false, error: "Sin secreto configurado." }, 500);
-
-  const providedSecret = new URL(req.url).searchParams.get("s") ?? "";
-  if (!secretMatches(providedSecret, expectedSecret)) {
-    return jsonResponse({ ok: false, error: "No autorizado." }, 401);
-  }
-
-  const admin = serviceClient();
-
-  // Inbound Parse manda multipart/form-data; Deno lo lee nativamente.
-  let form: FormData;
+  const secret = Deno.env.get("RESEND_INBOUND_WEBHOOK_SECRET")?.trim();
+  const apiKey = Deno.env.get("RESEND_INBOUND_API_KEY")?.trim();
+  if (!secret || !apiKey) return jsonResponse({ ok: false, error: "Recepción pendiente de configurar." }, 503);
+  const body = await req.text();
+  if (body.length > 256_000) return jsonResponse({ ok: false, error: "Evento demasiado grande." }, 413);
+  let event;
   try {
-    form = await req.formData();
+    event = await verifyResendWebhook(body, {
+      id: req.headers.get("svix-id"), timestamp: req.headers.get("svix-timestamp"), signature: req.headers.get("svix-signature"),
+    }, secret);
   } catch {
-    return jsonResponse({ ok: false, error: "Cuerpo ilegible." }, 400);
+    return jsonResponse({ ok: false, error: "Firma inválida." }, 401);
   }
-  const field = (name: string) => {
-    const value = form.get(name);
-    return typeof value === "string" ? value : "";
-  };
-
-  // `envelope` es el sobre SMTP real ({"to":[...],"from":"..."}); el header To: puede venir
-  // reescrito por el reenvío, así que se prefiere el sobre y el header queda de respaldo.
-  let envelopeTo: string[] = [];
   try {
-    const parsed = JSON.parse(field("envelope") || "{}") as { to?: unknown };
-    if (Array.isArray(parsed.to)) envelopeTo = parsed.to.filter((x): x is string => typeof x === "string");
-  } catch {
-    // Sobre ilegible: se sigue con el header To:.
+    return jsonResponse(await processReceivedEvent(event, createRepository(), (id) => retrieveReceivedEmail(id, apiKey)));
+  } catch (error) {
+    // Códigos propios: no registra cuerpo, token, dirección privada ni credenciales.
+    console.error("[inbound-email]", error instanceof Error ? error.message.replace(/[^a-zA-Z0-9áéíóúñ -]/g, "").slice(0, 100) : "processing-failed");
+    return jsonResponse({ ok: false, error: "No se pudo procesar el correo. Se reintentará." }, 500);
   }
-
-  const token = extractAliasToken([...envelopeTo, field("to")]);
-  if (!token) return jsonResponse({ ok: true, ignored: "sin token" });
-
-  const { data: alias } = await admin
-    .from("inbound_email_aliases")
-    .select("user_id, workspace_id")
-    .eq("token", token)
-    .is("revoked_at", null)
-    .maybeSingle();
-  if (!alias) return jsonResponse({ ok: true, ignored: "alias desconocido" }, 404);
-
-  const from = field("from");
-  const parsed = parseReceiptEmail({
-    from,
-    subject: field("subject"),
-    text: field("text"),
-  });
-
-  // No reconocido NO es error: el usuario puede reenviar cualquier cosa por accidente. Pero se
-  // registra el remitente, porque el modo de fallo más probable de esta función es que Gmail
-  // reescriba el From: al reenviar y el banco deje de matchear. Sin este log sería invisible.
-  if (!parsed) {
-    await logEvent(admin, "info", "correo no reconocido", { from }, alias.user_id);
-    return jsonResponse({ ok: true, ignored: "correo no reconocido" });
-  }
-
-  const now = Date.now();
-
-  // Dedupe contra Android: el usuario usa ambos teléfonos con la misma cuenta, y un yape
-  // genera push (Android) Y correo.
-  const { data: recentSuggestion } = await admin
-    .from("notification_detected_movement_suggestions")
-    .select("id")
-    .eq("workspace_id", alias.workspace_id)
-    .eq("amount", parsed.amount)
-    .gte("created_at", new Date(now - PENDING_WINDOW_MS).toISOString())
-    .limit(1)
-    .maybeSingle();
-  if (recentSuggestion) return jsonResponse({ ok: true, ignored: "ya detectado" });
-
-  const { data: recentMovement } = await admin
-    .from("movements")
-    .select("id")
-    .eq("workspace_id", alias.workspace_id)
-    .gte("created_at", new Date(now - REGISTERED_WINDOW_MS).toISOString())
-    .or(`source_amount.eq.${parsed.amount},destination_amount.eq.${parsed.amount}`)
-    .limit(1)
-    .maybeSingle();
-  if (recentMovement) return jsonResponse({ ok: true, ignored: "ya registrado" });
-
-  const { error } = await admin.from("notification_detected_movement_suggestions").insert({
-    user_id: alias.user_id,
-    workspace_id: alias.workspace_id,
-    financial_app_key: parsed.financialAppKey,
-    // La columna es NOT NULL y viene del mundo Android (nombre del paquete de la app). Para
-    // correo no existe tal cosa; el origen queda marcado con este centinela. Los dos puntos
-    // no son válidos en un package name de Android, así que no puede colisionar con una app.
-    package_name: "email:inbound",
-    app_label: parsed.appLabel,
-    movement_type: parsed.movementType,
-    amount: parsed.amount,
-    currency_code: parsed.currencyCode,
-    description: parsed.description,
-    // El correo trae su propia fecha, pero en formato local del banco ("27 julio 2026 - 08:29
-    // p. m."). Parsearlo es otro pozo de bugs: llega minutos después del movimiento, así que
-    // la hora de recepción es lo bastante buena y el usuario puede corregirla al confirmar.
-    occurred_at: new Date(now).toISOString(),
-    confidence: parsed.confidence,
-    dedupe_key: buildDedupeKey({
-      operationNumber: extractOperationNumber(field("text")),
-      messageId: field("headers").match(/^Message-ID:\s*(.+)$/im)?.[1]?.trim() ?? null,
-      content: field("text"),
-    }),
-    metadata: { source: "email", app_label: parsed.appLabel },
-  });
-
-  // 23505 = choque con uq_detected_movement_suggestion_dedupe. Es el camino esperado cuando
-  // SendGrid reintenta: se responde 200 para que deje de reintentar.
-  if (error && error.code !== "23505") {
-    await logEvent(admin, "error", "fallo al insertar sugerencia", { code: error.code }, alias.user_id);
-    // 500 a propósito: que el proveedor reintente. La idempotencia lo hace seguro.
-    return jsonResponse({ ok: false, error: "No se pudo guardar la sugerencia." }, 500);
-  }
-
-  return jsonResponse({ ok: true, duplicated: error?.code === "23505" });
 });

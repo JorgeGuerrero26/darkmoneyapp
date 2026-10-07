@@ -979,14 +979,14 @@ function SettingsScreen() {
               size="md"
               onPress={() => void handleCopyInboundAddress()}
             />
-            {/* Los dominios van completos y son los reales: Yape usa yape.pe (NO
-                yape.com.pe), y un filtro con el dominio equivocado no reenvía nada,
-                en silencio. */}
             <Text style={styles.inboundHelp}>
-              En Gmail: Configuración › Filtros › Crear filtro con{"\n"}
-              De: notificacionesbcp.com.pe OR yape.pe{"\n"}
-              Acción: Reenviar a esta dirección{"\n"}
-              Gmail te pedirá confirmar el reenvío una vez.
+              En Gmail, desde una computadora:{"\n"}
+              1. Configuración › Reenvío › Añadir esta dirección.{"\n"}
+              2. Confirma el reenvío con el correo que envía Gmail.{"\n"}
+              3. Crea un filtro para los comprobantes de tu banco y selecciona
+              «Reenviar a esta dirección».{"\n"}
+              Los formatos disponibles son BCP y Yape. Las sugerencias aparecen en
+              Notificaciones y requieren tu confirmación.
             </Text>
             <Button
               label="Generar una nueva"

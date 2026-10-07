@@ -54,7 +54,7 @@ const MEDIUM_INCOME = ["abono", "deposito", "envio un pago", "pago por", "te dep
  * + campo "Operación realizada: Transferencia entre mis cuentas". Ninguna de las dos frases
  * estaba en las listas portadas, así que estas transferencias se descartaban en silencio.
  */
-const TRANSFER = ["transferencia entre mis cuentas", "realizaste una transferencia"];
+const TRANSFER = ["transferencia entre mis cuentas", "transferencia entre tus cuentas"];
 
 export function classifyMovement(text: string): Classification | null {
   const normalized = normalizeText(text);
@@ -73,7 +73,7 @@ export function classifyMovement(text: string): Classification | null {
   return null;
 }
 
-export type ReceiptEmail = { from: string; subject: string; text: string };
+export type ReceiptEmail = { from: string; subject: string; text: string; html?: string | null };
 
 export type ParsedReceipt = {
   movementType: MovementType;
@@ -83,6 +83,8 @@ export type ParsedReceipt = {
   financialAppKey: string;
   appLabel: string;
   confidence: Confidence;
+  occurredAt: string | null;
+  operationNumber: string | null;
 };
 
 /**
@@ -175,8 +177,13 @@ export function buildDedupeKey(source: {
   operationNumber: string | null;
   messageId: string | null;
   content?: string;
+  bank?: string;
+  operationDate?: string | null;
 }): string {
-  if (source.operationNumber) return `email:op:${source.operationNumber}`;
+  if (source.operationNumber) {
+    const scope = source.bank ? `${source.bank}:${source.operationDate?.slice(0, 10) ?? "undated"}:` : "";
+    return `email:op:${scope}${source.operationNumber}`;
+  }
   if (source.messageId?.trim()) return `email:${source.messageId.trim()}`;
   // Sin ninguno: hash estable del contenido. djb2, suficiente para deduplicar (no es
   // seguridad) y evita depender de crypto para poder testearlo con jest.
@@ -189,10 +196,11 @@ export function buildDedupeKey(source: {
 }
 
 export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
-  const sender = KNOWN_SENDERS.find((entry) => entry.match.test(email.from.trim()));
+  const sender = KNOWN_SENDERS.find((entry) => entry.match.test(extractSenderAddress(email.from)));
   if (!sender) return null;
 
-  const haystack = `${email.subject}\n${email.text}`;
+  const text = email.text.trim() || htmlToText(email.html ?? "");
+  const haystack = `${email.subject}\n${text}`;
   const classification = classifyMovement(haystack);
   if (!classification) return null;
 
@@ -204,7 +212,7 @@ export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
     amount: parsedAmount.amount,
     currencyCode: parsedAmount.currencyCode,
     description: buildDescription(
-      email.text,
+      text,
       email.subject,
       classification.movementType,
       sender.appLabel,
@@ -212,5 +220,55 @@ export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
     financialAppKey: sender.financialAppKey,
     appLabel: sender.appLabel,
     confidence: classification.confidence,
+    occurredAt: extractOperationDate(text),
+    operationNumber: extractOperationNumber(text),
   };
+}
+
+/** El From de Resend suele ser `BCP Notificaciones <direccion@dominio>`. */
+export function extractSenderAddress(from: string): string {
+  const address = from.match(/<([^<>]+)>\s*$/)?.[1] ?? from.trim();
+  return /^[^\s<>@]+@[^\s<>@]+$/.test(address) ? address.toLowerCase() : "";
+}
+
+/** Conserva columnas de tablas y saltos de línea; nunca carga recursos del HTML. */
+export function htmlToText(html: string): string {
+  const entities: Record<string, string> = {
+    nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+    aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú", ntilde: "ñ",
+    Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú", Ntilde: "Ñ",
+  };
+  return html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\/(td|th)>/gi, "\t")
+    .replace(/<br\s*\/?\s*>|<\/(tr|p|div|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, key: string) => {
+      if (!key.startsWith("#")) return entities[key] ?? entity;
+      const code = key[1].toLowerCase() === "x" ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+      return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+    });
+}
+
+/** Fechas bancarias peruanas: UTC-5, sin horario de verano. No usa la zona del servidor. */
+export function extractOperationDate(text: string): string | null {
+  const months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const match = /fecha y hora(?: de la operacion)?\s*[\t:]?\s*(\d{1,2})\s+(?:de\s+)?([a-z]+)\s+(?:de\s+)?(\d{4})\s*-\s*(\d{1,2}):(\d{2})\s*([ap])\.?\s*m\.?/i.exec(normalizeText(text));
+  if (!match) return null;
+  const [, rawDay, monthName, rawYear, rawHour, rawMinute, period] = match;
+  const month = months.indexOf(monthName);
+  const day = Number(rawDay), year = Number(rawYear), hour = Number(rawHour), minute = Number(rawMinute);
+  if (month < 0 || hour < 1 || hour > 12 || minute > 59 || year < 2000 || year > 2100) return null;
+  const calendarDate = new Date(Date.UTC(year, month, day));
+  if (calendarDate.getUTCMonth() !== month || calendarDate.getUTCDate() !== day) return null;
+  const utcHour = hour % 12 + (period === "p" ? 12 : 0) + 5;
+  return new Date(Date.UTC(year, month, day, utcHour, minute)).toISOString();
+}
+
+/** Solo acepta aliases del dominio receptor, nunca un token encontrado dentro del cuerpo. */
+export function extractAliasToken(recipients: string[]): string | null {
+  for (const recipient of recipients) {
+    const match = /^recibos\+([a-f0-9]{32})@recibos\.darkmoney\.company$/i.exec(extractSenderAddress(recipient));
+    if (match) return match[1].toLowerCase();
+  }
+  return null;
 }

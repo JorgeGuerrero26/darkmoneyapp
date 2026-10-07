@@ -4,6 +4,8 @@ import {
   extractAmount,
   extractOperationNumber,
   parseReceiptEmail,
+  extractOperationDate,
+  extractAliasToken,
 } from "../logic";
 import { BCP_CONSUMO, BCP_TRANSFERENCIA, YAPE_ENVIADO } from "./fixtures/emails";
 
@@ -43,7 +45,7 @@ describe("classifyMovement", () => {
 
   it("trata la transferencia entre cuentas propias como transfer, no como gasto", () => {
     // Contarla como gasto bajaría el patrimonio por mover dinero de un bolsillo a otro.
-    expect(classifyMovement("Realizaste una transferencia de S/ 110.00 desde tu Clasica"))
+    expect(classifyMovement("Realizaste una transferencia de S/ 110.00 desde tu Clasica. Transferencia entre mis cuentas"))
       .toEqual({ movementType: "transfer", confidence: "high" });
     expect(classifyMovement("Operación realizada\tTransferencia entre mis cuentas"))
       .toEqual({ movementType: "transfer", confidence: "high" });
@@ -55,6 +57,44 @@ describe("classifyMovement", () => {
 
   it("devuelve null cuando no hay verbo de operación", () => {
     expect(classifyMovement("Tu estado de cuenta ya está disponible")).toBeNull();
+  });
+});
+
+describe("comprobantes BCP reenviados desde Gmail", () => {
+  it("lee el remitente con nombre, importe, empresa y fecha real", () => {
+    expect(parseReceiptEmail({
+      from: "BCP Notificaciones <notificaciones@notificacionesbcp.com.pe>",
+      subject: "Constancia de consumo",
+      text: "Realizaste un consumo de S/ 155.37 con tu Tarjeta de Débito BCP.\nEmpresa\tCOMERCIO FICTICIO\nFecha y hora\t03 de octubre de 2026 - 11:01 AM\nNúmero de operación\t100004",
+    })).toMatchObject({ amount: 155.37, description: "COMERCIO FICTICIO", occurredAt: "2026-10-03T16:01:00.000Z", operationNumber: "100004" });
+  });
+  it("lee comprobantes que solo traen HTML y columnas separadas", () => {
+    expect(parseReceiptEmail({
+      from: BCP_CONSUMO.from, subject: BCP_CONSUMO.subject, text: "",
+      html: '<style>NO COMERCIO</style><p>Realizaste un consumo de S/&nbsp;44.90.</p><table><tr><td>Empresa</td><td>COMERCIO FICTICIO</td></tr><tr><td>Fecha y hora</td><td>03 de octubre de 2026 - 06:24 PM</td></tr></table>',
+    })).toMatchObject({ amount: 44.9, description: "COMERCIO FICTICIO", occurredAt: "2026-10-03T23:24:00.000Z" });
+  });
+  it("no convierte cualquier transferencia a otra persona en una transferencia propia", () => {
+    expect(classifyMovement("Realizaste una transferencia de S/ 500.00 a otra persona")).toBeNull();
+  });
+  it("rechaza dominios parecidos aunque incluyan nombre de banco", () => {
+    expect(parseReceiptEmail({ ...BCP_CONSUMO, from: "BCP <notificaciones@notificacionesbcp.com.pe.falso.test>" })).toBeNull();
+  });
+  it("maneja medianoche, mediodía, Yape y fechas imposibles sin depender del servidor", () => {
+    expect(extractOperationDate("Fecha y Hora de la operación\t27 julio 2026 - 08:29 p. m.")).toBe("2026-07-28T01:29:00.000Z");
+    expect(extractOperationDate("Fecha y hora\t03 de Octubre de 2026 - 12:00 AM")).toBe("2026-10-03T05:00:00.000Z");
+    expect(extractOperationDate("Fecha y hora\t03 de Octubre de 2026 - 12:00 PM")).toBe("2026-10-03T17:00:00.000Z");
+    expect(extractOperationDate("Fecha y hora\t31 febrero 2026 - 11:00 AM")).toBeNull();
+  });
+  it("separa números de operación reutilizados por otro banco o día", () => {
+    const operation = { operationNumber: "100001", messageId: null, bank: "bcp_email", operationDate: "2026-10-03" };
+    expect(buildDedupeKey(operation)).not.toBe(buildDedupeKey({ ...operation, bank: "yape_email" }));
+    expect(buildDedupeKey(operation)).not.toBe(buildDedupeKey({ ...operation, operationDate: "2026-10-04" }));
+  });
+  it("solo extrae tokens de destinatarios en el dominio configurado", () => {
+    const token = "0123456789abcdef0123456789abcdef";
+    expect(extractAliasToken([`recibos+${token}@recibos.darkmoney.company`])).toBe(token);
+    expect(extractAliasToken([`recibos+${token}@otro.test`])).toBeNull();
   });
 });
 

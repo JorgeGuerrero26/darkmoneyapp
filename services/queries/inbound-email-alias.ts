@@ -11,7 +11,7 @@ import { supabase } from "../../lib/supabase";
  * Es rotable para que filtrarlo no obligue a cambiar de cuenta de correo.
  */
 
-export const INBOUND_EMAIL_DOMAIN = "darkmoney.company";
+export const INBOUND_EMAIL_DOMAIN = "recibos.darkmoney.company";
 
 /**
  * Centinela que la edge function `inbound-email-detection` escribe en `package_name`, que es
@@ -56,12 +56,13 @@ export function useRotateInboundEmailAliasMutation(
     mutationFn: async () => {
       if (!supabase || !userId || !workspaceId) throw new Error("Sesión no disponible.");
 
-      await supabase
+      const { error: revokeError } = await supabase
         .from("inbound_email_aliases")
         .update({ revoked_at: new Date().toISOString() })
         .eq("user_id", userId)
         .eq("workspace_id", workspaceId)
         .is("revoked_at", null);
+      if (revokeError) throw new Error(revokeError.message);
 
       // Sin `token`: lo pone el default de la tabla. El select lo trae de vuelta para poder
       // mostrarlo, porque es la única vez que el usuario necesita verlo completo.
