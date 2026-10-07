@@ -156,7 +156,7 @@ function SettingsScreen() {
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const { showToast, showErrorToast } = useToast();
-  const detectionSettingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
+  const detectionSettingsQuery = useNotificationDetectionSettingsQuery(Platform.OS === "android" ? profile?.id : null, activeWorkspaceId);
   const notificationPreferencesQuery = useNotificationPreferencesQuery(profile?.id ?? null);
   const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
@@ -797,11 +797,13 @@ function SettingsScreen() {
               }
             />
 
-            <SettingsRow
-              onPress={() => router.push("/(app)/notification-detection?from=settings" as any)}
-              label="Detección automática"
-              support={detectionSummary}
-            />
+            {Platform.OS === "android" ? (
+              <SettingsRow
+                onPress={() => router.push("/(app)/notification-detection?from=settings" as any)}
+                label="Detección automática"
+                support={detectionSummary}
+              />
+            ) : null}
 
             <SettingsRow
               onPress={() => setInboundSheetOpen(true)}

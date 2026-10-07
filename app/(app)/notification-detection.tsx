@@ -17,6 +17,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { AndroidNotificationDetectionGate } from "../../components/domain/AndroidNotificationDetectionGate";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -39,7 +40,11 @@ import type { AccountSummary } from "../../types/domain";
 
 const Notifications = getNotificationsModule();
 
-export default function NotificationDetectionScreen() {
+export default function NotificationDetectionRoute() {
+  return <AndroidNotificationDetectionGate><NotificationDetectionScreen /></AndroidNotificationDetectionGate>;
+}
+
+function NotificationDetectionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ from?: string | string[] }>();
@@ -216,10 +221,10 @@ export default function NotificationDetectionScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACING.xl }]}>
         {!nativeAvailable ? (
           <View style={styles.limitNotice}>
-            <Text style={styles.limitNoticeTitle}>No disponible en este build</Text>
+            <Text style={styles.limitNoticeTitle}>No disponible en esta instalación</Text>
             <Text style={styles.limitNoticeText}>
-              La detección automática necesita la app instalada desde Play Store. Puedes dejar todo
-              configurado ahora y empezará a funcionar cuando instales esa versión.
+              Esta versión de Android no incluye detección automática. Para usarla, instala
+              una versión de DarkMoney que incluya esa función.
             </Text>
           </View>
         ) : (

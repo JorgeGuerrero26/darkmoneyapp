@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Battery, Bell, BellRing, CheckCircle2, Eye, ShieldCheck } from "lucide-react-native";
 
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { AndroidNotificationDetectionGate } from "../../components/domain/AndroidNotificationDetectionGate";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -34,7 +35,11 @@ type StepKey = "intro" | "push" | "notification_access" | "overlay" | "battery";
 
 const STEP_ORDER: StepKey[] = ["intro", "push", "notification_access", "overlay", "battery"];
 
-export default function NotificationOnboardingScreen() {
+export default function NotificationOnboardingRoute() {
+  return <AndroidNotificationDetectionGate><NotificationOnboardingScreen /></AndroidNotificationDetectionGate>;
+}
+
+function NotificationOnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ replay?: string }>();
