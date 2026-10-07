@@ -784,8 +784,8 @@ function SettingsScreen() {
             <SettingsRow
               label="Alertas predictivas"
               support={pushReady
-                ? "Aviso si tu saldo previsto no cubre el mes o tus pagos."
-                : "Avisos si tu saldo no cubre tus pagos. Requiere push activo."}
+                ? "Solo avisa si prevé que tu saldo no cubrirá el mes o tus pagos."
+                : "Avisos de riesgo de saldo. Requiere push activo."}
               trailing={
                 <Switch
                   value={predictiveAlertsActive}
