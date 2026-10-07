@@ -728,8 +728,10 @@ function SettingsScreen() {
           <Text style={styles.sectionTitle}>Notificaciones</Text>
           <SettingsGroup>
             <SettingsRow
-              label="Push en este dispositivo"
-              support={pushRegistering ? "Actualizando avisos en este teléfono…" : undefined}
+              label="Recibir notificaciones"
+              support={pushRegistering
+                ? "Actualizando avisos en este teléfono…"
+                : "Avisos en tu teléfono aunque no estés usando DarkMoney."}
               trailing={
                 pushRegistering ? <ActivityIndicator color={COLORS.storm} /> : <Switch
                   value={pushReady}
@@ -769,7 +771,7 @@ function SettingsScreen() {
               label="Resumen diario"
               support={pushReady
                 ? "Un aviso al día con pagos, presupuestos y pendientes."
-                : "Un resumen de tus finanzas al día. Requiere push activo."}
+                : "Resumen de tus finanzas.\nActiva «Recibir notificaciones»."}
               trailing={
                 <Switch
                   value={dailyDigestActive}
@@ -785,7 +787,7 @@ function SettingsScreen() {
               label="Alertas predictivas"
               support={pushReady
                 ? "Solo avisa si prevé que tu saldo no cubrirá el mes o tus pagos."
-                : "Avisos de riesgo de saldo. Requiere push activo."}
+                : "Avisos de riesgo de saldo.\nActiva «Recibir notificaciones»."}
               trailing={
                 <Switch
                   value={predictiveAlertsActive}

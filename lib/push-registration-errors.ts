@@ -39,8 +39,8 @@ export function pushRegistrationMessage(reason: PushRegistrationReason): { title
   switch (reason) {
     case "native_configuration":
       return {
-        title: "Esta instalación no permite activar push",
-        description: "Para recibir avisos hay que instalar una versión preparada para notificaciones push. En iPhone, una instalación firmada con Apple ID gratuito no las admite.",
+        title: "Esta instalación no permite recibir avisos",
+        description: "Para recibirlos, necesitas una instalación compatible de DarkMoney. En iPhone, una instalación con Apple ID gratuito no permite estos avisos.",
       };
     case "permissions_denied":
       return { title: "Permisos bloqueados en el sistema", description: "Permite las notificaciones de DarkMoney en los ajustes del sistema y vuelve a activar el interruptor." };
@@ -53,8 +53,8 @@ export function pushRegistrationMessage(reason: PushRegistrationReason): { title
     case "expo_go":
     case "not_device":
     case "module_unavailable":
-      return { title: "Push no está disponible en esta instalación", description: "Se necesita una versión de DarkMoney que incluya soporte para notificaciones push." };
+      return { title: "Los avisos no están disponibles en esta instalación", description: "Necesitas una versión compatible de DarkMoney para recibir avisos en tu teléfono." };
     default:
-      return { title: "No se pudieron activar las notificaciones push", description: "El teléfono no pudo completar el registro. Inténtalo de nuevo; el error quedó registrado para revisarlo." };
+      return { title: "No se pudieron activar los avisos en este teléfono", description: "El teléfono no pudo completar la activación. Inténtalo de nuevo más tarde." };
   }
 }
