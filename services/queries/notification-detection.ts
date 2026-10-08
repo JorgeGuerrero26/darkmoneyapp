@@ -409,13 +409,29 @@ export function useDetectedMovementSuggestionQuery(suggestionId?: number | null)
   });
 }
 
+/** El estado de la sugerencia es independiente de read_at/status del aviso. */
+export function usePendingDetectedMovementsQuery(userId: string | null, workspaceId: number | null, enabled = true) {
+  return useQuery({
+    queryKey: ["pending-detected-movements", userId, workspaceId],
+    enabled: Boolean(supabase && userId && workspaceId && enabled),
+    refetchInterval: enabled ? 30_000 : false,
+    queryFn: async () => {
+      const { data, error } = await supabase!.from("notification_detected_movement_suggestions")
+        .select("*").eq("user_id", userId!).eq("workspace_id", workspaceId!)
+        .in("status", ["pending", "needs_review"]).order("created_at", { ascending: true });
+      if (error) throw new Error("No se pudieron cargar los movimientos por revisar.");
+      return (data ?? []).map(mapSuggestion);
+    },
+  });
+}
+
 export function useMarkDetectedMovementSuggestionMutation(userId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["mark-detected-movement-suggestion"],
-    mutationFn: async (input: { suggestionId: number; status: DetectedMovementStatus; movementId?: number | null }) => {
+    mutationFn: async (input: { suggestionId: number; status: DetectedMovementStatus; movementId?: number | null; expectedStatus?: DetectedMovementStatus }) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
-      const { error } = await supabase
+      let update = supabase
         .from("notification_detected_movement_suggestions")
         .update({
           status: input.status,
@@ -423,12 +439,27 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
           updated_at: new Date().toISOString(),
         })
         .eq("id", input.suggestionId);
+      if (input.expectedStatus) update = update.eq("status", input.expectedStatus);
+      const { data, error } = await update.select("*").single();
       if (error) throw new Error(error.message ?? "No se pudo actualizar la sugerencia");
       if (userId && input.status !== "pending") {
         await autoArchiveDetectedMovementNotification(userId, input.suggestionId);
       }
+      return mapSuggestion(data);
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
+      queryClient.setQueryData(["detected-movement-suggestion", variables.suggestionId], data);
+      queryClient.setQueriesData<DetectedMovementSuggestion[]>({ queryKey: ["pending-detected-movements"] }, (previous) => {
+        if (!previous) return previous;
+        const rest = previous.filter((item) => item.id !== data.id);
+        if (data.status === "pending" || data.status === "needs_review") {
+          // No agregar la sugerencia a caches de otro usuario/workspace.
+          return previous.some((item) => item.userId === data.userId && item.workspaceId === data.workspaceId)
+            ? [...rest, data].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : rest;
+        }
+        return rest;
+      });
+      void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
       void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", variables.suggestionId] });
       void queryClient.invalidateQueries({ queryKey: ["notifications", userId ?? null] });
     },

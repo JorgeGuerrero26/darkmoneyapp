@@ -53,6 +53,7 @@ await db.connect();
 try {
   await db.query("begin");
   await db.query(readFileSync("supabase/migrations/202610070001_email_detection_pro_access.sql", "utf8"));
+  await db.query(readFileSync("supabase/migrations/202610070002_detected_movement_resolution.sql", "utf8"));
   await db.query("insert into auth.users (id,email) values ($1,$3),($2,$4)",
     [free, pro, `${free}@test.invalid`, `${pro}@test.invalid`]);
   await db.query("insert into public.workspaces (id,owner_user_id,name) overriding system value values ($1,$2,'Prueba PRO aislada')", [workspace, pro]);
@@ -70,6 +71,9 @@ try {
   await db.query(suggestionSql(), [androidId, free, workspace, "com.bcp.test", randomUUID()]);
   await db.query(movementSql(), [nextId--, workspace, free, account, JSON.stringify({ suggestionId: androidId })]);
   check(true, "Android Free conserva detección y registro");
+  const registeredAndroid = await db.query("select status,movement_id from public.notification_detected_movement_suggestions where id=$1", [androidId]);
+  check(registeredAndroid.rows[0].status === "registered" && registeredAndroid.rows[0].movement_id != null, "El movimiento resuelve la detección en la misma transacción");
+  await denied(movementSql(), [nextId--, workspace, free, account, JSON.stringify({ suggestionId: androidId })], "No se puede crear un segundo movimiento de una detección resuelta");
   await denied("update public.notification_detected_movement_suggestions set package_name='email:inbound' where id=$1", [androidId], "No se puede falsificar el origen Android como correo");
 
   await claims(pro);
@@ -79,6 +83,8 @@ try {
   await db.query(suggestionSql(), [emailId, pro, workspace, "email:inbound", randomUUID()]);
   await db.query(movementSql(), [nextId--, workspace, pro, account, JSON.stringify({ suggestionId: emailId })]);
   check(true, "PRO puede generar alias, detectar y registrar");
+  const registeredEmail = await db.query("select status,movement_id from public.notification_detected_movement_suggestions where id=$1", [emailId]);
+  check(registeredEmail.rows[0].status === "registered" && registeredEmail.rows[0].movement_id != null, "Correo usa el mismo estado canónico que Android");
   await denied("update public.notification_detected_movement_suggestions set package_name='com.bcp.test' where id=$1", [emailId], "No se puede disfrazar correo como Android");
 
   await plan([true, false, new Date(Date.now() - 86400000)]);
