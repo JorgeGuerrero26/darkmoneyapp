@@ -114,3 +114,14 @@ it("un fallo al actualizar el aviso no convierte un registro exitoso en error", 
   expect(mockResolved).toHaveBeenCalledWith(7, "registered");
   expect(current.saveError).toBeNull();
 });
+
+it("reintentar un descarte fallido vuelve a descartar y nunca registra", async () => {
+  mockMark.mockRejectedValueOnce(new Error("Fallo al descartar"));
+  await act(async () => { await current.discard(); });
+  expect(current.saveError).toBeTruthy();
+  await act(async () => { await current.retry(); });
+  expect(mockMark).toHaveBeenCalledTimes(2);
+  expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "discarded", expectedStatus: "pending" });
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockResolved).toHaveBeenCalledWith(7, "discarded");
+});

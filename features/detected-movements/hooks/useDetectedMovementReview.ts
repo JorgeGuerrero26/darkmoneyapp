@@ -157,6 +157,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   // entre el primer tap y el re-render donde un segundo tap (o doble-tap rápido) dispara otro
   // submit → movimiento duplicado/triplicado. Este ref bloquea al instante, sin esperar render.
   const submittingRef = useRef(false);
+  const lastActionRef = useRef<"save" | "discard">("save");
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(null);
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
@@ -603,6 +604,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
 
   async function discard() {
     if (!suggestion || submittingRef.current) return;
+    lastActionRef.current = "discard";
     submittingRef.current = true; setSaveError(null);
     setIsDiscarding(true);
     try {
@@ -640,6 +642,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     // que TODA salida (validación, diálogo de duplicado, error de red) libera el guard — antes
     // había 6 resets dispersos y una ruta nueva podía dejarlo trabado.
     if (submittingRef.current) return;
+    lastActionRef.current = "save";
     submittingRef.current = true;
     setIsSaving(true); setSaveError(null); setDuplicateCandidate(null);
     try {
@@ -911,6 +914,11 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     }
   }
 
+  async function retry() {
+    if (lastActionRef.current === "discard") await discard();
+    else await submit(false);
+  }
+
   /**
    * Post-procesamiento común a la vía única y a la vía split (marcar sugerencia, telemetría,
    * feedback de categoría, toast y cierre) para que ambas se mantengan sincronizadas.
@@ -1091,7 +1099,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     transferFxRate, setTransferFxRate: changeFxRate, categoryId, selectCategoryManually, description, setDescription,
     date, setDate, time, setTime, notes, setNotes, activeAccounts, destinationAccountsSorted, categories,
     transferCurrenciesDiffer, transferSourceAccount, transferDestAccount, displayAppLabel,
-    isDiscarding, checkingDuplicate, createMovement, markSuggestion, submit, discard,
+    isDiscarding, checkingDuplicate, createMovement, markSuggestion, submit, discard, retry,
     splitLines, setSplitLines, splitSheetOpen, setSplitSheetOpen, selectedBudgetAccount, spendTypes,
     categorySuggestion, applyCategorySuggestion, descriptionCleanup, cleanupAppliedText, setCleanupAppliedText,
     selectedCounterparty, counterpartySuggestion, applyCounterpartySuggestion, recurringSuggestion,

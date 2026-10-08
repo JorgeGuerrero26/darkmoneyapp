@@ -23,7 +23,7 @@ export function DetectedMovementInbox({ userId, workspaceId, accounts, categorie
       position={`${inbox.pending.findIndex((item) => item.id === inbox.selected!.id) + 1} de ${inbox.pending.length}`}
       list={inbox.mode === "list" ? <DetectedMovementsList items={items} onSelect={inbox.select} /> : undefined}
       renderPreview={(r) => r.suggestion ? <DetectedMovementCard suggestion={r.suggestion} draft={r.draft} count={inbox.pending.length} accounts={r.activeAccounts} categories={r.categories} readyToSave={r.readyToSave} missing={r.cardMissing} busy={r.busy} error={r.saveError}
-        onReview={inbox.openReview} onViewAll={inbox.openList} onSave={() => { void r.submit(false); }} onDiscard={() => { void r.discard(); }}
+        onReview={inbox.openReview} onViewAll={inbox.openList} onSave={() => { if (r.saveError) void r.retry(); else void r.submit(false); }} onDiscard={() => { void r.discard(); }}
         duplicate={r.duplicateCandidate ? { candidate: r.duplicateCandidate, currency: r.selectedBudgetAccount?.currencyCode ?? r.suggestion.currencyCode, busy: r.busy, onOpen: r.openDuplicate, onSame: () => { void r.useExistingDuplicate(); }, onSaveAnyway: () => { void r.submit(true); } } : undefined} /> : null}
     />
   </View>;

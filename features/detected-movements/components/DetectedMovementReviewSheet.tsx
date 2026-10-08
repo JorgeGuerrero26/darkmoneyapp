@@ -49,7 +49,7 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
       {r.saveError ? <Text style={styles.footerError} accessibilityRole="alert">{r.saveError}</Text> : null}
       {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} /></View> : <DetailActionBar primarySide="right"
         secondary={{ label: "Descartar", accessibilityLabel: "Descartar detección", icon: Trash2, disabled: r.busy, loading: r.isDiscarding, onPress: () => { void r.discard(); } }}
-        primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: "Guardar movimiento revisado", icon: Check, loading: r.isSaving, disabled: r.busy, onPress: () => { void r.submit(false); } }} />}
+        primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: r.saveError ? "Reintentar la última acción" : "Guardar movimiento revisado", icon: Check, loading: r.isSaving || r.isDiscarding, disabled: r.busy, onPress: () => { if (r.saveError) void r.retry(); else void r.submit(false); } }} />}
     </View>}
   >
     {list ?? (!r.initialized ? <View style={styles.loading}><ActivityIndicator color={COLORS.storm} /><Text style={styles.meta}>Cargando la detección…</Text></View> : <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>
