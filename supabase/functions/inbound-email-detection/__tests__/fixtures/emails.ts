@@ -1,5 +1,25 @@
 import type { ReceiptEmail } from "../../logic";
 
+export const BCP_YAPEO: ReceiptEmail = {
+  from: "BCP Notificaciones <notificaciones@notificacionesbcp.com.pe>",
+  subject: "Constancia de Yapeo a Celular - Servicio de Notificaciones BCP",
+  text: [
+    "Realizaste un yapeo a celular de S/ 92.10 desde tu Cuenta de ahorro Soles.",
+    "Operación realizada\tYapear a celular",
+    "Fecha y hora\t27 de septiembre de 2026 - 01:52 PM",
+    "Enviado a\tBeneficiario Ficticio\n*** **1 000",
+    "Destino\tYape",
+    "Número de operación\t100005",
+  ].join("\n"),
+};
+
+export const YAPE_COMERCIO: ReceiptEmail = {
+  from: "YAPE Notificaciones <notificaciones@yape.pe>",
+  subject: "Confirmación de pago",
+  text: "",
+  html: '<p>Hola NOMBRE,<br>¡Tu pago en CINEPLANET&#xA;fue exitoso!</p><p>Monto total<br><b>S/</b>&#x32;6.50</p><table><tr><td>Fecha y hora:</td><td>05 septiembre 2026 - 04:18 p.&nbsp;m.</td></tr><tr><td>ID de operación:</td><td>Compras Cineplanet</td></tr></table>',
+};
+
 /**
  * Correos reales anonimizados. Ver README.md: la estructura es lo único que el parser lee, así
  * que se conserva tal cual y solo se sustituyen los datos personales.

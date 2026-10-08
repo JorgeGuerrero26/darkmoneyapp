@@ -7,7 +7,7 @@ import {
   extractOperationDate,
   extractAliasToken,
 } from "../logic";
-import { BCP_CONSUMO, BCP_TRANSFERENCIA, YAPE_ENVIADO } from "./fixtures/emails";
+import { BCP_CONSUMO, BCP_TRANSFERENCIA, BCP_YAPEO, YAPE_ENVIADO, YAPE_COMERCIO } from "./fixtures/emails";
 
 describe("extractAmount", () => {
   it("lee soles con y sin separador de miles", () => {
@@ -99,6 +99,21 @@ describe("comprobantes BCP reenviados desde Gmail", () => {
 });
 
 describe("parseReceiptEmail", () => {
+  it("lee yapeos BCP con la persona de Enviado a y conserva su fecha", () => {
+    expect(parseReceiptEmail(BCP_YAPEO)).toMatchObject({ movementType: "expense", amount: 92.1,
+      description: "Beneficiario Ficticio", occurredAt: "2026-09-27T18:52:00.000Z", operationNumber: "100005" });
+  });
+
+  it("lee pagos Yape en comercios con entidades HTML sin inventar un número de operación", () => {
+    expect(parseReceiptEmail(YAPE_COMERCIO)).toMatchObject({ movementType: "expense", amount: 26.5,
+      description: "CINEPLANET", occurredAt: "2026-09-05T21:18:00.000Z", operationNumber: null });
+  });
+
+  it("lee el formato Yape con monto en otra celda y fecha de octubre", () => {
+    expect(parseReceiptEmail({ ...YAPE_ENVIADO, text: YAPE_ENVIADO.text
+      .replace("180.00", "50.00").replace("27 julio 2026 - 08:29 p. m.", "04 octubre 2026 - 09:23 a. m.") }))
+      .toMatchObject({ amount: 50, occurredAt: "2026-10-04T14:23:00.000Z", description: "Beneficiario F*" });
+  });
   it("parsea un yapeo de salida (correo real)", () => {
     // El remitente real es @yape.pe, NO @yape.com.pe.
     // La descripción sale de "Nombre del Beneficiario": Yape no trae campo "Empresa".

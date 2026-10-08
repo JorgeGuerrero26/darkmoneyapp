@@ -39,7 +39,7 @@ function normalizeText(text: string): string {
 const HIGH_EXPENSE = [
   "pagaste", "enviaste", "yapaste", "yapear exitosamente", "yapeo exitoso", "yapeo aprobado",
   "monto de yapeo", "pago exitoso", "realizaste un consumo", "realizaste una compra",
-  "compra realizada", "operacion realizada consumo", "consumo con tu tarjeta",
+  "compra realizada", "operacion realizada consumo", "consumo con tu tarjeta", "realizaste un yapeo",
 ];
 const HIGH_INCOME = [
   "recibiste", "te enviaron", "te envio", "transferencia recibida", "abono recibido",
@@ -61,7 +61,7 @@ export function classifyMovement(text: string): Classification | null {
   if (TRANSFER.some((verb) => normalized.includes(verb))) {
     return { movementType: "transfer", confidence: "high" };
   }
-  if (HIGH_EXPENSE.some((verb) => normalized.includes(verb))) {
+  if (HIGH_EXPENSE.some((verb) => normalized.includes(verb)) || /tu pago en\s+[^\n]+?\s+fue exitoso/.test(normalized.replace(/\s+/g, " "))) {
     return { movementType: "expense", confidence: "high" };
   }
   if (HIGH_INCOME.some((verb) => normalized.includes(verb))) {
@@ -122,6 +122,7 @@ const DESCRIPTION_WINDOW = 400;
 const STRUCTURED_DESCRIPTION = [
   /^\s*Empresa\s*[\t:]\s*(.+)$/im,
   /^\s*Nombre del Beneficiario\s*[\t:]\s*(.+)$/im,
+  /^\s*Enviado a\s*[\t:]\s*(.+)$/im,
 ];
 
 function cleanDescription(raw: string): string {
@@ -151,6 +152,8 @@ function buildDescription(
 
   const cut = text.search(DISCLAIMER);
   const body = (cut >= 0 ? text.slice(0, cut) : text).slice(0, DESCRIPTION_WINDOW);
+  const checkout = /tu pago en\s+(.+?)\s+fue exitoso/i.exec(body.replace(/\s+/g, " "));
+  if (checkout) return cleanDescription(checkout[1]);
   const prose = /\ben\s+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .*&-]{3,40})/.exec(body);
   return cleanDescription(prose?.[1] ?? subject);
 }
