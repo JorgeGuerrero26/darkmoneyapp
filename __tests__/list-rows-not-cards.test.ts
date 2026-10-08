@@ -20,6 +20,8 @@ const SCAN = ["components/domain", "features"];
 const EXCEPTIONS = new Set([
   // Una invitación con aceptar/rechazar es una tarjeta de ACCIÓN, no una fila de lista.
   "components/domain/NotificationInviteCard.tsx",
+  // Revisión 52: una sola detección con Revisar/Guardar es la tarjeta de acción del dashboard.
+  "features/detected-movements/components/DetectedMovementCard.tsx",
 ]);
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -37,14 +39,16 @@ describe("las listas se dibujan como filas, no como tarjetas", () => {
   for (const dir of SCAN) {
     for (const full of walk(join(ROOT, dir))) {
       const rel = full.slice(ROOT.length + 1).split("\\").join("/");
-      if (EXCEPTIONS.has(rel)) continue;
       const source = readFileSync(full, "utf8");
 
       // Cada apertura de <ResourceCard necesita SU propia variant: un archivo puede tener dos.
       const opens = (source.match(/<ResourceCard[\s>]/g) || []).length;
       if (opens === 0) continue;
       const rows = (source.match(/variant="(row|line)"/g) || []).length;
-      if (rows < opens) offenders.push(`${rel} — ${opens} ResourceCard, ${rows} con variant fila`);
+      // La excepción permite UNA tarjeta explícita; las otras ResourceCard del mismo archivo
+      // (p. ej. el movimiento parecido) siguen necesitando su propia variante de fila.
+      const actionCards = EXCEPTIONS.has(rel) ? Math.min(1, (source.match(/variant="card"/g) || []).length) : 0;
+      if (rows + actionCards < opens) offenders.push(`${rel} — ${opens} ResourceCard, ${rows} con variant fila, ${actionCards} de acción`);
     }
   }
 

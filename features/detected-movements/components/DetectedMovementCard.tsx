@@ -50,7 +50,7 @@ export function DetectedMovementCard({ suggestion, draft, count, accounts, categ
     {count > 1 ? <Pressable onPress={onViewAll} disabled={busy} accessibilityRole="button" style={styles.tap}><Text style={styles.link}>Ver los {count}</Text></Pressable> : null}
     <HeaderActionGroup actions={[{ key: "more", icon: MoreHorizontal, accessibilityLabel: "Más acciones de la detección", disabled: busy, onPress: () => setMenuOpen((open) => !open) }]} />
   </View>;
-  return <ResourceCard title={`POR REVISAR · ${count}`} titleStyle={styles.kicker} trailing={headerActions}
+  return <ResourceCard variant="card" title={`POR REVISAR · ${count}`} titleStyle={styles.kicker} trailing={headerActions}
     footer={<View style={styles.body}>
       {menuOpen ? <Button label="Descartar detección" variant="ghost" disabled={busy} onPress={() => { setMenuOpen(false); onDiscard(); }} /> : null}
       <View style={styles.headline}><Text style={styles.title}>{draft.description || "Movimiento detectado"}</Text><Text style={[styles.amount, { color: detectionTone(draft.movementType) }]}>{privacyMode ? "••••" : detectionAmount(draft.amount, source?.currencyCode ?? suggestion.currencyCode, draft.movementType)}</Text></View>
