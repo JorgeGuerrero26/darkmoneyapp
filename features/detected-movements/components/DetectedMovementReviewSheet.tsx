@@ -16,12 +16,12 @@ import type { DetectedMovementReview } from "../hooks/useDetectedMovementReview"
 
 type Props = {
   visible: boolean; onClose: () => void; review: DetectedMovementReview;
-  position?: string; extras?: ReactNode; extraOverlay?: ReactNode; list?: ReactNode;
+  position?: string; extras?: ReactNode; overlay?: ReactNode; list?: ReactNode;
 };
 type Selector = "account" | "destination" | "category" | "date" | "description" | null;
 
 /** Presentación compartida; toda validación y escritura vive en el controlador. */
-export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, extraOverlay, list }: Props) {
+export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, overlay: extraOverlay, list }: Props) {
   const [selector, setSelector] = useState<Selector>(null);
   useEffect(() => { setSelector(null); }, [r.suggestion?.id, visible]);
   const source = r.activeAccounts.find((a) => a.id === r.accountId);
@@ -31,19 +31,20 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
   const isTransfer = r.movementType === "transfer";
   const warning = r.missing[0] ?? (r.suggestion?.status === "needs_review" ? "Revisa los datos del comprobante antes de guardar" : null);
   const close = () => { if (!r.busy) onClose(); };
-  let overlay = extraOverlay;
-  if (selector === "description") overlay = <InlineFormSheet visible entranceAnimation="springFade" title="Descripción" onBack={() => setSelector(null)} footer={<Button label="Listo" onPress={() => setSelector(null)} />}>
-    <TextField value={r.description} onChangeText={r.setDescription} multiline style={styles.descriptionInput} accessibilityLabel="Descripción del movimiento" />
-  </InlineFormSheet>;
-  else if (selector === "date") overlay = <DateTimeSheet visible entranceAnimation="springFade" date={r.date} time={r.time} onBack={() => setSelector(null)} onConfirm={({ date, time }) => { r.setDate(date); if (time) r.setTime(time); setSelector(null); }} />;
-  else if (selector) overlay = <SearchableSelectSheet<number | null> inline entranceAnimation="springFade" visible title={selector === "category" ? "Categoría" : selector === "destination" ? "Cuenta destino" : isTransfer ? "Cuenta origen" : "Cuenta"}
-    options={selector === "category" ? [{ value: null, label: "Sin categoría" }, ...r.categories.map((c) => ({ value: c.id, label: c.name }))] : (selector === "destination" ? r.destinationAccountsSorted : r.activeAccounts.filter((a) => a.currencyCode === r.suggestion?.currencyCode)).map((a) => ({ value: a.id, label: a.name, meta: a.currencyCode }))}
-    value={selector === "category" ? r.categoryId : selector === "destination" ? r.destinationAccountId : r.accountId}
-    onChange={(id) => { if (selector === "category") r.selectCategoryManually(id); else if (selector === "destination") r.setDestinationAccountId(id); else r.setAccountId(id); }}
-    onClose={() => setSelector(null)} />;
-
   return <BottomSheet visible={visible} onClose={close} title={list ? "Por revisar" : "Revisar movimiento"} entranceAnimation="springFade" snapHeight={0.92} scrollEnabled={!list}
-    overlay={list ? undefined : overlay} contentStyle={styles.sheetContent}
+    overlay={list ? undefined : selector === "description" ? (
+      <InlineFormSheet visible entranceAnimation="springFade" title="Descripción" onBack={() => setSelector(null)} footer={<Button label="Listo" onPress={() => setSelector(null)} />}>
+        <TextField value={r.description} onChangeText={r.setDescription} multiline style={styles.descriptionInput} accessibilityLabel="Descripción del movimiento" />
+      </InlineFormSheet>
+    ) : selector === "date" ? (
+      <DateTimeSheet visible entranceAnimation="springFade" date={r.date} time={r.time} onBack={() => setSelector(null)} onConfirm={({ date, time }) => { r.setDate(date); if (time) r.setTime(time); setSelector(null); }} />
+    ) : selector ? (
+      <SearchableSelectSheet<number | null> inline entranceAnimation="springFade" visible title={selector === "category" ? "Categoría" : selector === "destination" ? "Cuenta destino" : isTransfer ? "Cuenta origen" : "Cuenta"}
+        options={selector === "category" ? [{ value: null, label: "Sin categoría" }, ...r.categories.map((c) => ({ value: c.id, label: c.name }))] : (selector === "destination" ? r.destinationAccountsSorted : r.activeAccounts.filter((a) => a.currencyCode === r.suggestion?.currencyCode)).map((a) => ({ value: a.id, label: a.name, meta: a.currencyCode }))}
+        value={selector === "category" ? r.categoryId : selector === "destination" ? r.destinationAccountId : r.accountId}
+        onChange={(id) => { if (selector === "category") r.selectCategoryManually(id); else if (selector === "destination") r.setDestinationAccountId(id); else r.setAccountId(id); }}
+        onClose={() => setSelector(null)} />
+    ) : extraOverlay} contentStyle={styles.sheetContent}
     footer={list || !r.initialized ? undefined : <View>
       {warning ? <Text style={styles.footerWarning}>{warning}</Text> : null}
       {r.saveError ? <Text style={styles.footerError} accessibilityRole="alert">{r.saveError}</Text> : null}

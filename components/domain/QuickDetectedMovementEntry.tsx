@@ -63,7 +63,7 @@ export function QuickDetectedMovementEntry(props: Props) {
     {pending && r.initialized ? props.renderPreview?.(r) : null}
     <DetectedMovementReviewSheet visible={props.visible} onClose={close} review={r} list={props.list} position={props.position}
       extras={<DetectedMovementExtras key={r.suggestion.id} review={r} />}
-      extraOverlay={r.splitLines ? <SplitCategoriesSheet visible={r.splitSheetOpen} onClose={() => r.setSplitSheetOpen(false)} lines={r.splitLines} onChangeLines={r.setSplitLines} categories={r.categories} totalAmount={parsePositiveAmountInput(r.amount) ?? 0} currencyCode={r.selectedBudgetAccount?.currencyCode ?? r.suggestion.currencyCode} movementLabel={r.description.trim() || "Movimiento detectado"} movementType={r.movementType === "income" ? "income" : "expense"} spendTypes={r.spendTypes} /> : undefined} />
+      overlay={r.splitLines ? <SplitCategoriesSheet visible={r.splitSheetOpen} onClose={() => r.setSplitSheetOpen(false)} lines={r.splitLines} onChangeLines={r.setSplitLines} categories={r.categories} totalAmount={parsePositiveAmountInput(r.amount) ?? 0} currencyCode={r.selectedBudgetAccount?.currencyCode ?? r.suggestion.currencyCode} movementLabel={r.description.trim() || "Movimiento detectado"} movementType={r.movementType === "income" ? "income" : "expense"} spendTypes={r.spendTypes} /> : undefined} />
   </>;
 }
 
