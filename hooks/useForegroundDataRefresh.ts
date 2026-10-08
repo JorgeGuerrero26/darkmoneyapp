@@ -57,7 +57,10 @@ export function useForegroundDataRefresh(userId: string | null, workspaceId: num
         scheduleQueryInvalidation(queryClient, ["movement"], delayMs);
         scheduleQueryInvalidation(queryClient, ["dashboard-movements"], delayMs);
       }
-      if (uid) scheduleQueryInvalidation(queryClient, ["notifications", uid], delayMs);
+      if (uid) {
+        scheduleQueryInvalidation(queryClient, ["notifications", uid], delayMs);
+        if (wsId) scheduleQueryInvalidation(queryClient, ["pending-detected-movements", uid, wsId], delayMs);
+      }
       scheduleQueryInvalidation(queryClient, ["shared-obligations"], delayMs);
     }
 

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "../../../lib/supabase";
 import { useEmailDetectionProAccessQuery } from "../../../services/queries/email-detection-access";
 import { usePendingDetectedMovementsQuery } from "../../../services/queries/notification-detection";
 import type { DetectionDraft } from "../lib/review-draft";
@@ -27,15 +26,6 @@ export function useDetectedMovementInbox(userId: string | null, workspaceId: num
   useFocusEffect(useCallback(() => {
     if (enabled) void query.refetch();
   }, [enabled, query.refetch]));
-  useEffect(() => {
-    if (!supabase || !enabled || !userId || !workspaceId) return;
-    const invalidate = () => { void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", userId, workspaceId] }); };
-    const channel = supabase.channel(`dashboard-detections:${userId}:${workspaceId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` }, invalidate)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notification_detected_movement_suggestions", filter: `user_id=eq.${userId}` }, invalidate)
-      .subscribe();
-    return () => { void supabase?.removeChannel(channel); };
-  }, [enabled, userId, workspaceId, queryClient]);
 
   const rememberDraft = useCallback((id: number, draft: DetectionDraft) => { drafts.current.set(id, draft); }, []);
   function resolve(id: number) {

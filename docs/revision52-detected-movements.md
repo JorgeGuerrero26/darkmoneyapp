@@ -10,8 +10,9 @@ queda pendiente de la aclaración del usuario.
 - Dashboard y Notificaciones usan `notification_detected_movement_suggestions.status`.
   Leer un aviso no guarda ni descarta su detección.
 - La consulta de pendientes incluye `pending` y `needs_review`, del usuario y workspace
-  activos. La cola se actualiza al resolver una detección, con eventos de Realtime y
-  una consulta periódica de respaldo.
+  activos. La cola se actualiza al resolver una detección, al volver al dashboard,
+  cada 30 segundos con la app activa y con la reconciliación global al volver de
+  segundo plano o recibir un push. Respeta la política del proyecto sin Realtime.
 - Ambas superficies usan el mismo controlador y ventana de revisión. Cada guardado
   tiene un bloqueo síncrono contra pulsaciones repetidas y la clave idempotente
   `suggestion:<id>` ya utilizada por el registro de detecciones.
