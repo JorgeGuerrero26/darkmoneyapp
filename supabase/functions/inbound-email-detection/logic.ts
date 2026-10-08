@@ -88,8 +88,8 @@ export type ParsedReceipt = {
 };
 
 /**
- * Remitentes aceptados. Cualquier otro se ignora aunque traiga monto y verbo: es la defensa
- * contra sugerencias inyectadas por quien conozca el alias.
+ * Remitentes con formatos verificados. Los demás pasan por el clasificador IA del receptor;
+ * nunca se reconocen solamente por traer un monto y un verbo.
  *
  * Los dos dominios están verificados contra correos reales y NINGUNO era el que parecía
  * obvio: BCP usa `notificacionesbcp.com.pe` (no `bcp.com.pe`) y Yape usa `yape.pe`
@@ -100,6 +100,10 @@ const KNOWN_SENDERS: { match: RegExp; financialAppKey: string; appLabel: string 
   { match: /@(notificaciones)?yape\.pe$/i, financialAppKey: "yape_email", appLabel: "Yape" },
   { match: /@notificacionesbcp\.com\.pe$/i, financialAppKey: "bcp_email", appLabel: "BCP" },
 ];
+
+export function getKnownReceiptSender(from: string) {
+  return KNOWN_SENDERS.find((entry) => entry.match.test(extractSenderAddress(from))) ?? null;
+}
 
 /**
  * Los avisos legales del pie ("En nuestras comunicaciones…", "participa en sorteos o
@@ -199,7 +203,7 @@ export function buildDedupeKey(source: {
 }
 
 export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
-  const sender = KNOWN_SENDERS.find((entry) => entry.match.test(extractSenderAddress(email.from)));
+  const sender = getKnownReceiptSender(email.from);
   if (!sender) return null;
 
   const text = email.text.trim() || htmlToText(email.html ?? "");

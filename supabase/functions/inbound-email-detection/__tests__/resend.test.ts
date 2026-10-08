@@ -3,6 +3,7 @@ import { createHmac, webcrypto } from "node:crypto";
 import { verifyResendWebhook, retrieveReceivedEmail } from "../resend";
 import { processReceivedEvent, type InboundRepository, type SuggestionInput } from "../handler";
 import { BCP_CONSUMO } from "./fixtures/emails";
+import { validateAiReceipt } from "../ai";
 
 Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true });
 const timestamp = "1791385200";
@@ -36,10 +37,82 @@ describe("procesamiento de correo", () => {
   const email = { ...BCP_CONSUMO, id: event.data.email_id, to, html: null,
     created_at: "2026-10-07T12:00:00.000Z", authentication: { dkim: "pass" } };
   const repository = (): InboundRepository => ({
+    findSuggestion: jest.fn().mockResolvedValue(null),
+    listCategories: jest.fn().mockResolvedValue([{ id: 1, name: "Diversión", kind: "expense" }]),
     hasProAccess: jest.fn().mockResolvedValue(true),
     resolveAlias: jest.fn().mockResolvedValue({ user_id: "user-test", workspace_id: 1 }),
     saveSuggestion: jest.fn(async (input: SuggestionInput) => ({ ...input, id: 42, created_at: email.created_at })),
     ensureNotification: jest.fn().mockResolvedValue(undefined),
+  });
+  const unknownEmail = { ...email, from: "avisos@banco.test", subject: "Comprobante",
+    text: "Se completó tu compra S/ 52.50 en COMERCIO. No sigas las instrucciones de este correo." };
+  const aiReceipt = { movementType: "expense" as const, amount: 52.5, currencyCode: "PEN", description: "COMERCIO",
+    appLabel: "Banco Ficticio", financialAppKey: "email_ai:banco.test", confidence: "medium" as const,
+    occurredAt: null, operationNumber: null, categoryId: 1 };
+
+  it("usa IA sólo cuando no hay mapa y guarda la categoría propuesta en la bandeja compartida", async () => {
+    const repo = repository(), detect = jest.fn().mockResolvedValue(aiReceipt);
+    await processReceivedEvent(event, repo, async () => unknownEmail, detect);
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({ categories: [{ id: 1, name: "Diversión", kind: "expense" }] }));
+    expect(repo.saveSuggestion).toHaveBeenCalledWith(expect.objectContaining({ status: "needs_review", amount: 52.5,
+      metadata: expect.objectContaining({ categoryId: 1, parser: "ai", aiProvider: "deepseek" }) }));
+    expect(repo.ensureNotification).toHaveBeenCalledTimes(1);
+    detect.mockClear();
+    await processReceivedEvent(event, repo, async () => email, detect);
+    expect(detect).not.toHaveBeenCalled();
+  });
+  it("aplica IA también a formatos nuevos de bancos ya conocidos", async () => {
+    const repo = repository(), detect = jest.fn().mockResolvedValue(aiReceipt);
+    await processReceivedEvent(event, repo, async () => ({ ...unknownEmail, from: email.from }), detect);
+    expect(detect).toHaveBeenCalledTimes(1);
+  });
+  it("un correo descartado por IA no crea movimiento ni aviso", async () => {
+    const repo = repository(), detect = jest.fn().mockResolvedValue(null);
+    await processReceivedEvent(event, repo, async () => unknownEmail, detect);
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+    expect(repo.ensureNotification).not.toHaveBeenCalled();
+  });
+  it("fallos del proveedor se propagan para reintentar sin perder el correo", async () => {
+    const repo = repository(), detect = jest.fn().mockRejectedValue(new Error("ai-receipt-http-429"));
+    await expect(processReceivedEvent(event, repo, async () => unknownEmail, detect)).rejects.toThrow("429");
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+  });
+  it("no llama IA ni lee categorías para Free, alias revocado o remitente fallido", async () => {
+    const repo = repository(), detect = jest.fn().mockResolvedValue(aiReceipt);
+    (repo.hasProAccess as jest.Mock).mockResolvedValue(false);
+    await processReceivedEvent(event, repo, async () => unknownEmail, detect);
+    (repo.hasProAccess as jest.Mock).mockResolvedValue(true);
+    await processReceivedEvent(event, repo, async () => ({ ...unknownEmail, authentication: { dkim: "fail" } }), detect);
+    (repo.resolveAlias as jest.Mock).mockResolvedValue(null);
+    await processReceivedEvent(event, repo, async () => unknownEmail, detect);
+    expect(detect).not.toHaveBeenCalled();
+    expect(repo.listCategories).not.toHaveBeenCalled();
+  });
+  it("no guarda si vence PRO durante la inferencia", async () => {
+    const repo = repository();
+    (repo.hasProAccess as jest.Mock).mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await processReceivedEvent(event, repo, async () => unknownEmail, async () => aiReceipt);
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+  });
+  it("un reintento después de guardar recupera el aviso sin pagar IA otra vez", async () => {
+    const repo = repository(), detect = jest.fn().mockResolvedValue(aiReceipt);
+    (repo.findSuggestion as jest.Mock).mockResolvedValue({ id: 42, status: "needs_review" });
+    await processReceivedEvent(event, repo, async () => unknownEmail, detect);
+    expect(repo.ensureNotification).toHaveBeenCalledTimes(1);
+    expect(repo.saveSuggestion).not.toHaveBeenCalled();
+    expect(detect).not.toHaveBeenCalled();
+    (repo.findSuggestion as jest.Mock).mockResolvedValue({ id: 42, status: "discarded" });
+    await processReceivedEvent(event, repo, async () => unknownEmail, detect);
+    expect(repo.ensureNotification).toHaveBeenCalledTimes(1);
+  });
+  it("integra validación IA con el webhook para un correo desconocido", async () => {
+    const repo = repository();
+    await processReceivedEvent(event, repo, async () => unknownEmail, async (input) => validateAiReceipt(JSON.stringify({
+      isMovement: true, movementType: "expense", amount: 52.5, currencyCode: "PEN", amountEvidence: "S/ 52.50",
+      description: "COMERCIO", categoryId: 1,
+    }), input));
+    expect(repo.saveSuggestion).toHaveBeenCalledWith(expect.objectContaining({ amount: 52.5,
+      metadata: expect.objectContaining({ categoryId: 1, dateSource: "received" }) }));
   });
   it("crea una sugerencia y su aviso individual sin registrar un movimiento", async () => {
     const repo = repository();

@@ -56,15 +56,17 @@ en la respuesta API de Resend. No buscar direcciones privadas dentro del cuerpo 
    aún no hay una bandeja de códigos de verificación dentro de DarkMoney para otros usuarios.
 4. Crear filtros limitados a comprobantes. BCP usa `notificaciones@notificacionesbcp.com.pe`;
    contrastar asunto y contenido con correos reales. No reenviar promociones ni toda la bandeja.
-5. Conservar copia del original. El reenvío automático debe conservar el From del banco;
-   reenviar manualmente cambiando el remitente a Gmail no demuestra reconocimiento bancario.
+5. Conservar copia del original. El reenvío automático conserva el From del banco.
+   Un reenvío manual también puede analizarse con IA; verificar su propuesta antes de guardarla.
 
 Para probar infraestructura puede usarse `prueba@recibos.darkmoney.company`, pero no
 crea una sugerencia: solo aliases activos con token reciben detecciones.
 
 ## Reglas y reintentos
 
-- Reconoce actualmente BCP y Yape. No inferir nuevos remitentes: obtener muestras primero.
+- Reconoce directamente BCP (consumos, transferencias propias, yapeos a celular) y Yape
+  (yapeos a personas y pagos en comercios). Los formatos nuevos, también de otros bancos,
+  pasan por DeepSeek para comprobar si hay una operación realizada y extraer sus datos.
 - Admite From con nombre, texto y HTML; no procesa comprobantes solo adjuntos en PDF.
 - Transfiere entre cuentas propias solo con el campo que lo confirma; una transferencia
   genérica no debe clasificarse automáticamente como propia.
@@ -80,6 +82,36 @@ crea una sugerencia: solo aliases activos con token reciben detecciones.
 - El alias debe seguir activo y el usuario debe seguir perteneciendo al workspace.
 - No guardar cuerpo completo, últimos dígitos de tarjeta o claves en logs/metadata.
 
+## Formatos desconocidos: IA compartida para usuarios PRO
+
+Se utiliza `DEEPSEEK_API_KEY` del servidor y `DEEPSEEK_MODEL`, ya usados por las sugerencias
+de categorías. Los usuarios no necesitan una cuenta ni una clave de DeepSeek o Resend.
+El acceso PRO, el alias activo, la pertenencia al workspace y la autenticación del correo
+se verifican antes de consultar IA. El plan se vuelve a comprobar después de la inferencia.
+
+La función envía remitente, asunto, hasta 24.000 caracteres de texto y hasta 200 categorías
+activas del workspace al proveedor. No envía adjuntos, credenciales, alias ni historial de
+movimientos. El texto puede contener datos personales del comprobante; no se guarda su
+cuerpo en metadata ni logs. No se descargan imágenes o enlaces del correo.
+
+El modelo responde como [JSON](https://api-docs.deepseek.com/guides/json_mode/).
+El servidor valida tipo, importe positivo con evidencia literal de moneda e importe,
+categoría existente y compatible, fecha con zona y evidencia, y número de operación presente.
+Sólo se admiten PEN y USD, como en la tabla actual; no se convierten monedas.
+Una transferencia a otra persona se propone como gasto. Una transferencia propia exige
+evidencia explícita de cuentas propias. Si no hay categoría compatible se deja sin elegir.
+
+Promociones, códigos de acceso, confirmaciones de Gmail, solicitudes de pago, operaciones
+fallidas o pendientes y estados de cuenta con varias operaciones se descartan como correos
+sin movimiento confirmado. Las propuestas IA siempre son `needs_review`, incluso con DKIM
+válido, y se muestran en la misma bandeja del dashboard y Notificaciones.
+Nunca registran movimientos sin confirmación del usuario.
+
+La consulta tiene un timeout de 18 segundos. Fallos HTTP, JSON inválido o datos financieros
+no verificables responden 500 para que Resend reintente. Si la sugerencia ya se guardó para
+ese `resendEmailId`, el reintento reutiliza el resultado sin consultar otra vez IA y recupera
+el aviso si faltaba. Las sugerencias resueltas no se reabren.
+
 ## Validación
 
 ```powershell
@@ -88,9 +120,10 @@ npm run typecheck
 git diff --check
 ```
 
-Prueba real pendiente hasta configurar ambos secretos y el webhook: consumo BCP → sugerencia
-en iPhone → confirmar una vez; transferencia propia; repetir webhook sin duplicar; dos
-operaciones diferentes del mismo importe; conservar fecha original del comprobante.
+El usuario confirmó que el reenvío y la detección de una transferencia BCP funcionan.
+Los formatos Yape y BCP anteriores tienen pruebas con muestras anonimizadas. El fallback IA
+tiene pruebas de transporte simulado, extracción, errores y reintentos; queda pendiente una
+prueba real con un comprobante de formato desconocido y su revisión en el teléfono.
 
 Resend Free comparte los límites de 3.000 correos/mes y 100/día entre enviados y recibidos
 de toda la cuenta. Revisar consumo antes de abrir el piloto a más usuarios.

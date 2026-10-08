@@ -7,10 +7,25 @@
 import { jsonResponse, serviceClient } from "../_shared/obligation-share-utils.ts";
 import { processReceivedEvent, type InboundRepository } from "./handler.ts";
 import { retrieveReceivedEmail, verifyResendWebhook } from "./resend.ts";
+import { detectReceiptWithAi, type ReceiptCategory } from "./ai.ts";
 
 function createRepository(): InboundRepository {
   const admin = serviceClient();
+  const fields = "id, status, amount, currency_code, description, app_label, created_at";
   return {
+    async findSuggestion(alias, emailId) {
+      const { data, error } = await admin.from("notification_detected_movement_suggestions")
+        .select(fields).eq("user_id", alias.user_id).eq("workspace_id", alias.workspace_id)
+        .contains("metadata", { resendEmailId: emailId }).limit(1).maybeSingle();
+      if (error) throw new Error(`suggestion-query-${error.code}`);
+      return data;
+    },
+    async listCategories(workspaceId) {
+      const { data, error } = await admin.from("categories").select("id, name, kind")
+        .eq("workspace_id", workspaceId).eq("is_active", true).order("sort_order").order("id").limit(200);
+      if (error) throw new Error(`category-query-${error.code}`);
+      return (data ?? []).map((row) => ({ id: Number(row.id), name: row.name, kind: row.kind })) as ReceiptCategory[];
+    },
     async hasProAccess(userId) {
       const { data, error } = await admin.rpc("has_email_detection_pro_access", { p_user_id: userId });
       if (error) throw new Error(`entitlement-query-${error.code}`);
@@ -28,7 +43,6 @@ function createRepository(): InboundRepository {
       return member ? { user_id: data.user_id, workspace_id: Number(data.workspace_id) } : null;
     },
     async saveSuggestion(input) {
-      const fields = "id, status, amount, currency_code, description, app_label, created_at";
       const { data, error } = await admin.from("notification_detected_movement_suggestions")
         .insert(input).select(fields).single();
       if (!error) return data;
@@ -75,7 +89,9 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: false, error: "Firma inválida." }, 401);
   }
   try {
-    return jsonResponse(await processReceivedEvent(event, createRepository(), (id) => retrieveReceivedEmail(id, apiKey)));
+    return jsonResponse(await processReceivedEvent(event, createRepository(), (id) => retrieveReceivedEmail(id, apiKey),
+      (input) => detectReceiptWithAi(input, Deno.env.get("DEEPSEEK_API_KEY")?.trim() ?? "",
+        Deno.env.get("DEEPSEEK_MODEL")?.trim() || "deepseek-v4-flash")));
   } catch (error) {
     // Códigos propios: no registra cuerpo, token, dirección privada ni credenciales.
     console.error("[inbound-email]", error instanceof Error ? error.message.replace(/[^a-zA-Z0-9áéíóúñ -]/g, "").slice(0, 100) : "processing-failed");
