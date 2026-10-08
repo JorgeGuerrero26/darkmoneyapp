@@ -69,11 +69,22 @@ try {
   await denied(suggestionSql(), [nextId--, free, workspace, "email:inbound", randomUUID()], "Free no puede insertar sugerencias de correo");
   const androidId = nextId--;
   await db.query(suggestionSql(), [androidId, free, workspace, "com.bcp.test", randomUUID()]);
+  await db.query(`insert into public.notifications (user_id,title,body,status,kind,channel,related_entity_type,related_entity_id,read_at)
+    values ($1,'Prueba aislada','Aviso leído','read','detected_movement_suggestion','in_app','detected_movement_suggestion',$2,now())`, [free, androidId]);
+  const readPending = await db.query("select status from public.notification_detected_movement_suggestions where id=$1", [androidId]);
+  check(readPending.rows[0].status === "pending", "Leer el aviso no resuelve una detección pendiente");
   await db.query(movementSql(), [nextId--, workspace, free, account, JSON.stringify({ suggestionId: androidId })]);
   check(true, "Android Free conserva detección y registro");
   const registeredAndroid = await db.query("select status,movement_id from public.notification_detected_movement_suggestions where id=$1", [androidId]);
   check(registeredAndroid.rows[0].status === "registered" && registeredAndroid.rows[0].movement_id != null, "El movimiento resuelve la detección en la misma transacción");
   await denied(movementSql(), [nextId--, workspace, free, account, JSON.stringify({ suggestionId: androidId })], "No se puede crear un segundo movimiento de una detección resuelta");
+  const discardedId = nextId--;
+  await db.query(suggestionSql(), [discardedId, free, workspace, "com.bcp.test", randomUUID()]);
+  await db.query("update public.notification_detected_movement_suggestions set status='discarded' where id=$1", [discardedId]);
+  await denied(movementSql(), [nextId--, workspace, free, account, JSON.stringify({ suggestionId: discardedId })], "No se puede registrar una detección descartada en otra superficie");
+  await db.query("update public.notification_detected_movement_suggestions set status='pending' where id=$1 and status='discarded'", [discardedId]);
+  await db.query(movementSql(), [nextId--, workspace, free, account, JSON.stringify({ suggestionId: discardedId })]);
+  check(true, "Deshacer permite revisar y registrar de nuevo la detección");
   await denied("update public.notification_detected_movement_suggestions set package_name='email:inbound' where id=$1", [androidId], "No se puede falsificar el origen Android como correo");
 
   await claims(pro);

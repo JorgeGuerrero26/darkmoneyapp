@@ -179,6 +179,7 @@ export function AdvancedDashboard({
   accountCurrencyMap,
   onRequestPrecisionFocus,
   onScrollToTop,
+  detectedMovements,
 }: {
   movements: DashboardMovementRow[];
   // `paymentPlan`, `principalAmount` y las cadencias las pide la proyección mes a mes: sin el
@@ -205,6 +206,7 @@ export function AdvancedDashboard({
   accountCurrencyMap: Map<number, string>;
   onRequestPrecisionFocus?: () => void;
   onScrollToTop?: () => void;
+  detectedMovements?: React.ReactNode;
 }) {
   const privacyMode = useUiStore((state) => state.privacyMode);
 
@@ -3066,6 +3068,7 @@ export function AdvancedDashboard({
       </View>
 
       <View style={{ height: SPACING.sm }} />
+      {detectedMovements}
       <View style={subStyles.nextStepCard}>
         <Text style={subStyles.nextStepKicker}>Siguiente paso</Text>
         <Text style={subStyles.nextStepTitle}>{focusAction.title}</Text>

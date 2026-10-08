@@ -74,6 +74,7 @@ import { SkeletonCard, SkeletonKpi, SkeletonList } from "../../components/ui/Ske
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
 import { useGestureRefresh } from "../../hooks/useGestureRefresh";
+import { DetectedMovementInbox } from "../../features/detected-movements/components/DetectedMovementInbox";
 import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboardDataAvailability";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -937,6 +938,7 @@ function DashboardScreen() {
         {isAdvanced && hasAdvancedDashboardAccess && (
           <View onLayout={(e) => { advancedSectionY.current = e.nativeEvent.layout.y; }}>
           <AdvancedDashboard
+            detectedMovements={<DetectedMovementInbox userId={profile?.id ?? null} workspaceId={activeWorkspaceId} accounts={snapshot?.accounts ?? []} categories={snapshot?.categories ?? []} privacyMode={privacyMode} />}
             shortcuts={quickHabitsRow}
             movements={movements}
             obligations={obligationsMerged}
@@ -1041,7 +1043,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
   header: { paddingHorizontal: SPACING.xl },
   // paddingBottom deja libre la franja de la barra flotante de iOS (0 en Android).
-  content: { padding: SPACING.xl, gap: SPACING.xl, paddingBottom: TAB_BAR_CONTENT_HEIGHT + 96 + IOS_FLOATING_TAB_BAR_SPACE },
+  content: { padding: SPACING.xl, gap: SPACING.xl, paddingBottom: TAB_BAR_CONTENT_HEIGHT + 152 + IOS_FLOATING_TAB_BAR_SPACE },
 });
 
 // --- Dashboard header right actions -------------------------------------------

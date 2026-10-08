@@ -69,6 +69,8 @@ type Props = {
   footer?: React.ReactNode;
   headerStyle?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  /** Las listas virtualizadas pueden gestionar su propio desplazamiento. */
+  scrollEnabled?: boolean;
 };
 
 export function BottomSheet({
@@ -86,6 +88,7 @@ export function BottomSheet({
   footer,
   headerStyle,
   contentStyle,
+  scrollEnabled = true,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(entranceAnimation === "springFade" ? 0 : SCREEN_HEIGHT)).current;
@@ -244,6 +247,7 @@ export function BottomSheet({
               SCREEN_HEIGHT * snapHeight,
               SCREEN_HEIGHT - keyboardHeight - insets.top - SPACING.lg,
             ),
+            ...(!scrollEnabled ? { height: Math.min(SCREEN_HEIGHT * snapHeight, SCREEN_HEIGHT - keyboardHeight - insets.top - SPACING.lg) } : {}),
             bottom: keyboardHeight,
             paddingBottom: keyboardHeight > 0 ? SPACING.md : insets.bottom + SPACING.lg,
             transform: [{ translateY }],
@@ -288,7 +292,7 @@ export function BottomSheet({
           ) : null}
         </View>
 
-        <ScrollView
+        {scrollEnabled ? <ScrollView
           ref={scrollRef as React.RefObject<ScrollView> | undefined}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -298,7 +302,7 @@ export function BottomSheet({
           contentContainerStyle={[styles.content, contentStyle]}
         >
           {children}
-        </ScrollView>
+        </ScrollView> : <View style={[styles.scroll, styles.listContent, styles.content, contentStyle]}>{children}</View>}
         {footer}
       </Animated.View>
       </View>
@@ -373,5 +377,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   scroll: { flexShrink: 1 },
+  listContent: { flex: 1 },
   content: { padding: SPACING.lg, gap: SPACING.md },
 });

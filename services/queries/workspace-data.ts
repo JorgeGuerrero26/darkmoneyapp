@@ -2796,6 +2796,7 @@ export function useCreateMovementMutation(workspaceId: number | null) {
         const suggestionId = Number(metadata.suggestionId);
         if (Number.isFinite(suggestionId) && suggestionId > 0) {
           void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", suggestionId] });
+          void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
         }
       }
     },

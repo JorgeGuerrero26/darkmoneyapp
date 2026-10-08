@@ -14,6 +14,7 @@ type Action = {
 
 type Props = {
   bottomInset?: number;
+  horizontalInset?: number;
   primary?: Action;
   secondary?: Action;
   primarySide?: "left" | "right";
@@ -23,9 +24,9 @@ type Props = {
 };
 
 /** Acciones fijas de las pantallas de detalle; la acción principal siempre va en hueso. */
-export function DetailActionBar({ bottomInset = 0, primary, secondary, primarySide = "left", footNote, footerAction, showFooter = false }: Props) {
+export function DetailActionBar({ bottomInset = 0, horizontalInset = SPACING.lg, primary, secondary, primarySide = "left", footNote, footerAction, showFooter = false }: Props) {
   return (
-    <View style={[styles.bar, { paddingBottom: bottomInset + SPACING.xs }]}>
+    <View style={[styles.bar, { paddingBottom: bottomInset + SPACING.xs, paddingHorizontal: horizontalInset }]}>
       {primary || secondary ? (
         <View style={styles.row}>
           {primarySide === "right" && secondary ? <ActionButton action={secondary} /> : null}

@@ -1,6 +1,6 @@
 /** @jest-environment node */
-import { buildDetectionDraft, detectionMissingFields } from "../review-draft";
-import type { AccountSummary, CategorySummary } from "../../../../types/domain";
+import { buildDetectionDraft, detectionMissingFields, transferDestinationDraft } from "../review-draft";
+import type { AccountSummary, CategorySummary, ExchangeRateSummary } from "../../../../types/domain";
 import type { DetectedMovementSuggestion } from "../../../../services/queries/notification-detection";
 
 const accounts = [{ id: 1, name: "Sueldo", currencyCode: "PEN", isArchived: false },
@@ -40,5 +40,22 @@ describe("propuestas de detecciones", () => {
     const draft = buildDetectionDraft({ ...receipt, metadata: { accountId: 1 } }, accounts, categories, []);
     expect(detectionMissingFields(draft, accounts)).toEqual(["Elige una categoría"]);
     expect(detectionMissingFields(draft, accounts, false)).toEqual([]);
+  });
+  it("propone el cambio persistido al transferir dólares y limpia un destino desconocido", () => {
+    const draft = buildDetectionDraft({ ...receipt, movementType: "transfer", currencyCode: "USD", amount: 100, metadata: { sourceAccountId: 3 } }, accounts, categories, []);
+    const rates = [{ fromCurrencyCode: "USD", toCurrencyCode: "PEN", rate: 3.75, effectiveAt: "2026-10-07" }] as ExchangeRateSummary[];
+    const converted = transferDestinationDraft(draft, 1, accounts, rates, "PEN");
+    expect(converted.destinationAmount).toBe("375.00");
+    expect(converted.fxRate).toBe("3.75");
+    expect(detectionMissingFields(converted, accounts)).toEqual([]);
+    const cleared = transferDestinationDraft(converted, null, accounts, rates, "PEN");
+    expect(cleared.destinationAmount).toBe("");
+    expect(cleared.fxRate).toBe("");
+  });
+  it("no inventa tipos de cambio si no hay datos persistidos", () => {
+    const draft = buildDetectionDraft({ ...receipt, movementType: "transfer", metadata: { sourceAccountId: 1 } }, accounts, categories, []);
+    const converted = transferDestinationDraft(draft, 3, accounts, [], "PEN");
+    expect(converted.fxRate).toBe("");
+    expect(detectionMissingFields(converted, accounts)).toEqual(["Indica cuánto llega", "Revisa el tipo de cambio"]);
   });
 });

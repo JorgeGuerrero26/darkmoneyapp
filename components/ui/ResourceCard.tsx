@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import { memo, type ReactNode } from "react";
 import { ChevronRight, Star, type LucideIcon } from "lucide-react-native";
 
@@ -14,6 +14,7 @@ export type ResourceCardAction = {
 
 type Props = {
   title: string;
+  titleStyle?: StyleProp<TextStyle>;
   subtitle?: string | null;
   leading?: ReactNode;
   meta?: ReactNode;
@@ -49,7 +50,7 @@ type Props = {
    * Es la unica senal de estado que queda en la fila: sin capsula, el color del subtitulo hace
    * ese trabajo sin gastar una linea suelta de ancho completo.
    */
-  subtitleTone?: "muted" | "alert";
+  subtitleTone?: "muted" | "alert" | "warning";
   /**
    * La fila no pide nada: titulo en gris.
    *
@@ -69,6 +70,7 @@ type Props = {
 
 function ResourceCardBase({
   title,
+  titleStyle,
   subtitle,
   leading,
   meta,
@@ -118,13 +120,13 @@ function ResourceCardBase({
         <View style={styles.body}>
           <View style={styles.titleRow}>
             {pinned ? <Star size={12} color={COLORS.fog} fill={COLORS.fog} /> : null}
-            <Text style={[styles.title, muted && styles.titleMuted]} numberOfLines={1}>
+            <Text style={[styles.title, titleStyle, muted && styles.titleMuted]} numberOfLines={1}>
               {title}
             </Text>
           </View>
           {subtitle ? (
             <Text
-              style={[styles.subtitle, subtitleTone === "alert" && styles.subtitleAlert]}
+              style={[styles.subtitle, subtitleTone === "alert" && styles.subtitleAlert, subtitleTone === "warning" && { color: COLORS.warning }]}
               numberOfLines={1}
             >
               {subtitle}

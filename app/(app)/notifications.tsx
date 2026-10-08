@@ -49,7 +49,6 @@ import {
 } from "../../services/queries/workspace-data";
 import { usePendingObligationShareInvitesQuery } from "../../services/queries/obligations";
 import type { NotificationItem, PendingObligationShareInviteItem } from "../../types/domain";
-import { payloadString } from "../../features/notifications/lib/notificationPresentation";
 import { getNotificationsModule } from "../../lib/notifications-runtime";
 import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -292,8 +291,6 @@ function NotificationsScreen() {
     const staleIds = notificationList
       .filter((n) => {
         if (n.status === "read" || n.kind !== "detected_movement_suggestion") return false;
-        const suggStatus = payloadString(n.payload, "status");
-        if (suggStatus === "registered" || suggStatus === "discarded") return true;
         return now - new Date(n.scheduledFor).getTime() > STALE_THRESHOLD_MS;
       })
       .map((n) => n.id);
@@ -470,11 +467,8 @@ function NotificationsScreen() {
       notification.kind === "obligation_event_edit_request" ||
       notification.kind === "detected_movement_suggestion";
     if (notification.kind === "detected_movement_suggestion") {
-      const suggStatus = payloadString(notification.payload, "status");
-      if (suggStatus === "registered" || suggStatus === "discarded") {
-        if (notification.status !== "read") markRead.mutate(notification.id);
-        return;
-      }
+      // El payload es una foto del aviso. La revisión consulta el estado canónico,
+      // incluso después de Deshacer desde el dashboard o de resolver en otro dispositivo.
       const suggestionId =
         payloadNumber(notification.payload, "suggestionId") ??
         (notification.relatedEntityType === "detected_movement_suggestion" ? notification.relatedEntityId ?? null : null);

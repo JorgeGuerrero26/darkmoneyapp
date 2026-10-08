@@ -1,6 +1,6 @@
-import type { AccountSummary, CategorySummary } from "../../../types/domain";
+import type { AccountSummary, CategorySummary, ExchangeRateSummary } from "../../../types/domain";
 import type { DetectedMovementSuggestion, NotificationDetectionAppSetting } from "../../../services/queries/notification-detection";
-import { filterCategoriesForMovementType } from "../../movements/lib/movement-creation-rules";
+import { filterCategoriesForMovementType, resolveExchangeRate } from "../../movements/lib/movement-creation-rules";
 import { isoToTimeStr } from "../../../lib/date";
 import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
 
@@ -66,4 +66,14 @@ export function detectionMissingFields(draft: DetectionDraft, accounts: readonly
   } else if (requireCategory && draft.categoryId == null) missing.push("Elige una categoría");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date) || !/^\d{2}:\d{2}$/.test(draft.time)) missing.push("Revisa la fecha y hora");
   return missing;
+}
+
+/** Usa tipos de cambio persistidos; cambiar de cuenta elimina importes del destino anterior. */
+export function transferDestinationDraft(draft: DetectionDraft, destinationAccountId: number | null, accounts: readonly AccountSummary[], rates: readonly ExchangeRateSummary[], baseCurrency: string): DetectionDraft {
+  const source = accounts.find((a) => a.id === draft.accountId);
+  const destination = accounts.find((a) => a.id === destinationAccountId);
+  const rate = source && destination ? resolveExchangeRate(rates, source.currencyCode, destination.currencyCode, baseCurrency)?.rate : null;
+  const amount = parsePositiveAmountInput(draft.amount);
+  return { ...draft, destinationAccountId, fxRate: rate != null ? String(Number(rate.toFixed(6))) : "",
+    destinationAmount: rate != null && amount != null ? (amount * rate).toFixed(2) : "" };
 }
