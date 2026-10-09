@@ -27,6 +27,7 @@
  */
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { validateOtaExport } from "./lib/validate-ota-export.mjs";
 
 const APP_JSON = "app.json";
 const CHANNEL = "preview";
@@ -71,12 +72,21 @@ function publish(runtime) {
     console.log("   (dry-run: no se publica)");
     return;
   }
+  // Clear Metro's cached Router context, especially when publishing from a
+  // separate worktree. Inspect both native exports before uploading anything.
+  execSync(
+    "npx expo export --platform ios --platform android --clear --source-maps --dump-assetmap --output-dir dist",
+    { stdio: "inherit", env: { ...process.env, CI: "1" } },
+  );
+  for (const result of validateOtaExport("dist")) {
+    console.log(`   ${result.platform}: ${result.sources} módulos, ${result.fonts} fuentes, ${result.assets} recursos verificados`);
+  }
   // El shell es OBLIGATORIO en Windows: `npx` es un .cmd y Node no puede lanzarlo sin él. Pero
   // con shell activo Node pega los argumentos en una sola cadena SIN entrecomillarlos, así que
   // un mensaje con espacios se parte en dos (`--message prueba real` -> dos argumentos) y
   // eas-cli aborta. Por eso el entrecomillado va a mano, y distinto por plataforma.
   execSync(
-    `npx eas-cli update --channel ${CHANNEL} --message ${quote(message)} --non-interactive`,
+    `npx eas-cli update --skip-bundler --input-dir dist --channel ${CHANNEL} --message ${quote(message)} --non-interactive`,
     { stdio: "inherit" },
   );
 }

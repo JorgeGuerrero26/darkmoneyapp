@@ -18,6 +18,7 @@
     "test:catalog-money": "node scripts/test-catalog-money.mjs",
     "typecheck:catalogs": "tsc -p tsconfig.catalog-typecheck.json --noEmit",
     "test": "jest",
+    "test:ota": "node --test scripts/__tests__/ota-export.test.mjs",
     "logs": "node scripts/logs.mjs",
     "ota": "node scripts/publish-ota.mjs",
     "build:android": "node scripts/preflight-native-version.mjs && eas build --platform android --profile preview"

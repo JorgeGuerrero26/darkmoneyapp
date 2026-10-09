@@ -28,6 +28,9 @@ jobs:
       - name: Tests
         run: npm test -- --ci
 
+      - name: Validación del publicador OTA
+        run: npm run test:ota
+
   edge-functions:
     runs-on: ubuntu-latest
     steps:
