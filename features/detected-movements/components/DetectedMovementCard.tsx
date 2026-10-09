@@ -22,8 +22,8 @@ export function DuplicateDecision({ candidate, currency, busy, omitting = false,
       trailing={<Text style={styles.value}>{formatCandidate(candidate, currency)}</Text>}
       onPress={onOpen} disabled={busy} />
     <View style={styles.decision}>
-      <Button label="Es el mismo" variant="secondary" onPress={onSame} disabled={busy} />
-      <Button label="Guardar igual" onPress={onSaveAnyway} loading={busy && !omitting} disabled={busy} />
+      <Button label="Es el mismo" variant="secondary" style={styles.decisionButton} onPress={onSame} disabled={busy} />
+      <Button label="Guardar igual" style={styles.decisionButton} onPress={onSaveAnyway} loading={busy && !omitting} disabled={busy} />
     </View>
     {showOmitAction ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" onPress={onDiscard} disabled={busy} loading={omitting} loadingLabel="Omitiendo…" /> : null}
   </View>;
@@ -82,4 +82,5 @@ const styles = StyleSheet.create({
   error: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.danger, lineHeight: 20 },
   duplicate: { gap: SPACING.sm },
   decision: { flexDirection: "row", gap: SPACING.sm },
+  decisionButton: { flex: 1, minWidth: 0 },
 });
