@@ -24,7 +24,8 @@ movimientos, importes, saldos o la lectura de las notificaciones.
 
 ## Omitir detecciones
 
-**Omitir** es una acción visible en la tarjeta del dashboard y en la revisión de
+**Omitir** es una acción visible en la cabecera de la tarjeta del dashboard, junto
+a «Ver los…», y en la revisión de
 Notificaciones, incluso ante un posible duplicado. Persiste `discarded` en la
 misma detección; no crea movimientos ni cambia saldos. Sale de los pendientes y
 el aviso sigue disponible: al abrirlo muestra **Detección omitida**.

@@ -11,10 +11,10 @@ import type { DetectedMovementSuggestion } from "../../../services/queries/notif
 import { detectionAmount, detectionContext, detectionTone } from "../lib/presentation";
 
 export type DuplicateDecisionProps = {
-  candidate: MovementRecord; currency: string; busy: boolean; omitting?: boolean;
+  candidate: MovementRecord; currency: string; busy: boolean; omitting?: boolean; showOmitAction?: boolean;
   onOpen: () => void; onSame: () => void; onSaveAnyway: () => void; onDiscard: () => void;
 };
-export function DuplicateDecision({ candidate, currency, busy, omitting = false, onOpen, onSame, onSaveAnyway, onDiscard }: DuplicateDecisionProps) {
+export function DuplicateDecision({ candidate, currency, busy, omitting = false, showOmitAction = true, onOpen, onSame, onSaveAnyway, onDiscard }: DuplicateDecisionProps) {
   return <View style={styles.duplicate}>
     <Text style={styles.warning}>Posible duplicado</Text>
     <ResourceCard variant="row" title={candidate.description || "Movimiento parecido"}
@@ -25,7 +25,7 @@ export function DuplicateDecision({ candidate, currency, busy, omitting = false,
       <Button label="Es el mismo" variant="secondary" onPress={onSame} disabled={busy} />
       <Button label="Guardar igual" onPress={onSaveAnyway} loading={busy && !omitting} disabled={busy} />
     </View>
-    <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" onPress={onDiscard} disabled={busy} loading={omitting} loadingLabel="Omitiendo…" />
+    {showOmitAction ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" onPress={onDiscard} disabled={busy} loading={omitting} loadingLabel="Omitiendo…" /> : null}
   </View>;
 }
 function formatCandidate(candidate: MovementRecord, currency: string) {
@@ -46,6 +46,7 @@ export function DetectedMovementCard({ suggestion, draft, count, accounts, categ
   const warning = missing[0] ?? (suggestion.status === "needs_review" ? "Confirma los datos del comprobante" : suggestion.movementType === "unknown" ? "Confirma el tipo de movimiento" : null);
   const headerActions = <View style={styles.header}>
     {count > 1 ? <Pressable onPress={onViewAll} disabled={busy} accessibilityRole="button" style={styles.tap}><Text style={styles.link}>Ver los {count}</Text></Pressable> : null}
+    <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" size="sm" style={styles.tap} disabled={busy} loading={omitting} loadingLabel="Omitiendo…" onPress={onDiscard} />
   </View>;
   return <ResourceCard variant="card" title={`POR REVISAR · ${count}`} titleStyle={styles.kicker} trailing={headerActions}
     footer={<View style={styles.body}>
@@ -57,11 +58,10 @@ export function DetectedMovementCard({ suggestion, draft, count, accounts, categ
       </View>}
       {warning ? <Pressable onPress={onReview} disabled={busy} accessibilityRole="button"><Text style={styles.warning}>{warning}</Text></Pressable> : null}
       {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
-      {duplicate ? <DuplicateDecision {...duplicate} /> : <DetailActionBar horizontalInset={0} primarySide="right"
+      {duplicate ? <DuplicateDecision {...duplicate} showOmitAction={false} /> : <DetailActionBar horizontalInset={0} primarySide="right"
         secondary={readyToSave || error ? { label: "Revisar", accessibilityLabel: "Revisar detección", icon: Pencil, disabled: busy, onPress: onReview } : undefined}
         primary={{ label: busy && !omitting ? "Guardando…" : error ? "Reintentar" : readyToSave ? "Guardar" : "Revisar y guardar", accessibilityLabel: readyToSave ? "Guardar movimiento detectado" : "Revisar y guardar movimiento detectado", icon: Check, loading: busy && !omitting, disabled: busy, onPress: readyToSave || error ? onSave : onReview }}
       />}
-      {!duplicate ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" disabled={busy} loading={omitting} loadingLabel="Omitiendo…" onPress={onDiscard} /> : null}
     </View>} />;
 }
 const styles = StyleSheet.create({
