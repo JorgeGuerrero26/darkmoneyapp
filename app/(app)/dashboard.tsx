@@ -42,6 +42,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "../../lib/auth-context";
+import { notificationBadgeCount } from "../../features/notifications/lib/notification-counts";
 import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context";
 import {
   useUserWorkspacesQuery,
@@ -52,6 +53,7 @@ import {
   usePersistLearningFeedbackMutation,
   useUpdateMovementMutation,
   useNotificationsQuery,
+  useNotificationCountsQuery,
   useUserEntitlementQuery,
   useDashboardAiFlowMutation,
   useDashboardAiHealthMutation,
@@ -1061,7 +1063,8 @@ function DashboardHeaderRight({
   const { workspaces } = useWorkspaceListStore();
   const router = useRouter();
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
-  const unreadCount = (notifications as { readAt: string | null }[]).filter((n) => !n.readAt).length;
+  const { data: notificationCounts } = useNotificationCountsQuery(profile?.id ?? null);
+  const unreadCount = notificationBadgeCount(notifications, notificationCounts?.unread);
   const { data: entitlement } = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const isPro = entitlement?.proAccessEnabled === true;
 
@@ -1094,6 +1097,8 @@ function DashboardHeaderRight({
         style={hdrStyles.iconBtn}
         onPress={() => router.push("/notifications")}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={`Notificaciones, ${unreadCount} sin leer`}
       >
         <Bell size={19} color={COLORS.storm} strokeWidth={2} />
         {unreadCount > 0 && (
