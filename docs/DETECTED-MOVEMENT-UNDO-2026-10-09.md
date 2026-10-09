@@ -1,6 +1,6 @@
 # Deshacer detecciones: contrato compartido
 
-9 de octubre de 2026. Código preparado, migración y actualización móvil no desplegadas.
+9 de octubre de 2026. Código preparado y migración desplegada; actualización móvil pendiente.
 
 El flujo anterior borraba solo el primer movimiento de una división y reabría la detección
 en otra petición. Se sustituye por `undo_detected_movement_registration(workspace, suggestion,
@@ -30,7 +30,14 @@ El test compara byte a byte migración y contrato puro de ambos repositorios.
 No se accedió a registros reales. La prueba en memoria no valida contención entre sesiones,
 todos los triggers del servidor ni la UI en dispositivos. No se ejecutó Jest completo.
 
-Aplicar una sola vez `202610090002_detected_movement_undo.sql` después de los contratos previos
-de detecciones, validar con fixtures y publicar el cliente móvil. No se desplegó aquí.
+Se aplicó únicamente `202610090002_detected_movement_undo.sql` al servidor compartido,
+después de comprobar los contratos previos. Un directorio temporal con el historial remoto
+evitó incluir otras migraciones locales pendientes. El dry-run mostró solo ese archivo.
+Se verificaron el historial, los cuerpos de ambas funciones contra el SQL local, `search_path`
+vacío y permisos: Deshacer es `security invoker`; el helper de lectura es `security definer`;
+`authenticated` puede ejecutar y `anon`/PUBLIC no. Las consultas remotas fueron de esquema,
+permisos e historial; no se invocó Deshacer ni se registraron o eliminaron movimientos reales.
+Falta validar con fixtures de integración y publicar el cliente móvil. No se hizo OTA:
+el teléfono con la versión anterior no usa el nuevo flujo atómico por desplegar solo SQL.
 El diccionario local `DATABASE_DICTIONARY.md` se actualizó y se mantuvo fuera de Git.
 Crear divisiones detectadas en web, aprendizaje/IA e integración entre dispositivos siguen pendientes.
