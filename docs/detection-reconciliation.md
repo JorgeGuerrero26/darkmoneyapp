@@ -50,6 +50,15 @@ queries se invalidan tras crear o editar para actualizar ambas superficies.
 
 ## Validación y despliegue
 
+La revisión conserva un único `BottomSheet` durante carga, guardado, resolución y
+avance al siguiente pendiente. La eliminación de un pendiente de la caché no cambia
+la revisión abierta antes de terminar la mutación. Al resolver el último, el
+controlador permanece montado con `visible=false` para cerrar el Modal nativo;
+la tarjeta desaparece sin margen residual. Esto evita reemplazar o desmontar una
+ventana presentada durante el guardado en iOS. Las pruebas cubren la continuidad
+del componente y la transición de visibilidad; el scroll y la presentación nativa
+todavía deben comprobarse en el iPhone.
+
 - `node scripts/test-detection-reconciliation.mjs`: datos ficticios, migración y
   triggers en una transacción revertida; permisos, fechas de Perú, ingresos,
   transferencias, ambigüedad, lectura independiente e idempotencia.

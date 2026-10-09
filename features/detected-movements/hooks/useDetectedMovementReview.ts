@@ -434,7 +434,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     setDate(draft.date); setTime(draft.time); setCategoryId(draft.categoryId);
     setAccountId(draft.accountId); setDestinationAccountId(draft.destinationAccountId);
     setDestinationAmount(draft.destinationAmount); setTransferFxRate(draft.fxRate);
-    setCounterpartyId(null); setSplitLines(null); setCategoryFeedbackIntent(null);
+    setCounterpartyId(null); setSplitLines(null); setSplitSheetOpen(false); setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(null); setLinkedRecurringIncomeId(null);
     const candidate = reconciliationCandidateForDraft(suggestion, draft, activeAccounts);
     reconciliationCandidateId.current = candidate?.id ?? null;

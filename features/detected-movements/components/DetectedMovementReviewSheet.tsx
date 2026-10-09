@@ -17,11 +17,12 @@ import type { DetectedMovementReview } from "../hooks/useDetectedMovementReview"
 type Props = {
   visible: boolean; onClose: () => void; review: DetectedMovementReview;
   position?: string; extras?: ReactNode; overlay?: ReactNode; list?: ReactNode;
+  status?: { title: string; content: ReactNode; height: number; footer?: ReactNode };
 };
 type Selector = "account" | "destination" | "category" | "date" | "description" | null;
 
 /** Presentación compartida; toda validación y escritura vive en el controlador. */
-export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, overlay: extraOverlay, list }: Props) {
+export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, overlay: extraOverlay, list, status }: Props) {
   const [selector, setSelector] = useState<Selector>(null);
   useEffect(() => { setSelector(null); }, [r.suggestion?.id, visible]);
   const source = r.activeAccounts.find((a) => a.id === r.accountId);
@@ -31,8 +32,8 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
   const isTransfer = r.movementType === "transfer";
   const warning = r.missing[0] ?? (r.suggestion?.status === "needs_review" ? "Revisa los datos del comprobante antes de guardar" : null);
   const close = () => { if (!r.busy) onClose(); };
-  return <BottomSheet visible={visible} onClose={close} title={list ? "Por revisar" : "Revisar movimiento"} entranceAnimation="springFade" snapHeight={0.92} scrollEnabled={!list}
-    overlay={list ? undefined : selector === "description" ? (
+  return <BottomSheet visible={visible} onClose={close} title={status?.title ?? (list ? "Por revisar" : "Revisar movimiento")} entranceAnimation="springFade" snapHeight={status?.height ?? 0.92} scrollEnabled={Boolean(status) || !list}
+    overlay={status || list ? undefined : selector === "description" ? (
       <InlineFormSheet visible entranceAnimation="springFade" title="Descripción" onBack={() => setSelector(null)} footer={<Button label="Listo" onPress={() => setSelector(null)} />}>
         <TextField value={r.description} onChangeText={r.setDescription} multiline style={styles.descriptionInput} accessibilityLabel="Descripción del movimiento" />
       </InlineFormSheet>
@@ -45,7 +46,7 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
         onChange={(id) => { if (selector === "category") r.selectCategoryManually(id); else if (selector === "destination") r.setDestinationAccountId(id); else r.setAccountId(id); }}
         onClose={() => setSelector(null)} />
     ) : extraOverlay} contentStyle={styles.sheetContent}
-    footer={list || !r.initialized ? undefined : <View>
+    footer={status ? status.footer : list || !r.initialized ? undefined : <View>
       {warning ? <Text style={styles.footerWarning}>{warning}</Text> : null}
       {r.saveError ? <Text style={styles.footerError} accessibilityRole="alert">{r.saveError}</Text> : null}
       {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} omitting={r.isDiscarding} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} onDiscard={() => { void r.discard(); }} /></View> : <DetailActionBar primarySide="right"
@@ -53,7 +54,7 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
         primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: r.saveError ? "Reintentar la última acción" : "Guardar movimiento revisado", icon: Check, loading: r.isSaving, disabled: r.busy, onPress: () => { if (r.saveError) void r.retry(); else void r.submit(false); } }} />}
     </View>}
   >
-    {list ?? (!r.initialized ? <View style={styles.loading}><ActivityIndicator color={COLORS.storm} /><Text style={styles.meta}>Cargando la detección…</Text></View> : <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>
+    {status?.content ?? list ?? (!r.initialized ? <View style={styles.loading}><ActivityIndicator color={COLORS.storm} /><Text style={styles.meta}>Cargando la detección…</Text></View> : <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>
       <Text style={styles.meta}>{position ? `${position} · ` : ""}{r.displayAppLabel}</Text>
       <View style={styles.segment}>{(["expense", "income", "transfer"] as const).map((type) => <Pressable key={type} style={[styles.option, r.movementType === type && styles.optionActive]} accessibilityRole="button" accessibilityState={{ selected: r.movementType === type }} onPress={() => r.switchMovementType(type)} disabled={r.busy}><Text style={[styles.optionLabel, r.movementType === type && { color: detectionTone(type) }]}>{type === "expense" ? "Gasto" : type === "income" ? "Ingreso" : "Transferencia"}</Text></Pressable>)}</View>
       <View style={styles.amountGroup}>

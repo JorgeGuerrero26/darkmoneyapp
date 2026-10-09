@@ -19,7 +19,7 @@ const mockToast = { showToast: jest.fn(), showRichToast: jest.fn(), showErrorToa
 let mockSettingsLoading = false;
 let mockSettings: NotificationDetectionAppSetting[] = [];
 let mockSuggestion = mockReceipt;
-jest.mock("../../components/DetectedMovementReviewSheet", () => ({ DetectedMovementReviewSheet: () => null }));
+jest.mock("../../components/DetectedMovementReviewSheet", () => ({ DetectedMovementReviewSheet: ({ status, visible }: any) => status ? require("react").createElement(require("../../../../components/ui/BottomSheet").BottomSheet, { title: status.title, visible }, status.content) : null }));
 jest.mock("../../../../components/ui/BottomSheet", () => ({ BottomSheet: ({ title, children }: any) => require("react").createElement(require("react-native").View, { testID: "status-sheet", title }, children) }));
 jest.mock("../../components/DetectedMovementExtras", () => ({ DetectedMovementExtras: () => null }));
 jest.mock("../../../movements/components/form/SplitCategoriesSheet", () => ({ SplitCategoriesSheet: () => null }));

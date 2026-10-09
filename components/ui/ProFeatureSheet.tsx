@@ -21,17 +21,26 @@ export function ProFeatureSheet({ visible, title, description, onClose, onViewPr
   return <BottomSheet
     visible={visible} onClose={onClose} title="Disponible con PRO"
     entranceAnimation="springFade" snapHeight={0.48}
-    footer={<DetailActionBar primarySide="right"
-      secondary={{ label: "Ahora no", accessibilityLabel: "Cerrar aviso PRO", icon: X, onPress: onClose }}
-      primary={{ label: "Ver PRO", accessibilityLabel: "Ver planes DarkMoney PRO", icon: ArrowUpRight, onPress: onViewPro }}
-    />}
+    footer={<ProFeatureActions onClose={onClose} onViewPro={onViewPro} />}
   >
-    <View style={styles.content}>
+    <ProFeatureContent title={title} description={description} />
+  </BottomSheet>;
+}
+
+/** Permite usar el mismo aviso dentro de una ventana nativa ya presentada. */
+export function ProFeatureContent({ title, description }: Pick<Props, "title" | "description">) {
+  return <View style={styles.content}>
       <ProBadge />
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.description}>{description}</Text>
-    </View>
-  </BottomSheet>;
+    </View>;
+}
+
+export function ProFeatureActions({ onClose, onViewPro }: Pick<Props, "onClose" | "onViewPro">) {
+  return <DetailActionBar primarySide="right"
+    secondary={{ label: "Ahora no", accessibilityLabel: "Cerrar aviso PRO", icon: X, onPress: onClose }}
+    primary={{ label: "Ver PRO", accessibilityLabel: "Ver planes DarkMoney PRO", icon: ArrowUpRight, onPress: onViewPro }}
+  />;
 }
 
 const styles = StyleSheet.create({

@@ -1,5 +1,6 @@
 import React from "react";
 import { DetectedMovementInbox } from "../DetectedMovementInbox";
+import { QuickDetectedMovementEntry } from "../../../../components/domain/QuickDetectedMovementEntry";
 import type { DetectedMovementSuggestion } from "../../../../services/queries/notification-detection";
 
 const { create, act } = require("react-test-renderer");
@@ -16,7 +17,7 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
   useNotificationDetectionSettingsQuery: () => ({ data: [] }),
 }));
 jest.mock("../../../../components/domain/QuickDetectedMovementEntry", () => ({
-  QuickDetectedMovementEntry: ({ suggestionId }: { suggestionId: number }) => require("react").createElement(require("react-native").Text, { testID: "selected-detection" }, String(suggestionId)),
+  QuickDetectedMovementEntry: ({ suggestionId, previewEnabled }: { suggestionId: number; previewEnabled: boolean }) => previewEnabled ? require("react").createElement(require("react-native").Text, { testID: "selected-detection" }, String(suggestionId)) : null,
 }));
 
 function receipt(id: number, createdAt: string): DetectedMovementSuggestion {
@@ -63,11 +64,61 @@ it("la carga tiene feedback mientras una respuesta vacía no deja hueco", async 
   expect(JSON.stringify(renderer.toJSON())).toContain("Buscando movimientos por revisar");
   mockQuery.isPending = false;
   await act(async () => renderer.update(React.createElement(DetectedMovementInbox, props)));
-  expect(renderer.toJSON()).toBeNull();
+  expect(renderer.root.findAllByProps({ testID: "selected-detection" })).toHaveLength(0);
+  expect(renderer.toJSON().props.style).toBeUndefined();
 });
 it("no muestra la tarjeta a usuarios sin PRO aunque haya datos en caché", async () => {
   mockAccess.data = false;
   mockQuery.data = [receipt(534, "2026-10-09T01:23:10Z")];
   await render();
-  expect(renderer.toJSON()).toBeNull();
+  expect(renderer.root.findAllByProps({ testID: "selected-detection" })).toHaveLength(0);
+  expect(renderer.root.findByType(QuickDetectedMovementEntry).props.visible).toBe(false);
+});
+
+it("conserva el controlador y cierra el Modal del último pendiente en vez de desmontarlo", async () => {
+  const first = receipt(534, "2026-10-09T01:23:10Z");
+  mockQuery.data = [first];
+  await render();
+  const entry = renderer.root.findByType(QuickDetectedMovementEntry);
+  const card = entry.props.renderPreview({ suggestion: first });
+  await act(async () => card.props.onReview());
+  expect(entry.props.visible).toBe(true);
+  // React Query quita la detección antes de que la mutación invoque onResolved.
+  mockQuery.data = [];
+  await act(async () => renderer.update(React.createElement(DetectedMovementInbox, props)));
+  expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
+  expect(entry.props.suggestionId).toBe(first.id);
+  expect(entry.props.visible).toBe(true);
+  await act(async () => entry.props.onResolved(first.id, "registered"));
+  expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
+  expect(entry.props.visible).toBe(false);
+  expect(entry.props.previewEnabled).toBe(false);
+  expect(renderer.root.findAllByProps({ testID: "selected-detection" })).toHaveLength(0);
+  expect(renderer.toJSON().props.style).toBeUndefined();
+});
+
+it("avanza a la siguiente detección sin desmontar una revisión abierta durante la actualización de caché", async () => {
+  const first = receipt(534, "2026-10-09T01:23:10Z"), next = receipt(533, "2026-10-08T01:23:10Z");
+  mockQuery.data = [first, next];
+  await render();
+  const entry = renderer.root.findByType(QuickDetectedMovementEntry);
+  await act(async () => entry.props.renderPreview({ suggestion: first }).props.onReview());
+  mockQuery.data = [next];
+  await act(async () => renderer.update(React.createElement(DetectedMovementInbox, props)));
+  expect(entry.props.suggestionId).toBe(first.id);
+  await act(async () => entry.props.onResolved(first.id, "discarded"));
+  expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
+  expect(entry.props.suggestionId).toBe(next.id);
+  expect(entry.props.visible).toBe(true);
+});
+
+it("guardar directamente el último pendiente no presenta una ventana al quedar vacío", async () => {
+  mockQuery.data = [receipt(534, "2026-10-09T01:23:10Z")];
+  await render();
+  const entry = renderer.root.findByType(QuickDetectedMovementEntry);
+  mockQuery.data = [];
+  await act(async () => renderer.update(React.createElement(DetectedMovementInbox, props)));
+  expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
+  expect(entry.props.visible).toBe(false);
+  expect(entry.props.previewEnabled).toBe(false);
 });
