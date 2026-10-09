@@ -10,7 +10,7 @@ export type DetectionListItem = { suggestion: DetectedMovementSuggestion; draft:
 export function DetectedMovementsList({ items, onSelect }: { items: DetectionListItem[]; onSelect: (id: number) => void }) {
   return <ResourceSectionList<DetectionListItem> sections={[{ key: "pending", label: "Por revisar", headerVariant: "hidden", data: items }]} keyExtractor={(item) => String(item.suggestion.id)} loading={{ isLoading: false }} empty={null}
     contentContainerStyle={styles.list}
-    listHeaderComponent={<Text style={styles.meta}>{items.length} movimientos detectados · aún no cuentan en tus saldos</Text>}
+    listHeaderComponent={<Text style={styles.meta}>{items.length} detecciones por revisar · los posibles duplicados pueden corresponder a movimientos ya registrados</Text>}
     listFooterComponent={<Text style={styles.meta}>Toca uno para revisarlo. Al guardar o descartar, pasas al siguiente.</Text>}
     renderItem={({ item }) => <ResourceCard variant="row" title={item.draft.description || "Movimiento detectado"} subtitle={item.warning ?? detectionContext(item.suggestion, item.draft)} subtitleTone={item.warning ? "warning" : "muted"}
       trailing={<Text style={[styles.amount, { color: detectionTone(item.draft.movementType) }]}>{detectionAmount(item.draft.amount, item.suggestion.currencyCode, item.draft.movementType)}</Text>}

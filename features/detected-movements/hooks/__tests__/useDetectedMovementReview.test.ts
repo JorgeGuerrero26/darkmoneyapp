@@ -2,7 +2,7 @@ import React from "react";
 import { Text } from "react-native";
 import { QuickDetectedMovementEntry } from "../../../../components/domain/QuickDetectedMovementEntry";
 import { useDetectedMovementReview, type DetectedMovementReview } from "../useDetectedMovementReview";
-import type { AccountSummary, CategorySummary } from "../../../../types/domain";
+import type { AccountSummary, CategorySummary, MovementRecord } from "../../../../types/domain";
 import type { DetectedMovementSuggestion, NotificationDetectionAppSetting } from "../../../../services/queries/notification-detection";
 
 const { create, act } = require("react-test-renderer");
@@ -91,6 +91,37 @@ it("aplica la cuenta propuesta cuando llegan los ajustes y conserva una elecció
   mockSettings = [{ financialAppKey: "bcp", enabled: true, defaultAccountId: 1 }];
   await act(async () => { renderer.update(React.createElement(Harness, { key: "late-settings" })); });
   expect(current.accountId).toBeNull();
+});
+
+it("presenta el duplicado conciliado antes de guardar y confirmar no crea otro movimiento", async () => {
+  mockSuggestion = { ...mockReceipt, duplicateCandidate: { id: 22, workspaceId: 9, status: "posted", movementType: "expense", sourceAccountId: 1, sourceAmount: 12.5, occurredAt: mockReceipt.occurredAt, description: "Compra manual" } as MovementRecord };
+  await act(async () => { renderer.update(React.createElement(Harness, { key: "reconciliation" })); });
+  expect(current.duplicateCandidate?.id).toBe(22);
+  expect(mockDuplicate).not.toHaveBeenCalled();
+  await act(async () => { await current.useExistingDuplicate(); });
+  expect(mockMark).toHaveBeenCalledWith({ suggestionId: 7, status: "duplicate", movementId: 22, expectedStatus: "pending" });
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockResolved).toHaveBeenCalledWith(7, "duplicate");
+});
+
+it("editar el importe elimina un candidato que correspondía a los datos originales", async () => {
+  mockSuggestion = { ...mockReceipt, duplicateCandidate: { id: 22, workspaceId: 9, status: "posted", movementType: "expense", sourceAccountId: 1, sourceAmount: 12.5 } as MovementRecord };
+  await act(async () => { renderer.update(React.createElement(Harness, { key: "edit-reconciliation" })); });
+  expect(current.duplicateCandidate?.id).toBe(22);
+  await act(async () => current.setAmount("25.00"));
+  expect(current.duplicateCandidate).toBeNull();
+  mockSuggestion = { ...mockSuggestion, duplicateCandidate: { ...mockSuggestion.duplicateCandidate! } };
+  await act(async () => renderer.update(React.createElement(Harness, { key: "edit-reconciliation" })));
+  expect(current.amount).toBe("25.00");
+  expect(current.duplicateCandidate).toBeNull();
+});
+
+it("Guardar igual conserva la decisión explícita ante un posible duplicado", async () => {
+  mockSuggestion = { ...mockReceipt, duplicateCandidate: { id: 22, workspaceId: 9, status: "posted", movementType: "expense", sourceAccountId: 1, sourceAmount: 12.5 } as MovementRecord };
+  await act(async () => { renderer.update(React.createElement(Harness, { key: "keep-distinct" })); });
+  await act(async () => { await current.submit(true); });
+  expect(mockCreate).toHaveBeenCalledTimes(1);
+  expect(mockDuplicate).not.toHaveBeenCalled();
 });
 
 it("bloquea dos pulsaciones antes del siguiente render y avanza una vez", async () => {

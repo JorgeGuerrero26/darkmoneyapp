@@ -2762,10 +2762,14 @@ export function useCreateMovementMutation(workspaceId: number | null) {
         SAVE_CEILING_MS,
         "guardar movimiento",
       ),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data) => {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
       if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);
+      // El trigger concilia también registros manuales, sin metadatos de detección.
+      void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       // Invalidación INMEDIATA (no diferida por InteractionManager): tras guardar un movimiento,
       // la lista y los saldos deben reflejarlo al instante. runBackgroundQueryRefresh difería el
       // refetch hasta terminar interacciones/animaciones, dejando la UI desactualizada hasta un
@@ -2786,18 +2790,6 @@ export function useCreateMovementMutation(workspaceId: number | null) {
         );
       } else {
         void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      }
-      // Registro originado en una detección de notificación: refrescar también la campana y la
-      // sugerencia. Cubre la ventana entre crear el movimiento y marcar la sugerencia (si el
-      // mark falla, la notificación no queda "pendiente" stale en pantalla).
-      const metadata = variables.metadata as { source?: unknown; suggestionId?: unknown } | null | undefined;
-      if (typeof metadata?.source === "string" && metadata.source.startsWith("notification_detection")) {
-        void queryClient.invalidateQueries({ queryKey: ["notifications"] });
-        const suggestionId = Number(metadata.suggestionId);
-        if (Number.isFinite(suggestionId) && suggestionId > 0) {
-          void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", suggestionId] });
-          void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
-        }
       }
     },
   });
@@ -2920,6 +2912,9 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       void queryClient.invalidateQueries({ queryKey: ["movements"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       void queryClient.invalidateQueries({ queryKey: ["movement", id] });
+      void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }

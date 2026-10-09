@@ -27,7 +27,7 @@ export function DetectedMovementInbox({ userId, workspaceId, accounts, categorie
   }
   const items = inbox.pending.map((suggestion) => {
     const draft = inbox.drafts.get(suggestion.id) ?? buildDetectionDraft(suggestion, accounts, categories, settings);
-    return { suggestion, draft, warning: detectionMissingFields(draft, accounts)[0] ?? null };
+    return { suggestion, draft, warning: suggestion.duplicateCandidate ? "Posible duplicado · revisa el movimiento existente" : detectionMissingFields(draft, accounts)[0] ?? null };
   });
   return <View style={styles.spacing}>
     <QuickDetectedMovementEntry suggestionId={inbox.selected.id} visible={inbox.mode !== "closed"} previewEnabled origin="dashboard" onClose={inbox.close} onResolved={inbox.resolve}

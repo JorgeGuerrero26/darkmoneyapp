@@ -41,6 +41,8 @@ export type DetectedMovementSuggestion = {
   metadata: JsonValue | null;
   createdAt: string;
   updatedAt: string;
+  /** Candidato del servidor; continúa pendiente hasta la confirmación del usuario. */
+  duplicateCandidate?: MovementRecord | null;
 };
 
 export type NativeDetectedMovementSuggestion = {
@@ -393,36 +395,68 @@ export async function upsertDetectedMovementNotification(userId: string, suggest
 }
 
 export function useDetectedMovementSuggestionQuery(suggestionId?: number | null) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["detected-movement-suggestion", suggestionId ?? null],
     enabled: Boolean(supabase && suggestionId),
     queryFn: async () => {
       if (!supabase || !suggestionId) return null;
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("notification_detected_movement_suggestions")
         .select("*")
         .eq("id", suggestionId)
         .maybeSingle();
       if (error) throw new Error(error.message ?? "No se pudo cargar la sugerencia");
-      return data ? mapSuggestion(data) : null;
+      if (!data) return null;
+      if (data.status !== "pending" && data.status !== "needs_review") return mapSuggestion(data);
+      const reconciliation = await reconcileDetectedMovements(Number(data.workspace_id), suggestionId);
+      if (reconciliation.resolvedIds.length) {
+        void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+        void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
+        const refreshed = await supabase.from("notification_detected_movement_suggestions").select("*").eq("id", suggestionId).maybeSingle();
+        if (refreshed.error) throw new Error("No se pudo actualizar la detección conciliada");
+        data = refreshed.data;
+      }
+      return data ? { ...mapSuggestion(data), duplicateCandidate: reconciliation.candidates.get(suggestionId) ?? null } : null;
     },
   });
 }
 
 /** El estado de la sugerencia es independiente de read_at/status del aviso. */
 export function usePendingDetectedMovementsQuery(userId: string | null, workspaceId: number | null, enabled = true) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["pending-detected-movements", userId, workspaceId],
     enabled: Boolean(supabase && userId && workspaceId && enabled),
     refetchInterval: enabled ? 30_000 : false,
     queryFn: async () => {
+      const reconciliation = await reconcileDetectedMovements(workspaceId!);
+      if (reconciliation.resolvedIds.length) {
+        void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+        for (const id of reconciliation.resolvedIds) {
+          void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", id] });
+        }
+      }
       const { data, error } = await supabase!.from("notification_detected_movement_suggestions")
         .select("*").eq("user_id", userId!).eq("workspace_id", workspaceId!)
         .in("status", ["pending", "needs_review"]).order("created_at", { ascending: false });
       if (error) throw new Error("No se pudieron cargar los movimientos por revisar.");
-      return (data ?? []).map(mapSuggestion);
+      return (data ?? []).map((row) => ({ ...mapSuggestion(row), duplicateCandidate: reconciliation.candidates.get(Number(row.id)) ?? null }));
     },
   });
+}
+
+export async function reconcileDetectedMovements(workspaceId: number, suggestionId?: number) {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const { data, error } = await supabase.rpc("reconcile_detected_movements", {
+    p_workspace_id: workspaceId, p_suggestion_id: suggestionId ?? null,
+  });
+  if (error) throw new Error("No se pudieron conciliar las detecciones con tus movimientos");
+  const result = data as { resolvedIds: number[]; candidates: Array<{ suggestionId: number; movement: Record<string, any> }> };
+  return {
+    resolvedIds: result.resolvedIds.map(Number),
+    candidates: new Map(result.candidates.map((item) => [Number(item.suggestionId), mapDuplicateMovement(item.movement)])),
+  };
 }
 
 export function useMarkDetectedMovementSuggestionMutation(userId?: string | null) {
@@ -651,9 +685,13 @@ export async function findPossibleDuplicateMovement(input: DuplicateMovementInpu
   const normalizedDescription = normalizeDescription(input.description);
   const row = (data ?? []).find((item: any) => normalizeDescription(item.description ?? "") === normalizedDescription);
   if (!row) return null;
+  return mapDuplicateMovement(row);
+}
+
+function mapDuplicateMovement(row: Record<string, any>): MovementRecord {
   return {
-    id: row.id,
-    workspaceId: row.workspace_id,
+    id: Number(row.id),
+    workspaceId: Number(row.workspace_id),
     movementType: row.movement_type,
     status: row.status,
     description: row.description,

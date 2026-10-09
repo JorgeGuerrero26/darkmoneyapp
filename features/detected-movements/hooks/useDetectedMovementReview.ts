@@ -1,4 +1,5 @@
 import { buildDetectionDraft, detectionMissingFields, transferDestinationDraft, type DetectionDraft } from "../lib/review-draft";
+import { reconciliationCandidateForDraft } from "../lib/reconciliation";
 import { humanizeError } from "../../../lib/errors";
 import type { MovementRecord } from "../../../types/domain";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -152,6 +153,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [duplicateCandidate, setDuplicateCandidate] = useState<MovementRecord | null>(null);
+  const reconciliationCandidateId = useRef<number | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
   // Guard anti-doble-tap SÍNCRONO: el botón se deshabilita con loading, pero hay una ventana
   // entre el primer tap y el re-render donde un segundo tap (o doble-tap rápido) dispara otro
@@ -434,7 +436,9 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     setDestinationAmount(draft.destinationAmount); setTransferFxRate(draft.fxRate);
     setCounterpartyId(null); setSplitLines(null); setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(null); setLinkedRecurringIncomeId(null);
-    setSaveError(null); setDuplicateCandidate(null);
+    const candidate = reconciliationCandidateForDraft(suggestion, draft, activeAccounts);
+    reconciliationCandidateId.current = candidate?.id ?? null;
+    setSaveError(null); setDuplicateCandidate(candidate);
   }, [activeAccounts, categories, initialDraft, previewEnabled, settings, snapshot, suggestion, visible]);
 
   useEffect(() => {
@@ -460,6 +464,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
    */
   function switchMovementType(next: "expense" | "income" | "transfer") {
     if (next === movementType) return;
+    setDuplicateCandidate(null);
     setMovementType(next);
     categoryEdited.current = false;
     setCategoryId(null);
@@ -756,6 +761,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
             }
           }
           if (!confirmedDistinct) {
+            reconciliationCandidateId.current = null;
             setDuplicateCandidate(duplicate);
             return;
           }
@@ -1052,10 +1058,12 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const draft: DetectionDraft = { movementType, amount, description, accountId, destinationAccountId,
     destinationAmount, fxRate: transferFxRate, categoryId, date, time };
   function chooseDestination(id: number | null) {
+    setDuplicateCandidate(null);
     const next = transferDestinationDraft(draft, id, activeAccounts, snapshot?.exchangeRates ?? [], activeWorkspace?.baseCurrencyCode ?? "PEN");
     setDestinationAccountId(id); setDestinationAmount(next.destinationAmount); setTransferFxRate(next.fxRate);
   }
   function chooseAccount(id: number | null) {
+    setDuplicateCandidate(null);
     accountEdited.current = true;
     setAccountId(id);
     if (movementType === "transfer") {
@@ -1064,6 +1072,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     }
   }
   function changeAmount(value: string) {
+    setDuplicateCandidate(null);
     setAmount(value);
     const parsed = parsePositiveAmountInput(value);
     const rate = parsePositiveAmountInput(transferFxRate, { kind: "rate" });
@@ -1086,6 +1095,18 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     initializedId.current === suggestion?.id && suggestion?.movementType !== "unknown" &&
     suggestion?.status !== "needs_review";
   const busy = isSaving || isDiscarding || createMovement.isPending || markSuggestion.isPending;
+  useEffect(() => {
+    if (!suggestion || initializedId.current !== suggestion.id || busy) return;
+    const candidate = reconciliationCandidateForDraft(suggestion, draft, activeAccounts);
+    if (candidate) {
+      reconciliationCandidateId.current = candidate.id;
+      setDuplicateCandidate((previous) => previous ?? candidate);
+    } else if (reconciliationCandidateId.current != null) {
+      const previousId = reconciliationCandidateId.current;
+      reconciliationCandidateId.current = null;
+      setDuplicateCandidate((previous) => previous?.id === previousId ? null : previous);
+    }
+  }, [suggestion, activeAccounts, amount, movementType, description, date, time, accountId, destinationAccountId, busy]);
   async function useExistingDuplicate() {
     if (!suggestion || !duplicateCandidate || submittingRef.current) return;
     submittingRef.current = true; setIsSaving(true); setSaveError(null);
@@ -1107,8 +1128,10 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     draft, missing, cardMissing: detectionMissingFields(draft, activeAccounts), readyToSave, busy, isSaving, saveError, duplicateCandidate, useExistingDuplicate, openDuplicate,
     movementType, switchMovementType, amount, setAmount: changeAmount, accountId, setAccountId: chooseAccount,
     destinationAccountId, setDestinationAccountId: chooseDestination, destinationAmount, setDestinationAmount: changeDestinationAmount,
-    transferFxRate, setTransferFxRate: changeFxRate, categoryId, selectCategoryManually, description, setDescription,
-    date, setDate, time, setTime, notes, setNotes, activeAccounts, destinationAccountsSorted, categories,
+    transferFxRate, setTransferFxRate: changeFxRate, categoryId, selectCategoryManually, description,
+    setDescription: (value: string) => { setDuplicateCandidate(null); setDescription(value); },
+    date, setDate: (value: string) => { setDuplicateCandidate(null); setDate(value); },
+    time, setTime: (value: string) => { setDuplicateCandidate(null); setTime(value); }, notes, setNotes, activeAccounts, destinationAccountsSorted, categories,
     transferCurrenciesDiffer, transferSourceAccount, transferDestAccount, displayAppLabel,
     isDiscarding, checkingDuplicate, createMovement, markSuggestion, submit, discard, retry,
     splitLines, setSplitLines, splitSheetOpen, setSplitSheetOpen, selectedBudgetAccount, spendTypes,
