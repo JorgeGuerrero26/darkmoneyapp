@@ -11,6 +11,7 @@ import {
 import type { MovementFormInput } from "./workspace-data";
 import type { JsonValue, MovementRecord, MovementType } from "../../types/domain";
 import { parseDuplicateVerdict, type DuplicateAiResult } from "../../features/notifications/lib/duplicate-verdict";
+import { requestDetectedRegistrationUndo, type DetectionUndoInput } from "../../features/detected-movements/lib/detection-undo";
 
 export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate" | "needs_review";
 export type DetectedMovementConfidence = "high" | "medium" | "low";
@@ -496,6 +497,26 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
       void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
       void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", variables.suggestionId] });
       void queryClient.invalidateQueries({ queryKey: ["notifications", userId ?? null] });
+    },
+  });
+}
+
+export function useUndoDetectedMovementRegistrationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["undo-detected-movement-registration"],
+    mutationFn: async (input: DetectionUndoInput & { userId: string }) => {
+      if (!supabase || !input.userId) throw new Error("No hay una sesión disponible.");
+      return requestDetectedRegistrationUndo(supabase, input);
+    },
+    onSettled: async (_result, _error, input) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", input.suggestionId] }),
+        queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", input.userId, input.workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["detection-learning", input.userId, input.workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["movements"] }),
+        queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+      ]);
     },
   });
 }

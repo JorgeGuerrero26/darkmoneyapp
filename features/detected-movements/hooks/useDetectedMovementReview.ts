@@ -19,13 +19,13 @@ import {
   useNotificationDetectionSettingsQuery,
   useDetectedMovementSuggestionQuery,
   useMarkDetectedMovementSuggestionMutation,
+  useUndoDetectedMovementRegistrationMutation,
 } from "../../../services/queries/notification-detection";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../../lib/notification-detection-apps";
 import {
   useCreateCategoryMutation,
   useCreateCounterpartyMutation,
   useCreateMovementMutation,
-  useDeleteMovementMutation,
   useCreateRecurringIncomeMutation,
   useCreateSubscriptionMutation,
   useMarkNotificationReadMutation,
@@ -115,7 +115,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const settings = settingsQuery.data ?? [];
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
-  const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
+  const undoDetectedRegistration = useUndoDetectedMovementRegistrationMutation();
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
@@ -1009,19 +1009,13 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   }
 
   /**
-   * Deshacer un registro recién guardado: elimina el movimiento (la dedupe key se libera
-   * con la fila) y devuelve la sugerencia a `pending` para poder registrarla de nuevo.
+   * Elimina el registro completo y reabre su detección en una sola transacción.
+   * Captura el espacio original: una acción del toast no debe usar el espacio actual.
    */
   function undoRegistration(movementId: number) {
     if (!suggestion) return;
-    deleteMovement.mutate(movementId, {
-      onSuccess: () => {
-        markSuggestion.mutate({ suggestionId: suggestion.id, status: "pending", movementId: null });
-      },
-      onError: (error) => {
-        showErrorToast("No se pudo deshacer el registro", error);
-      },
-    });
+    void undoDetectedRegistration.mutateAsync({ movementId, suggestionId: suggestion.id, workspaceId: suggestion.workspaceId, userId: suggestion.userId })
+      .catch((error) => showErrorToast("No se pudo deshacer el registro", error));
   }
 
   async function markRegistered(movementId: number) {
