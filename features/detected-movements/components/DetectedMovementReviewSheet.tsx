@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Check, Trash2 } from "lucide-react-native";
+import { Check, X } from "lucide-react-native";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { DetailActionBar } from "../../../components/ui/DetailActionBar";
 import { DetailFieldRow } from "../../../components/ui/DetailFieldRow";
@@ -48,9 +48,9 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
     footer={list || !r.initialized ? undefined : <View>
       {warning ? <Text style={styles.footerWarning}>{warning}</Text> : null}
       {r.saveError ? <Text style={styles.footerError} accessibilityRole="alert">{r.saveError}</Text> : null}
-      {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} /></View> : <DetailActionBar primarySide="right"
-        secondary={{ label: "Descartar", accessibilityLabel: "Descartar detección", icon: Trash2, disabled: r.busy, loading: r.isDiscarding, onPress: () => { void r.discard(); } }}
-        primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: r.saveError ? "Reintentar la última acción" : "Guardar movimiento revisado", icon: Check, loading: r.isSaving || r.isDiscarding, disabled: r.busy, onPress: () => { if (r.saveError) void r.retry(); else void r.submit(false); } }} />}
+      {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} omitting={r.isDiscarding} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} onDiscard={() => { void r.discard(); }} /></View> : <DetailActionBar primarySide="right"
+        secondary={{ label: r.isDiscarding ? "Omitiendo…" : "Omitir", accessibilityLabel: "Omitir detección", icon: X, disabled: r.busy, loading: r.isDiscarding, onPress: () => { void r.discard(); } }}
+        primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: r.saveError ? "Reintentar la última acción" : "Guardar movimiento revisado", icon: Check, loading: r.isSaving, disabled: r.busy, onPress: () => { if (r.saveError) void r.retry(); else void r.submit(false); } }} />}
     </View>}
   >
     {list ?? (!r.initialized ? <View style={styles.loading}><ActivityIndicator color={COLORS.storm} /><Text style={styles.meta}>Cargando la detección…</Text></View> : <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>

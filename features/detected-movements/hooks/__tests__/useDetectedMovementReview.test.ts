@@ -20,6 +20,7 @@ let mockSettingsLoading = false;
 let mockSettings: NotificationDetectionAppSetting[] = [];
 let mockSuggestion = mockReceipt;
 jest.mock("../../components/DetectedMovementReviewSheet", () => ({ DetectedMovementReviewSheet: () => null }));
+jest.mock("../../../../components/ui/BottomSheet", () => ({ BottomSheet: ({ title, children }: any) => require("react").createElement(require("react-native").View, { testID: "status-sheet", title }, children) }));
 jest.mock("../../components/DetectedMovementExtras", () => ({ DetectedMovementExtras: () => null }));
 jest.mock("../../../movements/components/form/SplitCategoriesSheet", () => ({ SplitCategoriesSheet: () => null }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
@@ -160,12 +161,40 @@ it("pide resolver el duplicado y permite guardar igual de forma explícita", asy
   expect(mockCreate).toHaveBeenCalledTimes(1);
 });
 
-it("descartar permite deshacer sin depender de si el aviso se leyó", async () => {
+it("omitir permite deshacer sin depender de si el aviso se leyó", async () => {
   await act(async () => { await current.discard(); });
   expect(mockResolved).toHaveBeenCalledWith(7, "discarded");
   const banner = mockToast.showRichToast.mock.calls[0][0];
+  expect(banner.title).toBe("Detección omitida");
   await act(async () => { banner.onUndo(); });
   expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "pending", expectedStatus: "discarded" });
+});
+
+it("abrir la misma detección desde Notificaciones muestra que fue omitida sin permitir guardarla", async () => {
+  mockSuggestion = { ...mockReceipt, status: "discarded" };
+  await act(async () => renderer.update(React.createElement(QuickDetectedMovementEntry, {
+    visible: true, suggestionId: 7, notificationId: 33, origin: "notifications", onClose: jest.fn(),
+  })));
+  expect(renderer.root.findByProps({ testID: "status-sheet" }).props.title).toBe("Detección omitida");
+  expect(renderer.root.findAllByType(Text).some((node: any) => String(node.props.children).includes("No se creó un movimiento"))).toBe(true);
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockMark).not.toHaveBeenCalled();
+});
+
+it("dos pulsaciones de Omitir resuelven una vez y Deshacer conserva needs_review", async () => {
+  mockSuggestion = { ...mockReceipt, status: "needs_review" };
+  await act(async () => renderer.update(React.createElement(Harness, { key: "omit-needs-review" })));
+  let release!: () => void;
+  mockMark.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  let first!: Promise<void>, second!: Promise<void>;
+  await act(async () => { first = current.discard(); second = current.discard(); });
+  expect(mockMark).toHaveBeenCalledTimes(1);
+  expect(current.busy).toBe(true);
+  await act(async () => { release(); await Promise.all([first, second]); });
+  expect(mockResolved).toHaveBeenCalledTimes(1);
+  expect(mockCreate).not.toHaveBeenCalled();
+  await act(async () => mockToast.showRichToast.mock.calls[0][0].onUndo());
+  expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "needs_review", expectedStatus: "discarded" });
 });
 
 it("Guardar permanece disponible y explica qué falta en una transferencia", async () => {

@@ -51,9 +51,9 @@ export function QuickDetectedMovementEntry(props: Props) {
   if (!r.suggestion) return <StatusSheet visible={props.visible} onClose={close} loading={!r.suggestionQuery.isError && r.suggestionQuery.isFetching} message={r.suggestionQuery.isError ? "No pudimos cargar la detección" : !r.suggestionQuery.isFetching ? "Esta detección ya no está disponible" : "Cargando los datos…"} onRetry={() => { void r.suggestionQuery.refetch(); }} />;
 
   const pending = r.suggestion.status === "pending" || r.suggestion.status === "needs_review";
-  if (!pending && !props.onResolved) return <BottomSheet visible={props.visible} onClose={close} title="Movimiento detectado" entranceAnimation="springFade" snapHeight={0.45}>
+  if (!pending) return <BottomSheet visible={props.visible} onClose={close} title={r.suggestion.status === "discarded" ? "Detección omitida" : "Movimiento detectado"} entranceAnimation="springFade" snapHeight={0.45}>
     <View style={styles.status}>
-      <Text style={styles.text}>{r.suggestion.status === "discarded" ? "Esta detección fue descartada" : r.suggestion.status === "duplicate" ? "Ya existía el mismo movimiento" : "Este movimiento ya fue guardado"}</Text>
+      <Text style={styles.text}>{r.suggestion.status === "discarded" ? "Omitiste esta detección. No se creó un movimiento y ya no aparece entre los pendientes del dashboard." : r.suggestion.status === "duplicate" ? "Ya existía el mismo movimiento" : "Este movimiento ya fue guardado"}</Text>
       {r.suggestion.movementId ? <Button label="Ver movimiento" onPress={() => { close(); router.push(`/movement/${r.suggestion!.movementId}?from=${props.origin ?? "notifications"}` as never); }} /> : null}
       <Button label="Cerrar" variant="secondary" onPress={close} />
     </View>

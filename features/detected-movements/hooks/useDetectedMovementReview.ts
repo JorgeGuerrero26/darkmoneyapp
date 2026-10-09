@@ -637,14 +637,14 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
         });
       }
       if (notificationId) markNotificationRead.mutate(notificationId);
-      showRichToast({ type: "delete", title: "Detección descartada", subtitle: suggestion.description,
+      showRichToast({ type: "delete", title: "Detección omitida", subtitle: suggestion.description,
         onUndo: () => { void markSuggestion.mutateAsync({ suggestionId: suggestion.id,
           status: suggestion.status === "needs_review" ? "needs_review" : "pending", expectedStatus: "discarded" })
           .catch((error) => showErrorToast("No se pudo deshacer", error)); } });
       if (onResolved) onResolved(suggestion.id, "discarded"); else onClose();
     } catch (error) {
       setSaveError(humanizeError(error));
-      showErrorToast("No se pudo descartar la sugerencia", error);
+      showErrorToast("No se pudo omitir la detección", error);
     } finally {
       setIsDiscarding(false); submittingRef.current = false;
     }

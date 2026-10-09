@@ -22,6 +22,19 @@ movimientos, importes, saldos o la lectura de las notificaciones.
   `metadata.reconciliation`. Leer el aviso no resuelve la detección. La RPC
   conserva `read_at`, `status` de lectura y `archived_at` del aviso.
 
+## Omitir detecciones
+
+**Omitir** es una acción visible en la tarjeta del dashboard y en la revisión de
+Notificaciones, incluso ante un posible duplicado. Persiste `discarded` en la
+misma detección; no crea movimientos ni cambia saldos. Sale de los pendientes y
+el aviso sigue disponible: al abrirlo muestra **Detección omitida**.
+
+El banner permite **Deshacer**, que recupera `pending` o `needs_review` según el
+estado anterior, incluso si era el último pendiente. Solo modifica la caché del
+usuario y workspace correspondientes. Resolver marca el aviso leído; deshacer
+mantiene esa lectura y leer por sí solo no resuelve una detección. Mientras se
+omite se indica el progreso y se bloquean las pulsaciones repetidas.
+
 ## Ejecución y permisos
 
 `reconcile_after_manual_movement` corre después de registrar o editar un movimiento

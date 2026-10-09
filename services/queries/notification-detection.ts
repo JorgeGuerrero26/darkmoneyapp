@@ -476,20 +476,19 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
       if (input.expectedStatus) update = update.eq("status", input.expectedStatus);
       const { data, error } = await update.select("*").single();
       if (error) throw new Error(error.message ?? "No se pudo actualizar la sugerencia");
-      if (userId && input.status !== "pending") {
+      if (userId && ["registered", "duplicate", "discarded"].includes(input.status)) {
         await autoArchiveDetectedMovementNotification(userId, input.suggestionId);
       }
       return mapSuggestion(data);
     },
     onSuccess: (data, variables) => {
       queryClient.setQueryData(["detected-movement-suggestion", variables.suggestionId], data);
-      queryClient.setQueriesData<DetectedMovementSuggestion[]>({ queryKey: ["pending-detected-movements"] }, (previous) => {
+      queryClient.setQueriesData<DetectedMovementSuggestion[]>({ queryKey: ["pending-detected-movements", data.userId, data.workspaceId] }, (previous) => {
         if (!previous) return previous;
         const rest = previous.filter((item) => item.id !== data.id);
         if (data.status === "pending" || data.status === "needs_review") {
-          // No agregar la sugerencia a caches de otro usuario/workspace.
-          return previous.some((item) => item.userId === data.userId && item.workspaceId === data.workspaceId)
-            ? [...rest, data].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : rest;
+          // La clave limita usuario/workspace y permite deshacer incluso con una lista vacía.
+          return [...rest, data].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
         }
         return rest;
       });

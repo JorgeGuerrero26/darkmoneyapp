@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { ArrowRight, Check, MoreHorizontal, Pencil } from "lucide-react-native";
+import { ArrowRight, Check, Pencil } from "lucide-react-native";
 import { ResourceCard } from "../../../components/ui/ResourceCard";
-import { HeaderActionGroup } from "../../../components/ui/HeaderActionGroup";
 import { DetailFieldRow } from "../../../components/ui/DetailFieldRow";
 import { DetailActionBar } from "../../../components/ui/DetailActionBar";
 import { Button } from "../../../components/ui/Button";
@@ -13,10 +11,10 @@ import type { DetectedMovementSuggestion } from "../../../services/queries/notif
 import { detectionAmount, detectionContext, detectionTone } from "../lib/presentation";
 
 export type DuplicateDecisionProps = {
-  candidate: MovementRecord; currency: string; busy: boolean;
-  onOpen: () => void; onSame: () => void; onSaveAnyway: () => void;
+  candidate: MovementRecord; currency: string; busy: boolean; omitting?: boolean;
+  onOpen: () => void; onSame: () => void; onSaveAnyway: () => void; onDiscard: () => void;
 };
-export function DuplicateDecision({ candidate, currency, busy, onOpen, onSame, onSaveAnyway }: DuplicateDecisionProps) {
+export function DuplicateDecision({ candidate, currency, busy, omitting = false, onOpen, onSame, onSaveAnyway, onDiscard }: DuplicateDecisionProps) {
   return <View style={styles.duplicate}>
     <Text style={styles.warning}>Posible duplicado</Text>
     <ResourceCard variant="row" title={candidate.description || "Movimiento parecido"}
@@ -25,8 +23,9 @@ export function DuplicateDecision({ candidate, currency, busy, onOpen, onSame, o
       onPress={onOpen} disabled={busy} />
     <View style={styles.decision}>
       <Button label="Es el mismo" variant="secondary" onPress={onSame} disabled={busy} />
-      <Button label="Guardar igual" onPress={onSaveAnyway} loading={busy} />
+      <Button label="Guardar igual" onPress={onSaveAnyway} loading={busy && !omitting} disabled={busy} />
     </View>
+    <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" onPress={onDiscard} disabled={busy} loading={omitting} loadingLabel="Omitiendo…" />
   </View>;
 }
 function formatCandidate(candidate: MovementRecord, currency: string) {
@@ -36,23 +35,20 @@ function formatCandidate(candidate: MovementRecord, currency: string) {
 type Props = {
   suggestion: DetectedMovementSuggestion; draft: DetectionDraft; count: number;
   accounts: readonly AccountSummary[]; categories: readonly CategorySummary[];
-  readyToSave: boolean; missing: string[]; busy: boolean; error: string | null;
+  readyToSave: boolean; missing: string[]; busy: boolean; omitting?: boolean; error: string | null;
   duplicate?: DuplicateDecisionProps | null; privacyMode?: boolean;
   onReview: () => void; onSave: () => void; onDiscard: () => void; onViewAll: () => void;
 };
-export function DetectedMovementCard({ suggestion, draft, count, accounts, categories, readyToSave, missing, busy, error, duplicate, privacyMode = false, onReview, onSave, onDiscard, onViewAll }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
+export function DetectedMovementCard({ suggestion, draft, count, accounts, categories, readyToSave, missing, busy, omitting = false, error, duplicate, privacyMode = false, onReview, onSave, onDiscard, onViewAll }: Props) {
   const source = accounts.find((a) => a.id === draft.accountId);
   const destination = accounts.find((a) => a.id === draft.destinationAccountId);
   const category = categories.find((c) => c.id === draft.categoryId);
   const warning = missing[0] ?? (suggestion.status === "needs_review" ? "Confirma los datos del comprobante" : suggestion.movementType === "unknown" ? "Confirma el tipo de movimiento" : null);
   const headerActions = <View style={styles.header}>
     {count > 1 ? <Pressable onPress={onViewAll} disabled={busy} accessibilityRole="button" style={styles.tap}><Text style={styles.link}>Ver los {count}</Text></Pressable> : null}
-    <HeaderActionGroup actions={[{ key: "more", icon: MoreHorizontal, accessibilityLabel: "Más acciones de la detección", disabled: busy, onPress: () => setMenuOpen((open) => !open) }]} />
   </View>;
   return <ResourceCard variant="card" title={`POR REVISAR · ${count}`} titleStyle={styles.kicker} trailing={headerActions}
     footer={<View style={styles.body}>
-      {menuOpen ? <Button label="Descartar detección" variant="ghost" disabled={busy} onPress={() => { setMenuOpen(false); onDiscard(); }} /> : null}
       <View style={styles.headline}><Text style={styles.title}>{draft.description || "Movimiento detectado"}</Text><Text style={[styles.amount, { color: detectionTone(draft.movementType) }]}>{privacyMode ? "••••" : detectionAmount(draft.amount, source?.currencyCode ?? suggestion.currencyCode, draft.movementType)}</Text></View>
       <Text style={styles.meta}>{detectionContext(suggestion, draft)}</Text>
       {draft.movementType === "transfer" ? <Pressable style={styles.transfer} onPress={onReview} disabled={busy} accessibilityRole="button"><Text style={styles.value}>{source?.name ?? "Elige el origen"}</Text><ArrowRight size={16} color={COLORS.transfer} /><Text style={[styles.value, !destination && styles.warning]}>{destination?.name ?? "Elige el destino"}</Text></Pressable> : <View>
@@ -63,8 +59,9 @@ export function DetectedMovementCard({ suggestion, draft, count, accounts, categ
       {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
       {duplicate ? <DuplicateDecision {...duplicate} /> : <DetailActionBar horizontalInset={0} primarySide="right"
         secondary={readyToSave || error ? { label: "Revisar", accessibilityLabel: "Revisar detección", icon: Pencil, disabled: busy, onPress: onReview } : undefined}
-        primary={{ label: busy ? "Guardando…" : error ? "Reintentar" : readyToSave ? "Guardar" : "Revisar y guardar", accessibilityLabel: readyToSave ? "Guardar movimiento detectado" : "Revisar y guardar movimiento detectado", icon: Check, loading: busy, onPress: readyToSave || error ? onSave : onReview }}
+        primary={{ label: busy && !omitting ? "Guardando…" : error ? "Reintentar" : readyToSave ? "Guardar" : "Revisar y guardar", accessibilityLabel: readyToSave ? "Guardar movimiento detectado" : "Revisar y guardar movimiento detectado", icon: Check, loading: busy && !omitting, disabled: busy, onPress: readyToSave || error ? onSave : onReview }}
       />}
+      {!duplicate ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" disabled={busy} loading={omitting} loadingLabel="Omitiendo…" onPress={onDiscard} /> : null}
     </View>} />;
 }
 const styles = StyleSheet.create({
