@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Check, X } from "lucide-react-native";
+import { Check } from "lucide-react-native";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { DetailActionBar } from "../../../components/ui/DetailActionBar";
 import { DetailFieldRow } from "../../../components/ui/DetailFieldRow";
@@ -33,6 +33,7 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
   const warning = r.missing[0] ?? (r.suggestion?.status === "needs_review" ? "Revisa los datos del comprobante antes de guardar" : null);
   const close = () => { if (!r.busy) onClose(); };
   return <BottomSheet visible={visible} onClose={close} title={status?.title ?? (list ? "Por revisar" : "Revisar movimiento")} entranceAnimation="springFade" snapHeight={status?.height ?? 0.92} scrollEnabled={Boolean(status) || !list}
+    headerAction={!status && !list && r.initialized ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" size="sm" disabled={r.busy} loading={r.isDiscarding} loadingLabel="Omitiendo…" onPress={() => { void r.discard(); }} /> : undefined}
     overlay={status || list ? undefined : selector === "description" ? (
       <InlineFormSheet visible entranceAnimation="springFade" title="Descripción" onBack={() => setSelector(null)} footer={<Button label="Listo" onPress={() => setSelector(null)} />}>
         <TextField value={r.description} onChangeText={r.setDescription} multiline style={styles.descriptionInput} accessibilityLabel="Descripción del movimiento" />
@@ -49,8 +50,7 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
     footer={status ? status.footer : list || !r.initialized ? undefined : <View>
       {warning ? <Text style={styles.footerWarning}>{warning}</Text> : null}
       {r.saveError ? <Text style={styles.footerError} accessibilityRole="alert">{r.saveError}</Text> : null}
-      {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} omitting={r.isDiscarding} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} onDiscard={() => { void r.discard(); }} /></View> : <DetailActionBar primarySide="right"
-        secondary={{ label: r.isDiscarding ? "Omitiendo…" : "Omitir", accessibilityLabel: "Omitir detección", icon: X, disabled: r.busy, loading: r.isDiscarding, onPress: () => { void r.discard(); } }}
+      {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} omitting={r.isDiscarding} showOmitAction={false} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} onDiscard={() => { void r.discard(); }} /></View> : <DetailActionBar primarySide="right"
         primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: r.saveError ? "Reintentar la última acción" : "Guardar movimiento revisado", icon: Check, loading: r.isSaving, disabled: r.busy, onPress: () => { if (r.saveError) void r.retry(); else void r.submit(false); } }} />}
     </View>}
   >

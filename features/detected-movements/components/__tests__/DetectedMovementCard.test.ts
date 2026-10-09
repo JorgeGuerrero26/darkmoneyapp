@@ -11,7 +11,7 @@ const { create, act } = require("react-test-renderer");
 jest.mock("../../../../components/ui/ResourceCard", () => ({ ResourceCard: ({ trailing, footer }: any) => footer ? require("react").createElement(require("react-native").View, null, require("react").createElement(require("react-native").View, { testID: "detection-header" }, trailing), footer) : null }));
 jest.mock("../../../../components/ui/DetailFieldRow", () => ({ DetailFieldRow: () => null }));
 jest.mock("../../../../components/ui/DetailActionBar", () => ({ DetailActionBar: ({ secondary }: any) => secondary ? require("react").createElement(require("../../../../components/ui/Button").Button, { label: secondary.label, onPress: secondary.onPress, disabled: secondary.disabled }) : null }));
-jest.mock("../../../../components/ui/BottomSheet", () => ({ BottomSheet: ({ footer }: any) => footer ?? null }));
+jest.mock("../../../../components/ui/BottomSheet", () => ({ BottomSheet: ({ headerAction, footer }: any) => require("react").createElement(require("react-native").View, null, require("react").createElement(require("react-native").View, { testID: "review-header" }, headerAction), require("react").createElement(require("react-native").View, { testID: "review-footer" }, footer)) }));
 jest.mock("../../../../components/ui/Button", () => ({ Button: () => null }));
 jest.mock("../../../../components/ui/SearchableSelectSheet", () => ({ SearchableSelectSheet: () => null }));
 jest.mock("../../../../components/ui/DateTimeSheet", () => ({ DateTimeSheet: () => null }));
@@ -48,12 +48,17 @@ it("se puede omitir un posible duplicado sin elegir Es el mismo ni Guardar igual
   await act(async () => renderer!.unmount());
 });
 
-it.each([null, candidate])("la revisión también permite Omitir con y sin duplicado", async duplicateCandidate => {
+it.each([[false, false], [true, false], [false, true], [true, true]])("Omitir queda en la cabecera de revisión (ocupado: %s, duplicado: %s)", async (busy, duplicate) => {
   const discard = jest.fn();
-  const review = { activeAccounts: [], categories: [], missing: [], date: "2026-10-07", time: "13:00", movementType: "expense", initialized: true, busy: false, discard, duplicateCandidate } as unknown as DetectedMovementReview;
+  const review = { activeAccounts: [], categories: [], missing: [], date: "2026-10-07", time: "13:00", movementType: "expense", initialized: true, busy, isDiscarding: busy, discard, duplicateCandidate: duplicate ? candidate : null } as unknown as DetectedMovementReview;
   let renderer: ReturnType<typeof create>;
   await act(async () => { renderer = create(React.createElement(DetectedMovementReviewSheet, { visible: true, onClose: jest.fn(), review })); });
-  renderer!.root.findAllByType(Button).find((node: any) => node.props.label === "Omitir").props.onPress();
-  expect(discard).toHaveBeenCalledTimes(1);
+  const buttons = renderer!.root.findAllByType(Button).filter((node: any) => node.props.label === "Omitir");
+  expect(buttons).toHaveLength(1);
+  expect(renderer!.root.findByProps({ testID: "review-header" }).findAllByType(Button)).toContain(buttons[0]);
+  expect(renderer!.root.findByProps({ testID: "review-footer" }).findAllByType(Button).filter((node: any) => node.props.label === "Omitir")).toHaveLength(0);
+  expect(buttons[0].props.disabled).toBe(busy);
+  expect(buttons[0].props.loading).toBe(busy);
+  if (!busy) { buttons[0].props.onPress(); expect(discard).toHaveBeenCalledTimes(1); }
   await act(async () => renderer!.unmount());
 });
