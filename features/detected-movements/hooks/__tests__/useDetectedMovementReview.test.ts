@@ -1,7 +1,9 @@
 import React from "react";
+import { Text } from "react-native";
+import { QuickDetectedMovementEntry } from "../../../../components/domain/QuickDetectedMovementEntry";
 import { useDetectedMovementReview, type DetectedMovementReview } from "../useDetectedMovementReview";
 import type { AccountSummary, CategorySummary } from "../../../../types/domain";
-import type { DetectedMovementSuggestion } from "../../../../services/queries/notification-detection";
+import type { DetectedMovementSuggestion, NotificationDetectionAppSetting } from "../../../../services/queries/notification-detection";
 
 const { create, act } = require("react-test-renderer");
 const mockCreate = jest.fn();
@@ -14,14 +16,20 @@ let mockSnapshot = { accounts: mockAccounts, categories: mockCategories, counter
 const mockReceipt: DetectedMovementSuggestion = { id: 7, userId: "tester", workspaceId: 9, status: "pending", movementType: "expense", currencyCode: "PEN", amount: 12.5, description: "Tambo", occurredAt: "2026-10-07T18:02:00Z", packageName: "com.bcp.test", financialAppKey: "bcp", appLabel: "BCP", metadata: { accountId: 1, categoryId: 2 }, confidence: "high", dedupeKey: "test-7", notificationKey: null, movementId: null, createdAt: "2026-10-07T18:02:00Z", updatedAt: "2026-10-07T18:02:00Z" };
 const mockMutation = { mutateAsync: jest.fn().mockResolvedValue({}), mutate: jest.fn(), isPending: false };
 const mockToast = { showToast: jest.fn(), showRichToast: jest.fn(), showErrorToast: jest.fn() };
+let mockSettingsLoading = false;
+let mockSettings: NotificationDetectionAppSetting[] = [];
+let mockSuggestion = mockReceipt;
+jest.mock("../../components/DetectedMovementReviewSheet", () => ({ DetectedMovementReviewSheet: () => null }));
+jest.mock("../../components/DetectedMovementExtras", () => ({ DetectedMovementExtras: () => null }));
+jest.mock("../../../movements/components/form/SplitCategoriesSheet", () => ({ SplitCategoriesSheet: () => null }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 jest.mock("../../../../lib/auth-context", () => ({ useAuth: () => ({ profile: { id: "tester", email: "tester@test.invalid" } }) }));
 jest.mock("../../../../lib/workspace-context", () => ({ useWorkspace: () => ({ activeWorkspaceId: 9, activeWorkspace: { baseCurrencyCode: "PEN" } }) }));
 jest.mock("../../../../hooks/useToast", () => ({ useToast: () => mockToast }));
 jest.mock("../../../../hooks/useHaptics", () => ({ useHaptics: () => ({ error: jest.fn(), success: jest.fn() }) }));
 jest.mock("../../../../services/queries/notification-detection", () => ({
-  useDetectedMovementSuggestionQuery: () => ({ data: mockReceipt, refetch: jest.fn() }),
-  useNotificationDetectionSettingsQuery: () => ({ data: [], isLoading: false }),
+  useDetectedMovementSuggestionQuery: () => ({ data: mockSuggestion, refetch: jest.fn() }),
+  useNotificationDetectionSettingsQuery: () => ({ data: mockSettings, isLoading: mockSettingsLoading }),
   useMarkDetectedMovementSuggestionMutation: () => ({ ...mockMutation, mutateAsync: mockMark }),
   useAiUsageTodayQuery: () => ({ data: null }),
   findPossibleDuplicateMovement: (...args: unknown[]) => mockDuplicate(...args),
@@ -53,8 +61,37 @@ jest.mock("../../../../hooks/useMovementBudgetImpact", () => ({ useMovementBudge
 let current: DetectedMovementReview;
 function Harness() { current = useDetectedMovementReview({ visible: true, suggestionId: 7, onClose: jest.fn(), onResolved: mockResolved }); return null; }
 let renderer: ReturnType<typeof create>;
-beforeEach(async () => { jest.clearAllMocks(); mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
+beforeEach(async () => { jest.clearAllMocks(); mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, accounts: mockAccounts }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
 afterEach(async () => { await act(async () => renderer.unmount()); });
+
+it("muestra la tarjeta del dashboard sin abrir la revisión aunque los ajustes sigan cargando", async () => {
+  mockSettingsLoading = true;
+  await act(async () => {
+    renderer.update(React.createElement(QuickDetectedMovementEntry, {
+      visible: false, previewEnabled: true, suggestionId: 7, onClose: jest.fn(),
+      renderPreview: (review) => React.createElement(Text, { testID: "dashboard-detection" }, `${review.description}: ${review.amount}`),
+    }));
+  });
+  expect(renderer.root.findByProps({ testID: "dashboard-detection" }).props.children).toBe("Tambo: 12.50");
+  expect(mockCreate).not.toHaveBeenCalled();
+});
+
+it("aplica la cuenta propuesta cuando llegan los ajustes y conserva una elección manual", async () => {
+  mockSettingsLoading = true;
+  mockSuggestion = { ...mockReceipt, metadata: { categoryId: 2 } };
+  mockSnapshot = { ...mockSnapshot, accounts: [...mockAccounts, { ...mockAccounts[0], id: 3, name: "Ahorros" }] };
+  await act(async () => { renderer.update(React.createElement(Harness, { key: "late-settings" })); });
+  expect(current.accountId).toBeNull();
+  expect(current.initialized).toBe(true);
+  mockSettingsLoading = false;
+  mockSettings = [{ financialAppKey: "bcp", enabled: true, defaultAccountId: 3 }];
+  await act(async () => { renderer.update(React.createElement(Harness, { key: "late-settings" })); });
+  expect(current.accountId).toBe(3);
+  await act(async () => { current.setAccountId(null); });
+  mockSettings = [{ financialAppKey: "bcp", enabled: true, defaultAccountId: 1 }];
+  await act(async () => { renderer.update(React.createElement(Harness, { key: "late-settings" })); });
+  expect(current.accountId).toBeNull();
+});
 
 it("bloquea dos pulsaciones antes del siguiente render y avanza una vez", async () => {
   let release!: (value: { id: number }) => void;

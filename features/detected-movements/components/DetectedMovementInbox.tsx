@@ -1,4 +1,5 @@
-import { View, StyleSheet } from "react-native";
+import { ActivityIndicator, Text, View, StyleSheet } from "react-native";
+import { Button } from "../../../components/ui/Button";
 import { QuickDetectedMovementEntry } from "../../../components/domain/QuickDetectedMovementEntry";
 import { useDetectedMovementInbox } from "../hooks/useDetectedMovementInbox";
 import { DetectedMovementCard } from "./DetectedMovementCard";
@@ -6,13 +7,24 @@ import { DetectedMovementsList } from "./DetectedMovementsList";
 import { buildDetectionDraft, detectionMissingFields } from "../lib/review-draft";
 import { useNotificationDetectionSettingsQuery } from "../../../services/queries/notification-detection";
 import type { AccountSummary, CategorySummary } from "../../../types/domain";
-import { SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../constants/theme";
 
 type Props = { userId: string | null; workspaceId: number | null; accounts: AccountSummary[]; categories: CategorySummary[]; privacyMode: boolean };
 export function DetectedMovementInbox({ userId, workspaceId, accounts, categories, privacyMode }: Props) {
   const inbox = useDetectedMovementInbox(userId, workspaceId);
   const settings = useNotificationDetectionSettingsQuery(userId, workspaceId).data ?? [];
-  if (!inbox.selected || privacyMode) return null;
+  if (privacyMode || !userId || !workspaceId) return null;
+  if (!inbox.selected) {
+    if (inbox.error) return <View style={styles.spacing}>
+      <Text style={styles.status} accessibilityRole="alert">{inbox.error}</Text>
+      <Button label="Reintentar" variant="ghost" onPress={inbox.retry} />
+    </View>;
+    if (inbox.loading) return <View style={styles.loading}>
+      <ActivityIndicator color={COLORS.storm} />
+      <Text style={styles.status}>Buscando movimientos por revisar…</Text>
+    </View>;
+    return null;
+  }
   const items = inbox.pending.map((suggestion) => {
     const draft = inbox.drafts.get(suggestion.id) ?? buildDetectionDraft(suggestion, accounts, categories, settings);
     return { suggestion, draft, warning: detectionMissingFields(draft, accounts)[0] ?? null };
@@ -28,4 +40,8 @@ export function DetectedMovementInbox({ userId, workspaceId, accounts, categorie
     />
   </View>;
 }
-const styles = StyleSheet.create({ spacing: { marginTop: SPACING.lg, marginBottom: SPACING.md } });
+const styles = StyleSheet.create({
+  spacing: { marginTop: SPACING.lg, marginBottom: SPACING.md },
+  loading: { marginVertical: SPACING.md, flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  status: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+});

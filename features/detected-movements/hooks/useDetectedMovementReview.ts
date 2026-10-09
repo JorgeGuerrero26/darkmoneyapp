@@ -417,11 +417,15 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
 
   const initializedId = useRef<number | null>(null);
   const categoryEdited = useRef(false);
+  const accountEdited = useRef(false);
   useEffect(() => {
-    if (!suggestion || (!visible && !previewEnabled) || !snapshot || settingsQuery.isLoading) return;
+    // Los ajustes solo aportan una cuenta sugerida. Una petición lenta no debe
+    // ocultar la detección ni impedir que el usuario elija la cuenta al revisarla.
+    if (!suggestion || (!visible && !previewEnabled) || !snapshot) return;
     if (initializedId.current === suggestion.id) return;
     initializedId.current = suggestion.id;
     categoryEdited.current = false;
+    accountEdited.current = Boolean(initialDraft);
     const draft = initialDraft ?? buildDetectionDraft(suggestion, activeAccounts, snapshot.categories, settings);
     setMovementType(draft.movementType);
     setAmount(draft.amount); setDescription(draft.description); setNotes("");
@@ -431,7 +435,13 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     setCounterpartyId(null); setSplitLines(null); setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(null); setLinkedRecurringIncomeId(null);
     setSaveError(null); setDuplicateCandidate(null);
-  }, [activeAccounts, categories, initialDraft, previewEnabled, settings, settingsQuery.isLoading, snapshot, suggestion, visible]);
+  }, [activeAccounts, categories, initialDraft, previewEnabled, settings, snapshot, suggestion, visible]);
+
+  useEffect(() => {
+    if (!suggestion || initializedId.current !== suggestion.id || accountEdited.current || accountId != null || !snapshot) return;
+    const proposed = buildDetectionDraft(suggestion, activeAccounts, snapshot.categories, settings);
+    if (proposed.accountId != null) setAccountId(proposed.accountId);
+  }, [accountId, activeAccounts, settings, snapshot, suggestion]);
 
   useEffect(() => {
     if (initializedId.current !== suggestion?.id || categoryEdited.current || categoryId != null) return;
@@ -1046,6 +1056,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     setDestinationAccountId(id); setDestinationAmount(next.destinationAmount); setTransferFxRate(next.fxRate);
   }
   function chooseAccount(id: number | null) {
+    accountEdited.current = true;
     setAccountId(id);
     if (movementType === "transfer") {
       const next = transferDestinationDraft({ ...draft, accountId: id }, destinationAccountId === id ? null : destinationAccountId, activeAccounts, snapshot?.exchangeRates ?? [], activeWorkspace?.baseCurrencyCode ?? "PEN");

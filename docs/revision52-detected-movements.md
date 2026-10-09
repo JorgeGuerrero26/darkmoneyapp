@@ -16,6 +16,12 @@ queda pendiente de la aclaración del usuario.
 - Ambas superficies usan el mismo controlador y ventana de revisión. Cada guardado
   tiene un bloqueo síncrono contra pulsaciones repetidas y la clave idempotente
   `suggestion:<id>` ya utilizada por el registro de detecciones.
+- La tarjeta empieza por la detección más reciente, incluida la caché de versiones
+  anteriores. Los ajustes de cuenta sugerida se cargan sin bloquear la tarjeta;
+  si llegan después, completan la cuenta mientras el usuario no la haya editado.
+- La carga de pendientes y los errores de consulta o verificación PRO tienen un
+  estado visible en Resumen y un reintento cuando falla la consulta. Una respuesta
+  vacía confirmada sigue ocultando el bloque sin dejar espacio.
 - La migración `202610070002` bloquea la fila de la detección y la resuelve dentro de
   la transacción que inserta el movimiento. Rechaza otro registro si ya está resuelta.
   Las divisiones existentes mantienen su cierre al terminar todas sus líneas.
@@ -41,6 +47,8 @@ Pruebas del controlador: pulsaciones repetidas, conservación de cambios tras er
 y actualizaciones, decisión de duplicado y descarte con Deshacer. Pruebas de reglas:
 cuentas y categorías elegibles, fechas de Perú, destinos y tipos de cambio persistidos.
 La integración SQL usa usuarios y movimientos ficticios en una transacción revertida.
+Se prueba el render de la tarjeta con la revisión cerrada y los ajustes todavía
+cargando, además de la llegada tardía de propuestas sin sobrescribir ediciones.
 
 La revisión visual y de gestos en un iPhone físico queda pendiente. Se conserva
 `detachInactiveScreens` activo. ESLint no tiene una configuración compatible disponible.

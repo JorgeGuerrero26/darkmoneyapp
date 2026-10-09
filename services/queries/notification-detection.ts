@@ -418,7 +418,7 @@ export function usePendingDetectedMovementsQuery(userId: string | null, workspac
     queryFn: async () => {
       const { data, error } = await supabase!.from("notification_detected_movement_suggestions")
         .select("*").eq("user_id", userId!).eq("workspace_id", workspaceId!)
-        .in("status", ["pending", "needs_review"]).order("created_at", { ascending: true });
+        .in("status", ["pending", "needs_review"]).order("created_at", { ascending: false });
       if (error) throw new Error("No se pudieron cargar los movimientos por revisar.");
       return (data ?? []).map(mapSuggestion);
     },
@@ -455,7 +455,7 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
         if (data.status === "pending" || data.status === "needs_review") {
           // No agregar la sugerencia a caches de otro usuario/workspace.
           return previous.some((item) => item.userId === data.userId && item.workspaceId === data.workspaceId)
-            ? [...rest, data].sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : rest;
+            ? [...rest, data].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : rest;
         }
         return rest;
       });

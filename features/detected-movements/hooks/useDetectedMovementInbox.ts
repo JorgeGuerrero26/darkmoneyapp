@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEmailDetectionProAccessQuery } from "../../../services/queries/email-detection-access";
@@ -11,7 +11,8 @@ export function useDetectedMovementInbox(userId: string | null, workspaceId: num
   const enabled = access.data === true && !access.isError;
   const query = usePendingDetectedMovementsQuery(userId, workspaceId, enabled);
   const queryClient = useQueryClient();
-  const pending = enabled ? query.data ?? [] : [];
+  // Ordena también la caché persistida de versiones anteriores, que venía al revés.
+  const pending = useMemo(() => enabled ? [...(query.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [], [enabled, query.data]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mode, setMode] = useState<"closed" | "list" | "review">("closed");
   const drafts = useRef(new Map<number, DetectionDraft>());
@@ -39,6 +40,9 @@ export function useDetectedMovementInbox(userId: string | null, workspaceId: num
     if (item) queryClient.setQueryData(["detected-movement-suggestion", id], item);
     setSelectedId(id); setMode("review");
   }
-  return { pending, selected, mode, drafts: drafts.current, rememberDraft, resolve, select,
+  const error = access.isError ? "No pudimos verificar tu acceso PRO" : enabled && query.isError ? "No pudimos cargar los movimientos por revisar" : null;
+  const loading = access.isPending || (enabled && query.isPending);
+  const retry = () => { if (access.isError) void access.refetch(); else void query.refetch(); };
+  return { pending, selected, mode, error, loading, retry, drafts: drafts.current, rememberDraft, resolve, select,
     openReview: () => setMode("review"), openList: () => setMode("list"), close: () => setMode("closed") };
 }
