@@ -83,6 +83,11 @@ it("does not guess the destination from a generic transfer title or a Yape payme
   expect(proposal(history, { description: "Transferencia BCP", movementType: "transfer" }).destinationAccountId).toBeNull();
   expect(proposal(history).destinationAccountId).toBeNull();
 });
+it("does not learn a merchant from generic bank subjects or legal banners", () => {
+  for (const description of ["Por tu seguridad, te notificaremos por cada yapeo", "Realizaste un consumo con tu tarjeta", "Constancia de consumo", "Suma opciones con tus Tarjetas BCP"]) {
+    expect(proposal([movement(1, { description }), movement(2, { description })], { description })).toMatchObject({ accountId: null, categoryId: null });
+  }
+});
 it("resolves both transfer sides from confirmed references even with a generic title", () => {
   const destinationHint = { kind: "account", last4: "9999" };
   const history = attachLearningReceipts([movement(1, { movement_type: "transfer", destination_account_id: 3 })], [receipt({ movement_type: "transfer", metadata: { accountHints: { source: hint, destination: destinationHint } } })]);

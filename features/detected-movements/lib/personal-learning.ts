@@ -39,7 +39,9 @@ export function learningDescription(text: string): string {
     .replace(/\b\d+\b/g, " ").replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 function specific(description: string) {
-  return description.length >= 3 && !/^(?:transferencia(?: entre mis cuentas| bcp| bbva| interbank)?|pago|compra|consumo|gasto|ingreso|abono|yape|plin|transferencia a terceros)$/.test(description);
+  return description.length >= 3 &&
+    !/^(?:por tu seguridad|suma opciones|realizaste|constancia de|confirmacion de|movimiento detectado|notificaciones|servicio de notificaciones)\b/.test(description) &&
+    !/^(?:transferencia(?: entre mis cuentas| bcp| bbva| interbank)?|pago|compra|consumo|gasto|ingreso|abono|yape|plin|transferencia a terceros|manual|movimiento manual)$/.test(description);
 }
 
 /** Resolved receipts supply aliases/references only. Current live ledger values remain the truth. */
