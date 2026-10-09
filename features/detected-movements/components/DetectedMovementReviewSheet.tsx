@@ -17,12 +17,13 @@ import type { DetectedMovementReview } from "../hooks/useDetectedMovementReview"
 type Props = {
   visible: boolean; onClose: () => void; review: DetectedMovementReview;
   position?: string; extras?: ReactNode; overlay?: ReactNode; list?: ReactNode;
+  listHeaderAction?: ReactNode; listOverlay?: ReactNode;
   status?: { title: string; content: ReactNode; height: number; footer?: ReactNode };
 };
 type Selector = "account" | "destination" | "category" | "date" | "description" | null;
 
 /** Presentación compartida; toda validación y escritura vive en el controlador. */
-export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, overlay: extraOverlay, list, status }: Props) {
+export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, overlay: extraOverlay, list, listHeaderAction, listOverlay, status }: Props) {
   const [selector, setSelector] = useState<Selector>(null);
   useEffect(() => { setSelector(null); }, [r.suggestion?.id, visible]);
   const source = r.activeAccounts.find((a) => a.id === r.accountId);
@@ -33,8 +34,8 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
   const warning = r.missing[0] ?? (r.suggestion?.status === "needs_review" ? "Revisa los datos del comprobante antes de guardar" : null);
   const close = () => { if (!r.busy) onClose(); };
   return <BottomSheet visible={visible} onClose={close} title={status?.title ?? (list ? "Por revisar" : "Revisar movimiento")} entranceAnimation="springFade" snapHeight={status?.height ?? 0.92} scrollEnabled={Boolean(status) || !list}
-    headerAction={!status && !list && r.initialized ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" size="sm" disabled={r.busy} loading={r.isDiscarding} loadingLabel="Omitiendo…" onPress={() => { void r.discard(); }} /> : undefined}
-    overlay={status || list ? undefined : selector === "description" ? (
+    headerAction={status ? undefined : list ? listHeaderAction : r.initialized ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" size="sm" disabled={r.busy} loading={r.isDiscarding} loadingLabel="Omitiendo…" onPress={() => { void r.discard(); }} /> : undefined}
+    overlay={status ? undefined : list ? listOverlay : selector === "description" ? (
       <InlineFormSheet visible entranceAnimation="springFade" title="Descripción" onBack={() => setSelector(null)} footer={<Button label="Listo" onPress={() => setSelector(null)} />}>
         <TextField value={r.description} onChangeText={r.setDescription} multiline style={styles.descriptionInput} accessibilityLabel="Descripción del movimiento" />
       </InlineFormSheet>

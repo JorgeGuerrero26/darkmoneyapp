@@ -24,6 +24,9 @@ type Props = {
   previewEnabled?: boolean;
   renderPreview?: (review: DetectedMovementReview) => ReactNode;
   list?: ReactNode;
+  listHeaderAction?: ReactNode;
+  listOverlay?: ReactNode;
+  listBusy?: boolean;
   position?: string;
   origin?: "dashboard" | "notifications";
 };
@@ -37,11 +40,11 @@ export function QuickDetectedMovementEntry(props: Props) {
   useEffect(() => {
     if (r.initialized && r.suggestion) props.onDraftChange?.(r.suggestion.id, JSON.parse(draftKey) as DetectionDraft);
   }, [draftKey, r.initialized, r.suggestion?.id, props.onDraftChange]);
-  const close = () => { if (!r.busy) props.onClose(); };
+  const close = () => { if (!r.busy && !props.listBusy) props.onClose(); };
 
   const pending = r.suggestion?.status === "pending" || r.suggestion?.status === "needs_review";
   let status: { title: string; content: ReactNode; height: number; footer?: ReactNode } | undefined;
-  if (r.suggestion && !pending) {
+  if (r.suggestion && !pending && !props.list) {
     status = { title: r.suggestion.status === "discarded" ? "Detección omitida" : "Movimiento detectado", height: 0.45, content: <View style={styles.status}>
       <Text style={styles.text}>{r.suggestion.status === "discarded" ? "Omitiste esta detección. No se creó un movimiento y ya no aparece entre los pendientes del dashboard." : r.suggestion.status === "duplicate" ? "Ya existía el mismo movimiento" : "Este movimiento ya fue guardado"}</Text>
       {r.suggestion.movementId ? <Button label="Ver movimiento" onPress={() => { close(); router.push(`/movement/${r.suggestion!.movementId}?from=${props.origin ?? "notifications"}` as never); }} /> : null}
@@ -62,7 +65,7 @@ export function QuickDetectedMovementEntry(props: Props) {
   return <>
     {pending && r.initialized && !status ? props.renderPreview?.(r) : null}
     {/* Un único Modal: cambiar el estado no desmonta una ventana nativa presentada en iOS. */}
-    <DetectedMovementReviewSheet visible={props.visible} onClose={close} review={r} list={props.list} position={props.position} status={status}
+    <DetectedMovementReviewSheet visible={props.visible} onClose={close} review={r} list={props.list} listHeaderAction={props.listHeaderAction} listOverlay={props.listOverlay} position={props.position} status={status}
       extras={r.suggestion ? <DetectedMovementExtras key={r.suggestion.id} review={r} /> : undefined}
       overlay={r.splitLines ? <SplitCategoriesSheet visible={r.splitSheetOpen} onClose={() => r.setSplitSheetOpen(false)} lines={r.splitLines} onChangeLines={r.setSplitLines} categories={r.categories} totalAmount={parsePositiveAmountInput(r.amount) ?? 0} currencyCode={r.selectedBudgetAccount?.currencyCode ?? r.suggestion?.currencyCode ?? "PEN"} movementLabel={r.description.trim() || "Movimiento detectado"} movementType={r.movementType === "income" ? "income" : "expense"} spendTypes={r.spendTypes} /> : undefined} />
   </>;

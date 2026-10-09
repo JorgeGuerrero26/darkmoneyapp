@@ -46,10 +46,18 @@ export function useDetectedMovementInbox(userId: string | null, workspaceId: num
     setSelectedId(id); setMode("review");
     setReviewSelection(item ?? null);
   }
+  function resolveMany(ids: number[]) {
+    const resolved = new Set(ids);
+    const remaining = pending.filter((item) => !resolved.has(item.id));
+    const next = remaining.find((item) => item.id === selected?.id) ?? remaining[0] ?? null;
+    for (const id of ids) drafts.current.delete(id);
+    setSelectedId(next?.id ?? null); setReviewSelection(next);
+    if (!next) setMode("closed");
+  }
   const error = access.isError ? "No pudimos verificar tu acceso PRO" : enabled && query.isError ? "No pudimos cargar los movimientos por revisar" : null;
   const loading = access.isPending || (enabled && query.isPending);
   const retry = () => { if (access.isError) void access.refetch(); else void query.refetch(); };
-  return { pending, selected, mode, error, loading, retry, drafts: drafts.current, rememberDraft, resolve, select,
+  return { pending, selected, mode, error, loading, retry, drafts: drafts.current, rememberDraft, resolve, resolveMany, select,
     openReview: () => { setReviewSelection(selected); setMode("review"); },
     openList: () => { setReviewSelection(selected); setMode("list"); }, close: () => setMode("closed") };
 }

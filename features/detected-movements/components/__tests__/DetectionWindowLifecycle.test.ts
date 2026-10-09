@@ -74,3 +74,16 @@ it("carga, error y aviso PRO cambian el contenido sin reemplazar la ventana", as
   expect(mockUnmount).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType(View).length).toBeGreaterThan(0);
 });
+
+it("omitir desde la lista mantiene la lista y su confirmación dentro del mismo Modal", async () => {
+  const listProps = { ...props, list: React.createElement(View, { testID: "pending-list" }), listOverlay: React.createElement(View, { testID: "omit-confirmation" }), listHeaderAction: React.createElement(View, { testID: "omit-all" }) };
+  await act(async () => { renderer = create(React.createElement(QuickDetectedMovementEntry, listProps)); });
+  const sheet = renderer.root.findByType(BottomSheet);
+  mockReview = { ...mockReview, suggestion: { ...mockReview.suggestion, status: "discarded" } };
+  await act(async () => renderer.update(React.createElement(QuickDetectedMovementEntry, listProps)));
+  expect(renderer.root.findByType(BottomSheet)).toBe(sheet);
+  expect(sheet.props.title).toBe("Por revisar");
+  expect(sheet.props.overlay).toBe(listProps.listOverlay);
+  expect(sheet.props.headerAction).toBe(listProps.listHeaderAction);
+  expect(mockUnmount).not.toHaveBeenCalled();
+});

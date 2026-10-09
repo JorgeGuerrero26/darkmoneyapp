@@ -7,6 +7,7 @@ const { create, act } = require("react-test-renderer");
 const mockRefetch = jest.fn();
 const mockAccessRefetch = jest.fn();
 const mockSetQueryData = jest.fn();
+let mockResolveMany: (ids: number[]) => void;
 let mockAccess = { data: true as boolean | undefined, isError: false, isPending: false, refetch: mockAccessRefetch };
 let mockQuery = { data: [] as DetectedMovementSuggestion[], isError: false, isPending: false, refetch: mockRefetch };
 jest.mock("expo-router", () => ({ useFocusEffect: () => {} }));
@@ -16,6 +17,7 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
   usePendingDetectedMovementsQuery: () => mockQuery,
   useNotificationDetectionSettingsQuery: () => ({ data: [] }),
 }));
+jest.mock("../../hooks/useDetectionListOmissions", () => ({ useDetectionListOmissions: (_user: unknown, _workspace: unknown, _pending: unknown, onResolved: (ids: number[]) => void) => { mockResolveMany = onResolved; return { confirmation: null, busy: false, omittingId: null, error: null, omitOne: jest.fn(), requestOmitAll: jest.fn(), confirmOmitAll: jest.fn(), cancel: jest.fn() }; } }));
 jest.mock("../../../../components/domain/QuickDetectedMovementEntry", () => ({
   QuickDetectedMovementEntry: ({ suggestionId, previewEnabled }: { suggestionId: number; previewEnabled: boolean }) => previewEnabled ? require("react").createElement(require("react-native").Text, { testID: "selected-detection" }, String(suggestionId)) : null,
 }));
@@ -118,6 +120,33 @@ it("guardar directamente el último pendiente no presenta una ventana al quedar 
   const entry = renderer.root.findByType(QuickDetectedMovementEntry);
   mockQuery.data = [];
   await act(async () => renderer.update(React.createElement(DetectedMovementInbox, props)));
+  expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
+  expect(entry.props.visible).toBe(false);
+  expect(entry.props.previewEnabled).toBe(false);
+});
+
+it("la lista permite omitir sin cambiar a revisión ni desmontar el controlador", async () => {
+  const first = receipt(534, "2026-10-09T01:23:10Z"), next = receipt(533, "2026-10-08T01:23:10Z");
+  mockQuery.data = [first, next];
+  await render();
+  const entry = renderer.root.findByType(QuickDetectedMovementEntry);
+  await act(async () => entry.props.renderPreview({ suggestion: first }).props.onViewAll());
+  expect(entry.props.list).toBeDefined();
+  expect(entry.props.list.props.onOmit).toEqual(expect.any(Function));
+  expect(entry.props.listHeaderAction.props.label).toBe("Omitir todos");
+  expect(entry.props.listOverlay.props.inline).toBe(true);
+  expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
+});
+
+it("omitir todos cierra la lista vacía conservando la ventana nativa montada", async () => {
+  const first = receipt(534, "2026-10-09T01:23:10Z");
+  mockQuery.data = [first];
+  await render();
+  const entry = renderer.root.findByType(QuickDetectedMovementEntry);
+  await act(async () => entry.props.renderPreview({ suggestion: first }).props.onViewAll());
+  mockQuery.data = [];
+  await act(async () => renderer.update(React.createElement(DetectedMovementInbox, props)));
+  await act(async () => mockResolveMany([first.id]));
   expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
   expect(entry.props.visible).toBe(false);
   expect(entry.props.previewEnabled).toBe(false);

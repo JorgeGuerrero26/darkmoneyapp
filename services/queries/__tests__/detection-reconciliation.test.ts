@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { reconcileDetectedMovements, useDetectedMovementSuggestionQuery, usePendingDetectedMovementsQuery, useMarkDetectedMovementSuggestionMutation } from "../notification-detection";
+import { reconcileDetectedMovements, useDetectedMovementSuggestionQuery, usePendingDetectedMovementsQuery, useMarkDetectedMovementSuggestionMutation, useDetectedMovementOmissionsMutation, type DetectedMovementSuggestion } from "../notification-detection";
 
 const mockRpc = jest.fn(), mockFrom = jest.fn(), mockUseQuery = jest.fn(options => options);
 const mockClient = new QueryClient();
@@ -90,5 +90,61 @@ it.each(["pending", "needs_review"])("Deshacer recupera la última detección co
   expect(mockClient.getQueryData(ownKey)).toEqual([result]);
   expect(mockClient.getQueryData(otherWorkspace)).toEqual([]);
   expect(mockClient.getQueryData(otherUser)).toEqual([]);
+  expect(mockFrom).toHaveBeenCalledTimes(1);
+});
+
+function omissionTarget(id: number, status: "pending" | "needs_review" = "pending") {
+  return { id, userId: "tester", workspaceId: 1, status, updatedAt: "2026-10-09T12:00:00Z", createdAt: "2026-10-09T11:00:00Z" } as DetectedMovementSuggestion;
+}
+
+it("omitir en lote limita usuario, espacio, ids y estados sin tocar las nuevas detecciones", async () => {
+  const update = chain([{ ...receipt, status: "discarded", updated_at: "2026-10-09T13:00:00Z" }]);
+  const notification = chain(null);
+  mockFrom.mockReturnValueOnce(update).mockReturnValueOnce(notification);
+  useDetectedMovementOmissionsMutation("tester", 1);
+  const mutation = mockUseMutation.mock.calls[0][0];
+  const target = omissionTarget(7), incoming = omissionTarget(8), foreign = { ...target, id: 99, userId: "other" };
+  const result = await mutation.mutationFn({ action: "omit", suggestions: [target, target, foreign, { ...target, id: 100, status: "registered" }] });
+  const own = ["pending-detected-movements", "tester", 1], other = ["pending-detected-movements", "tester", 2];
+  mockClient.setQueryData(own, [target, incoming]); mockClient.setQueryData(other, [target]);
+  mutation.onSuccess(result);
+  expect(update.eq).toHaveBeenCalledWith("user_id", "tester");
+  expect(update.eq).toHaveBeenCalledWith("workspace_id", 1);
+  expect(update.in).toHaveBeenCalledWith("id", [7]);
+  expect(update.in).toHaveBeenCalledWith("status", ["pending", "needs_review"]);
+  expect(notification.in).toHaveBeenCalledWith("related_entity_id", [7]);
+  expect(mockClient.getQueryData(own)).toEqual([incoming]);
+  expect(mockClient.getQueryData(other)).toEqual([target]);
+  expect(mockClient.getQueryData(["detected-movement-suggestion", 7])).toMatchObject({ status: "discarded" });
+});
+
+it("deshacer un lote respeta cada estado original y una resolución posterior", async () => {
+  const pending = omissionTarget(7), review = omissionTarget(8, "needs_review");
+  const omittedAt = "2026-10-09T13:00:00Z";
+  const first = chain([{ ...receipt, status: "pending" }]), changedElsewhere = chain([]);
+  mockFrom.mockReturnValueOnce(first).mockReturnValueOnce(changedElsewhere);
+  useDetectedMovementOmissionsMutation("tester", 1);
+  const mutation = mockUseMutation.mock.calls[0][0];
+  const result = await mutation.mutationFn({ action: "restore", changes: [pending, review].map(before => ({ before, after: { ...before, status: "discarded", updatedAt: omittedAt } })) });
+  for (const query of [first, changedElsewhere]) {
+    expect(query.eq).toHaveBeenCalledWith("status", "discarded");
+    expect(query.eq).toHaveBeenCalledWith("updated_at", omittedAt);
+  }
+  expect(first.update).toHaveBeenCalledWith(expect.objectContaining({ status: "pending" }));
+  expect(changedElsewhere.update).toHaveBeenCalledWith(expect.objectContaining({ status: "needs_review" }));
+  expect(result.changes.map((change: any) => change.after.id)).toEqual([7]);
+  expect(mockFrom).toHaveBeenCalledTimes(2);
+});
+
+it("un error de lote conserva los pendientes y permite reintentar", async () => {
+  mockFrom.mockReturnValue(chain(null, { message: "offline" }));
+  useDetectedMovementOmissionsMutation("tester", 1);
+  const mutation = mockUseMutation.mock.calls[0][0];
+  const target = omissionTarget(7), key = ["pending-detected-movements", "tester", 1];
+  mockClient.setQueryData(key, [target]);
+  const result = await mutation.mutationFn({ action: "omit", suggestions: [target] });
+  mutation.onSuccess(result);
+  expect(result).toEqual({ changes: [], failed: 1 });
+  expect(mockClient.getQueryData(key)).toEqual([target]);
   expect(mockFrom).toHaveBeenCalledTimes(1);
 });

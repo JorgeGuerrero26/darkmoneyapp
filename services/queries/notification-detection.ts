@@ -500,6 +500,72 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
   });
 }
 
+export type DetectionOmissionChange = { before: DetectedMovementSuggestion; after: DetectedMovementSuggestion };
+type DetectionOmissionInput =
+  | { action: "omit"; suggestions: DetectedMovementSuggestion[] }
+  | { action: "restore"; changes: DetectionOmissionChange[] };
+
+/** Actualiza solo los pendientes confirmados; deshacer no pisa una resolución posterior. */
+export function useDetectedMovementOmissionsMutation(userId: string | null, workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["detected-movement-omissions", userId, workspaceId],
+    mutationFn: async (input: DetectionOmissionInput) => {
+      if (!supabase || !userId || !workspaceId) throw new Error("Workspace no disponible.");
+      const targets = input.action === "omit"
+        ? input.suggestions.map((before) => ({ before, after: before })) : input.changes;
+      const scoped = [...new Map(targets.filter(({ before }) => before.userId === userId && before.workspaceId === workspaceId && (before.status === "pending" || before.status === "needs_review")).map((change) => [change.before.id, change])).values()];
+      const groups = new Map<string, typeof scoped>();
+      for (const change of scoped) {
+        const key = input.action === "omit" ? "omit" : `${change.before.status}|${change.after.updatedAt}`;
+        groups.set(key, [...(groups.get(key) ?? []), change]);
+      }
+      const changes: DetectionOmissionChange[] = [];
+      let failed = 0;
+      for (const group of groups.values()) {
+        try {
+          let update = supabase.from("notification_detected_movement_suggestions")
+            .update({ status: input.action === "omit" ? "discarded" : group[0].before.status, movement_id: null, updated_at: new Date().toISOString() })
+            .eq("user_id", userId).eq("workspace_id", workspaceId).in("id", group.map(({ before }) => before.id));
+          update = input.action === "omit" ? update.in("status", ["pending", "needs_review"])
+            : update.eq("status", "discarded").eq("updated_at", group[0].after.updatedAt);
+          const { data, error } = await update.select("*");
+          if (error) throw error;
+          const originals = new Map(group.map(({ before }) => [before.id, before]));
+          for (const row of data ?? []) {
+            const before = originals.get(Number(row.id));
+            if (before) changes.push({ before, after: mapSuggestion(row) });
+          }
+        } catch { failed += group.length; }
+      }
+      if (input.action === "omit" && changes.length) {
+        // Leer el aviso es independiente: se conserva para consultar el estado omitido.
+        try {
+          await supabase.from("notifications").update({ status: "read", read_at: new Date().toISOString() })
+            .eq("user_id", userId).eq("kind", "detected_movement_suggestion")
+            .in("related_entity_id", changes.map(({ after }) => after.id)).neq("status", "read");
+        } catch { /* La resolución ya está guardada; no se revierte por el aviso. */ }
+      }
+      return { changes, failed };
+    },
+    onSuccess: ({ changes }) => {
+      const updates = new Map(changes.map(({ after }) => [after.id, after]));
+      for (const after of updates.values()) {
+        queryClient.setQueryData(["detected-movement-suggestion", after.id], after);
+        void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", after.id] });
+      }
+      queryClient.setQueriesData<DetectedMovementSuggestion[]>({ queryKey: ["pending-detected-movements", userId, workspaceId] }, (previous) => {
+        if (!previous) return previous;
+        const rest = previous.filter((item) => !updates.has(item.id));
+        return [...rest, ...[...updates.values()].filter((item) => item.status === "pending" || item.status === "needs_review")].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      });
+      void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", userId, workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning", userId, workspaceId] });
+    },
+  });
+}
+
 export type SuggestionActionKind =
   | "accept_category"
   | "override_category"
