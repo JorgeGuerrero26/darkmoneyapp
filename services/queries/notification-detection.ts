@@ -482,6 +482,7 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
       return mapSuggestion(data);
     },
     onSuccess: (data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning", data.userId, data.workspaceId] });
       queryClient.setQueryData(["detected-movement-suggestion", variables.suggestionId], data);
       queryClient.setQueriesData<DetectedMovementSuggestion[]>({ queryKey: ["pending-detected-movements", data.userId, data.workspaceId] }, (previous) => {
         if (!previous) return previous;

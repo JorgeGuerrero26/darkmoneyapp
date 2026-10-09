@@ -2766,6 +2766,7 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
       if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning"] });
       // El trigger concilia también registros manuales, sin metadatos de detección.
       void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
       void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion"] });
@@ -2906,6 +2907,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       }
     },
     onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning"] });
       // Invalidación inmediata (no diferida por InteractionManager): la lista y los saldos deben
       // reflejar la edición al instante, igual que en create. El onMutate optimista ya pintó el
       // detalle, así que esto reconcilia lista/snapshot sin parpadeo.
@@ -2947,6 +2949,7 @@ export function useVoidMovementMutation(workspaceId: number | null) {
       }
     },
     onSuccess: (_data, id) => {
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning"] });
       void queryClient.invalidateQueries({ queryKey: ["movements"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       void queryClient.invalidateQueries({ queryKey: ["movement", id] });
@@ -2986,6 +2989,7 @@ export function useDeleteMovementMutation(workspaceId: number | null) {
       }
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning"] });
       void queryClient.invalidateQueries({ queryKey: ["movements"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },

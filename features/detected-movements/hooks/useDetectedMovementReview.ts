@@ -1,4 +1,4 @@
-import { buildDetectionDraft, detectionMissingFields, transferDestinationDraft, type DetectionDraft } from "../lib/review-draft";
+import { applyPersonalProposal, buildDetectionDraft, detectionMissingFields, transferDestinationDraft, type DetectionDraft } from "../lib/review-draft";
 import { reconciliationCandidateForDraft } from "../lib/reconciliation";
 import { humanizeError } from "../../../lib/errors";
 import type { MovementRecord } from "../../../types/domain";
@@ -28,16 +28,16 @@ import {
   useDeleteMovementMutation,
   useCreateRecurringIncomeMutation,
   useCreateSubscriptionMutation,
-  useDashboardAnalyticsQuery,
   useMarkNotificationReadMutation,
   usePersistLearningFeedbackMutation,
   useUserEntitlementQuery,
   useWorkspaceSnapshotQuery,
 } from "../../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../../services/queries/movement-patterns";
+import { useDetectionLearningQuery } from "../../../services/queries/detection-learning";
+import { learningObject, proposeFromPersonalHistory, receiptAccountHints } from "../lib/personal-learning";
 import { EMAIL_SOURCE_PACKAGE } from "../../../services/queries/inbound-email-alias";
 import { assertEmailDetectionProAccess, useEmailDetectionProAccessQuery } from "../../../services/queries/email-detection-access";
-import { buildPatternMaps, scoreCategoryFromDescription } from "../../../lib/movement-patterns";
 import { normalizeAnalyticsText } from "../../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../../hooks/useMovementCategoryAiSuggestion";
 import { useMovementDescriptionCleanup } from "../../../hooks/useMovementDescriptionCleanup";
@@ -60,7 +60,6 @@ import { dateTimeStrToISO, todayPeru } from "../../../lib/date";
 import { validateMovementForm } from "../../movements/lib/form-validation";
 import { patternMovementAmount } from "../../movements/lib/pattern-heuristics";
 import {
-  deriveLearnedCategoryMatch,
   mapAiCategoryRecommendation,
 } from "../../movements/lib/category-suggestion-derivation";
 import { splitLineMetadata, splitLineDescription, validateSplit, type SplitLine } from "../../movements/lib/split-movement";
@@ -128,11 +127,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
   // La tarjeta necesita el historial para proponer categorías sin activar consultas de IA.
   const { data: patternMovements } = useMovementPatternsQuery(visible || previewEnabled ? activeWorkspaceId : null);
-  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
-  const patternMaps = useMemo(
-    () => (patternMovements ? buildPatternMaps(patternMovements) : null),
-    [patternMovements],
-  );
+  const learningQuery = useDetectionLearningQuery(profile?.id ?? null, activeWorkspaceId, visible || previewEnabled);
 
   const [movementType, setMovementType] = useState<"expense" | "income" | "transfer">("expense");
   const [amount, setAmount] = useState("");
@@ -253,44 +248,19 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     };
   }, [accountId, activeAccounts, amount, categories, categoryId, counterparties, counterpartyId, date, description, movementType, suggestion]);
 
+  const personalProposal = useMemo(() => proposeFromPersonalHistory({
+    history: learningQuery.data ?? [], description, movementType,
+    currencyCode: suggestion?.currencyCode ?? "PEN", financialAppKey: suggestion?.financialAppKey ?? "",
+    accountHints: learningObject(suggestion?.metadata).accountHints, accountId,
+    accounts: snapshot?.accounts ?? [], categories: snapshot?.categories ?? [],
+  }), [learningQuery.data, description, movementType, suggestion?.metadata, suggestion?.currencyCode, suggestion?.financialAppKey, accountId, snapshot?.accounts, snapshot?.categories]);
   const localCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (categoryId !== null || !description.trim()) return null;
 
-    // Learned: núcleo compartido con MovementForm (R6 cerrado).
-    const learned = deriveLearnedCategoryMatch({
-      description,
-      learningFeedback: dashboardAnalytics?.learningFeedback,
-      categories,
-    });
-    if (learned) {
-      return {
-        categoryId: learned.categoryId,
-        categoryName: learned.categoryName,
-        confidence: learned.confidence,
-        detail: `${Math.round(learned.confidence * 100)}% · aprendido de tus correcciones`,
-        reasons: ["aprendido de tus correcciones"],
-        source: "local",
-      };
-    }
-
-    // Pattern-based: word frequency against recent movements
-    if (patternMaps) {
-      const scored = scoreCategoryFromDescription(description, patternMaps);
-      if (scored && scored.confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) {
-        const cat = categories.find((c) => c.id === scored.categoryId);
-        if (cat) return {
-          categoryId: cat.id,
-          categoryName: cat.name,
-          confidence: scored.confidence,
-          detail: `${Math.round(scored.confidence * 100)}% · ${scored.reasons.join(" · ")}`,
-          reasons: scored.reasons,
-          source: "local",
-        };
-      }
-    }
-
-    return null;
-  }, [categoryId, description, dashboardAnalytics?.learningFeedback, categories, patternMaps]);
+    const category = categories.find((c) => c.id === personalProposal.categoryId);
+    return category ? { categoryId: category.id, categoryName: category.name, confidence: 0.9,
+      detail: "Según tus movimientos anteriores", reasons: ["Según tus movimientos anteriores"], source: "local" } : null;
+  }, [categoryId, description, categories, personalProposal.categoryId]);
 
   const aiCategoryInput = useMemo(() => {
     if (isTransfer || !activeWorkspaceId || categoryId !== null || !description.trim() || !categories.length) return null;
@@ -319,6 +289,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   }, [activeWorkspaceId, amount, categories, categoryId, date, description, localCategorySuggestion, movementType]);
   const shouldRequestAiCategorySuggestion = Boolean(
     visible &&
+      !learningQuery.isPending &&
       entitlementQuery.data?.proAccessEnabled &&
       aiCategoryInput &&
       (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
@@ -339,7 +310,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
       source: "deepseek",
     };
   }, [aiCategoryRecommendation]);
-  const categorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
+  const categorySuggestion = localCategorySuggestion ?? aiCategorySuggestion;
   const { cleanup: descriptionCleanup } = useMovementDescriptionCleanup({
     enabled: Boolean(visible && !isTransfer && description !== cleanupAppliedText),
     workspaceId: activeWorkspaceId,
@@ -420,14 +391,19 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const initializedId = useRef<number | null>(null);
   const categoryEdited = useRef(false);
   const accountEdited = useRef(false);
+  const destinationEdited = useRef(false);
+  const [, refreshManualFields] = useState(0);
+  const lastLearned = useRef({ accountId: null as number | null, destinationAccountId: null as number | null, categoryId: null as number | null });
   useEffect(() => {
     // Los ajustes solo aportan una cuenta sugerida. Una petición lenta no debe
     // ocultar la detección ni impedir que el usuario elija la cuenta al revisarla.
     if (!suggestion || (!visible && !previewEnabled) || !snapshot) return;
     if (initializedId.current === suggestion.id) return;
     initializedId.current = suggestion.id;
-    categoryEdited.current = false;
-    accountEdited.current = Boolean(initialDraft);
+    categoryEdited.current = initialDraft ? (initialDraft.manualFields?.includes("category") ?? true) : false;
+    accountEdited.current = initialDraft ? (initialDraft.manualFields?.includes("account") ?? true) : false;
+    destinationEdited.current = initialDraft ? (initialDraft.manualFields?.includes("destination") ?? true) : false;
+    lastLearned.current = { accountId: null, destinationAccountId: null, categoryId: null };
     const draft = initialDraft ?? buildDetectionDraft(suggestion, activeAccounts, snapshot.categories, settings);
     setMovementType(draft.movementType);
     setAmount(draft.amount); setDescription(draft.description); setNotes("");
@@ -442,10 +418,22 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   }, [activeAccounts, categories, initialDraft, previewEnabled, settings, snapshot, suggestion, visible]);
 
   useEffect(() => {
-    if (!suggestion || initializedId.current !== suggestion.id || accountEdited.current || accountId != null || !snapshot) return;
-    const proposed = buildDetectionDraft(suggestion, activeAccounts, snapshot.categories, settings);
-    if (proposed.accountId != null) setAccountId(proposed.accountId);
-  }, [accountId, activeAccounts, settings, snapshot, suggestion]);
+    if (!suggestion || !snapshot || initializedId.current !== suggestion.id || submittingRef.current) return;
+    const baseline = buildDetectionDraft({ ...suggestion, movementType }, activeAccounts, snapshot.categories, settings);
+    const manualFields: NonNullable<DetectionDraft["manualFields"]> = [];
+    if (accountEdited.current) manualFields.push("account");
+    if (categoryEdited.current) manualFields.push("category");
+    if (destinationEdited.current) manualFields.push("destination");
+    const current: DetectionDraft = { movementType, amount, accountId, destinationAccountId, destinationAmount, fxRate: transferFxRate, description, categoryId, date, time, manualFields };
+    const { draft: next, applied } = applyPersonalProposal(current, baseline, personalProposal, lastLearned.current, suggestion.metadata);
+    lastLearned.current = applied;
+    if (next.accountId !== accountId) setAccountId(next.accountId);
+    if (next.categoryId !== categoryId) setCategoryId(next.categoryId);
+    if (movementType === "transfer" && (next.destinationAccountId !== destinationAccountId || next.accountId !== accountId)) {
+      const transfer = transferDestinationDraft(next, next.destinationAccountId, activeAccounts, snapshot.exchangeRates ?? [], activeWorkspace?.baseCurrencyCode ?? "PEN");
+      setDestinationAccountId(transfer.destinationAccountId); setDestinationAmount(transfer.destinationAmount); setTransferFxRate(transfer.fxRate);
+    }
+  }, [suggestion, snapshot, personalProposal, movementType, activeAccounts, settings, accountId, destinationAccountId, amount, activeWorkspace?.baseCurrencyCode]);
 
   useEffect(() => {
     if (initializedId.current !== suggestion?.id || categoryEdited.current || categoryId != null) return;
@@ -467,6 +455,8 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     setDuplicateCandidate(null);
     setMovementType(next);
     categoryEdited.current = false;
+    destinationEdited.current = false;
+    lastLearned.current = { accountId: null, destinationAccountId: null, categoryId: null };
     setCategoryId(null);
     setCategoryFeedbackIntent(null);
     if (next === "transfer") {
@@ -482,6 +472,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
 
   function selectCategoryManually(id: number | null) {
     categoryEdited.current = true;
+    refreshManualFields((version) => version + 1);
     setCategoryId(id);
     if (id == null) {
       setCategoryFeedbackIntent(null);
@@ -519,6 +510,8 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     }
 
     if (nextCategoryId == null) return;
+    categoryEdited.current = true;
+    refreshManualFields((version) => version + 1);
     setCategoryId(nextCategoryId);
     setCategoryFeedbackIntent({
       kind: "accepted_category_suggestion",
@@ -806,6 +799,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
             suggestionId: suggestion.id,
             financialAppKey: suggestion.financialAppKey,
             confidence: suggestion.confidence,
+            detectionLearning: learningDecision(),
           },
           // Misma clave que usa el headless para esta sugerencia: si ambas vías corren
           // (app abierta + overlay), la segunda recibe el movimiento ya creado.
@@ -848,6 +842,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
       suggestionId: suggestion.id,
       financialAppKey: suggestion.financialAppKey,
       confidence: suggestion.confidence,
+      detectionLearning: learningDecision(),
       counterpartyAi: counterpartySuggestion?.source === "deepseek" ? counterpartySuggestion : null,
       recurring_income_id: linkedRecurringIncomeId,
       recurringAi: recurringSuggestion?.source === "deepseek" ? recurringSuggestion : null,
@@ -1055,9 +1050,21 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
       ? `${baseAppLabel} · por correo`
       : baseAppLabel;
 
+  function learningDecision() {
+    const hints = receiptAccountHints(learningObject(suggestion?.metadata).accountHints);
+    return { originalDescription: suggestion?.description ?? description, movementType: suggestion?.movementType ?? movementType,
+      financialAppKey: suggestion?.financialAppKey ?? "", accountHints: { source: hints.source ?? null, destination: hints.destination ?? null },
+      manualChoices: { account: accountEdited.current, destination: destinationEdited.current, category: categoryEdited.current } };
+  }
+  const manualFields: NonNullable<DetectionDraft["manualFields"]> = [];
+  if (accountEdited.current) manualFields.push("account");
+  if (destinationEdited.current) manualFields.push("destination");
+  if (categoryEdited.current) manualFields.push("category");
   const draft: DetectionDraft = { movementType, amount, description, accountId, destinationAccountId,
-    destinationAmount, fxRate: transferFxRate, categoryId, date, time };
+    destinationAmount, fxRate: transferFxRate, categoryId, date, time, manualFields };
   function chooseDestination(id: number | null) {
+    destinationEdited.current = true;
+    refreshManualFields((version) => version + 1);
     setDuplicateCandidate(null);
     const next = transferDestinationDraft(draft, id, activeAccounts, snapshot?.exchangeRates ?? [], activeWorkspace?.baseCurrencyCode ?? "PEN");
     setDestinationAccountId(id); setDestinationAmount(next.destinationAmount); setTransferFxRate(next.fxRate);
@@ -1065,6 +1072,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   function chooseAccount(id: number | null) {
     setDuplicateCandidate(null);
     accountEdited.current = true;
+    refreshManualFields((version) => version + 1);
     setAccountId(id);
     if (movementType === "transfer") {
       const next = transferDestinationDraft({ ...draft, accountId: id }, destinationAccountId === id ? null : destinationAccountId, activeAccounts, snapshot?.exchangeRates ?? [], activeWorkspace?.baseCurrencyCode ?? "PEN");
@@ -1124,7 +1132,11 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   }
 
 
-  return { suggestion, suggestionQuery, isPendingEmail, emailProAccess,
+  const learningHint = (personalProposal.accountId != null && accountId === personalProposal.accountId && !accountEdited.current) ||
+    (personalProposal.categoryId != null && categoryId === personalProposal.categoryId && !categoryEdited.current) ||
+    (personalProposal.destinationAccountId != null && destinationAccountId === personalProposal.destinationAccountId && !destinationEdited.current)
+    ? "Según tus movimientos anteriores" : null;
+  return { suggestion, suggestionQuery, isPendingEmail, emailProAccess, learningHint,
     draft, missing, cardMissing: detectionMissingFields(draft, activeAccounts), readyToSave, busy, isSaving, saveError, duplicateCandidate, useExistingDuplicate, openDuplicate,
     movementType, switchMovementType, amount, setAmount: changeAmount, accountId, setAccountId: chooseAccount,
     destinationAccountId, setDestinationAccountId: chooseDestination, destinationAmount, setDestinationAmount: changeDestinationAmount,

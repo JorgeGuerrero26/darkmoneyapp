@@ -37,9 +37,10 @@ type Props = {
   accounts: readonly AccountSummary[]; categories: readonly CategorySummary[];
   readyToSave: boolean; missing: string[]; busy: boolean; omitting?: boolean; error: string | null;
   duplicate?: DuplicateDecisionProps | null; privacyMode?: boolean;
+  learningHint?: string | null;
   onReview: () => void; onSave: () => void; onDiscard: () => void; onViewAll: () => void;
 };
-export function DetectedMovementCard({ suggestion, draft, count, accounts, categories, readyToSave, missing, busy, omitting = false, error, duplicate, privacyMode = false, onReview, onSave, onDiscard, onViewAll }: Props) {
+export function DetectedMovementCard({ suggestion, draft, count, accounts, categories, readyToSave, missing, busy, omitting = false, error, duplicate, privacyMode = false, learningHint, onReview, onSave, onDiscard, onViewAll }: Props) {
   const source = accounts.find((a) => a.id === draft.accountId);
   const destination = accounts.find((a) => a.id === draft.destinationAccountId);
   const category = categories.find((c) => c.id === draft.categoryId);
@@ -52,6 +53,7 @@ export function DetectedMovementCard({ suggestion, draft, count, accounts, categ
     footer={<View style={styles.body}>
       <View style={styles.headline}><Text style={styles.title}>{draft.description || "Movimiento detectado"}</Text><Text style={[styles.amount, { color: detectionTone(draft.movementType) }]}>{privacyMode ? "••••" : detectionAmount(draft.amount, source?.currencyCode ?? suggestion.currencyCode, draft.movementType)}</Text></View>
       <Text style={styles.meta}>{detectionContext(suggestion, draft)}</Text>
+      {learningHint ? <Text style={styles.meta}>{learningHint}</Text> : null}
       {draft.movementType === "transfer" ? <Pressable style={styles.transfer} onPress={onReview} disabled={busy} accessibilityRole="button"><Text style={styles.value}>{source?.name ?? "Elige el origen"}</Text><ArrowRight size={16} color={COLORS.transfer} /><Text style={[styles.value, !destination && styles.warning]}>{destination?.name ?? "Elige el destino"}</Text></Pressable> : <View>
         <DetailFieldRow label="Cuenta" value={source?.name ?? "Elegir cuenta"} onPress={onReview} />
         <DetailFieldRow label="Categoría" value={category?.name ?? "Sin categoría"} onPress={onReview} last />

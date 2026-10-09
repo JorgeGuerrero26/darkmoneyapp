@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { buildDetectionDraft, detectionMissingFields, transferDestinationDraft } from "../review-draft";
+import { applyPersonalProposal, buildDetectionDraft, detectionMissingFields, transferDestinationDraft } from "../review-draft";
 import type { AccountSummary, CategorySummary, ExchangeRateSummary } from "../../../../types/domain";
 import type { DetectedMovementSuggestion } from "../../../../services/queries/notification-detection";
 
@@ -11,6 +11,25 @@ const receipt = { id: 1, movementType: "expense", financialAppKey: "bcp", amount
   currencyCode: "PEN", description: "Tambo", occurredAt: "2026-10-08T02:15:00Z", metadata: null } as DetectedMovementSuggestion;
 
 describe("propuestas de detecciones", () => {
+  it("uses the destination account as the income's primary account", () => {
+    const draft = buildDetectionDraft({ ...receipt, movementType: "income", metadata: { destinationAccountId: 2 } }, accounts, categories, []);
+    expect(draft.accountId).toBe(2); expect(draft.destinationAccountId).toBeNull();
+  });
+  it("keeps manual fields in remembered drafts while refreshing other learned proposals", () => {
+    const baseline = buildDetectionDraft(receipt, accounts, categories, []);
+    const current = { ...baseline, accountId: 2, categoryId: 9, manualFields: ["account", "category"] as const };
+    const result = applyPersonalProposal({ ...current, manualFields: [...current.manualFields] }, baseline,
+      { accountId: 1, categoryId: null, destinationAccountId: null, accountEvidence: "history", destinationEvidence: null },
+      { accountId: null, categoryId: 9, destinationAccountId: null }, null);
+    expect(result.draft.accountId).toBe(2); expect(result.draft.categoryId).toBe(9);
+  });
+  it("keeps an explicit destination over a habit but accepts receipt evidence", () => {
+    const baseline = buildDetectionDraft({ ...receipt, movementType: "transfer", metadata: { sourceAccountId: 1, destinationAccountId: 2 } }, accounts, categories, []);
+    const proposal = { accountId: 1, categoryId: null, destinationAccountId: 3, accountEvidence: "history" as const, destinationEvidence: "history" as const };
+    const previous = { accountId: null, categoryId: null, destinationAccountId: null };
+    expect(applyPersonalProposal(baseline, baseline, proposal, previous, { sourceAccountId: 1, destinationAccountId: 2 }).draft.destinationAccountId).toBe(2);
+    expect(applyPersonalProposal(baseline, baseline, { ...proposal, destinationEvidence: "receipt" }, previous, { sourceAccountId: 1, destinationAccountId: 2 }).draft.destinationAccountId).toBe(3);
+  });
   it("pide elegir cuando varias cuentas sirven y no hay configuración", () => {
     const draft = buildDetectionDraft(receipt, accounts, categories, []);
     expect(draft.accountId).toBeNull();

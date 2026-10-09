@@ -77,6 +77,7 @@ export function useAssignCategoryToMovementsMutation(workspaceId: number | null)
       void queryClient.invalidateQueries({ queryKey: ["categories-overview"] });
       // Lo que acabas de clasificar es justo lo que mejora las sugerencias siguientes.
       void queryClient.invalidateQueries({ queryKey: ["movement-patterns"] });
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning"] });
     },
   });
 }

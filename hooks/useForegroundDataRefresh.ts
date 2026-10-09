@@ -60,6 +60,7 @@ export function useForegroundDataRefresh(userId: string | null, workspaceId: num
       if (uid) {
         scheduleQueryInvalidation(queryClient, ["notifications", uid], delayMs);
         if (wsId) scheduleQueryInvalidation(queryClient, ["pending-detected-movements", uid, wsId], delayMs);
+        if (wsId) scheduleQueryInvalidation(queryClient, ["detection-learning", uid, wsId], delayMs);
       }
       scheduleQueryInvalidation(queryClient, ["shared-obligations"], delayMs);
     }

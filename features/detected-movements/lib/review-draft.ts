@@ -3,6 +3,7 @@ import type { DetectedMovementSuggestion, NotificationDetectionAppSetting } from
 import { filterCategoriesForMovementType, resolveExchangeRate } from "../../movements/lib/movement-creation-rules";
 import { isoToTimeStr } from "../../../lib/date";
 import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
+import { receiptAccountHints, type PersonalProposal } from "./personal-learning";
 
 export type DetectionDraft = {
   movementType: "expense" | "income" | "transfer";
@@ -15,7 +16,35 @@ export type DetectionDraft = {
   categoryId: number | null;
   date: string;
   time: string;
+  manualFields?: ("account" | "destination" | "category")[];
 };
+
+export type AppliedLearning = Pick<PersonalProposal, "accountId" | "destinationAccountId" | "categoryId">;
+
+/** Receipt evidence wins over habits. Manual draft choices always win over late proposals. */
+export function applyPersonalProposal(current: DetectionDraft, baseline: DetectionDraft, proposal: PersonalProposal, previous: AppliedLearning, metadata: unknown): { draft: DetectionDraft; applied: AppliedLearning } {
+  const meta = object(metadata), hints = receiptAccountHints(meta.accountHints);
+  const draft = { ...current }, applied = { ...previous };
+  const edited = new Set(current.manualFields ?? []);
+  if (!edited.has("account")) {
+    const explicit = id(meta.accountId) ?? id(current.movementType === "income" ? meta.destinationAccountId : meta.sourceAccountId);
+    const proposed = proposal.accountEvidence === "receipt" || !explicit ? proposal.accountId : null;
+    const hasReference = current.movementType === "income" ? hints.destination : hints.source;
+    draft.accountId = proposed ?? (hasReference && !explicit ? null : baseline.accountId);
+    applied.accountId = proposed;
+  }
+  if (!edited.has("category") && current.movementType !== "transfer") {
+    if (proposal.categoryId != null || previous.categoryId != null) draft.categoryId = proposal.categoryId ?? baseline.categoryId;
+    applied.categoryId = proposal.categoryId;
+  }
+  if (current.movementType === "transfer" && !edited.has("destination")) {
+    const proposed = proposal.destinationEvidence === "receipt" || !id(meta.destinationAccountId) ? proposal.destinationAccountId : null;
+    draft.destinationAccountId = proposed ?? (previous.destinationAccountId != null ? baseline.destinationAccountId : current.destinationAccountId);
+    if (draft.destinationAccountId === draft.accountId) draft.destinationAccountId = null;
+    applied.destinationAccountId = proposed;
+  }
+  return { draft, applied };
+}
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -30,10 +59,10 @@ export function buildDetectionDraft(suggestion: DetectedMovementSuggestion, acco
   const movementType = suggestion.movementType === "unknown" ? "expense" : suggestion.movementType;
   const eligible = accounts.filter((a) => !a.isArchived && a.currencyCode === suggestion.currencyCode);
   const defaultId = settings.find((s) => s.enabled && s.financialAppKey === suggestion.financialAppKey)?.defaultAccountId;
-  const proposedId = id(meta.accountId) ?? id(meta.sourceAccountId) ?? defaultId;
+  const proposedId = id(meta.accountId) ?? id(movementType === "income" ? meta.destinationAccountId : meta.sourceAccountId) ?? defaultId;
   const source = eligible.find((a) => a.id === proposedId) ?? (eligible.length === 1 ? eligible[0] : null);
   const destinationId = id(meta.destinationAccountId);
-  const destination = accounts.find((a) => !a.isArchived && a.id === destinationId && a.id !== source?.id);
+  const destination = movementType === "transfer" ? accounts.find((a) => !a.isArchived && a.id === destinationId && a.id !== source?.id) : undefined;
   const recommendation = object(meta.aiCategoryRecommendation);
   const proposedCategory = id(meta.categoryId) ?? id(recommendation.categoryId);
   const availableCategories = filterCategoriesForMovementType([...categories], movementType);
