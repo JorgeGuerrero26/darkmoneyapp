@@ -21,11 +21,12 @@ it("Omitir todos pide confirmación y excluye correos llegados después", async 
   await act(async () => renderer.update(React.createElement(Harness, { pending: [first, second, receipt(9)] })));
   mockMutate.mockResolvedValue({ changes: [first, second].map(before => ({ before, after: { ...before, status: "discarded" } })), failed: 0 });
   await act(async () => current.confirmOmitAll());
-  expect(mockMutate).toHaveBeenCalledWith({ action: "omit", suggestions: [first, second] });
+  expect(mockMutate).toHaveBeenCalledWith({ action: "omit", suggestions: [first, second], markNotificationsRead: false });
   expect(mockResolved).toHaveBeenCalledWith([7, 8]);
   expect(current.confirmation).toBeNull();
   const banner = mockToast.mock.calls[0][0];
   expect(banner.title).toBe("2 detecciones omitidas");
+  expect(banner.subtitle).toBe("Se quitaron del dashboard. Tus notificaciones se conservan.");
   mockMutate.mockResolvedValue({ changes: [], failed: 0 });
   await act(async () => banner.onUndo());
   expect(mockMutate).toHaveBeenLastCalledWith({ action: "restore", changes: expect.arrayContaining([expect.objectContaining({ before: first }), expect.objectContaining({ before: second })]) });
@@ -45,6 +46,7 @@ it("omitir una fila bloquea pulsaciones repetidas y conserva las demás", async 
   await render();
   await act(async () => { current.omitOne(8); current.omitOne(8); current.requestOmitAll(); });
   expect(mockMutate).toHaveBeenCalledTimes(1);
+  expect(mockMutate).toHaveBeenCalledWith({ action: "omit", suggestions: [receipt(8)], markNotificationsRead: true });
   expect(current.busy).toBe(true);
   expect(current.omittingId).toBe(8);
   expect(current.confirmation).toBeNull();

@@ -28,17 +28,17 @@ export function useDetectionListOmissions(userId: string | null, workspaceId: nu
     finally { locked.current = false; setBusy(false); }
   }
 
-  async function omit(targets: DetectedMovementSuggestion[]) {
+  async function omit(targets: DetectedMovementSuggestion[], markNotificationsRead = true) {
     if (locked.current || !targets.length) return;
     locked.current = true; setBusy(true); setError(null);
     setOmittingId(targets.length === 1 ? targets[0].id : null);
     try {
-      const result = await mutation.mutateAsync({ action: "omit", suggestions: targets });
+      const result = await mutation.mutateAsync({ action: "omit", suggestions: targets, markNotificationsRead });
       if (activeScope.current !== scope) return;
       const count = result.changes.length;
       if (count) {
         onResolved(result.changes.map(({ after }) => after.id));
-        showRichToast({ type: "delete", title: count === 1 ? "Detección omitida" : `${count} detecciones omitidas`, subtitle: count === 1 ? result.changes[0].before.description : "Ya no aparecen entre los pendientes. No se creó ningún movimiento.", onUndo: () => { void restore(result.changes); } });
+        showRichToast({ type: "delete", title: count === 1 ? "Detección omitida" : `${count} detecciones omitidas`, subtitle: !markNotificationsRead ? "Se quitaron del dashboard. Tus notificaciones se conservan." : count === 1 ? result.changes[0].before.description : "Ya no aparecen entre los pendientes. No se creó ningún movimiento.", onUndo: () => { void restore(result.changes); } });
       }
       if (result.failed) setError(`No se pudieron omitir ${result.failed} detecciones. Puedes intentarlo de nuevo.`);
       else if (!count) setError("Estas detecciones ya cambiaron. Actualizamos los pendientes.");
@@ -50,7 +50,7 @@ export function useDetectionListOmissions(userId: string | null, workspaceId: nu
   return { confirmation, busy, omittingId, error,
     omitOne: (id: number) => { const target = pending.find((item) => item.id === id); if (target) void omit([target]); },
     requestOmitAll: () => { if (!locked.current) setConfirmation([...pending]); },
-    confirmOmitAll: () => { if (confirmation) void omit(confirmation); },
+    confirmOmitAll: () => { if (confirmation) void omit(confirmation, false); },
     cancel: () => { if (!locked.current) setConfirmation(null); },
   };
 }

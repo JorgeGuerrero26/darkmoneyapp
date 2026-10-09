@@ -135,6 +135,9 @@ it("la lista permite omitir sin cambiar a revisión ni desmontar el controlador"
   expect(entry.props.list.props.onOmit).toEqual(expect.any(Function));
   expect(entry.props.listHeaderAction.props.label).toBe("Omitir todos");
   expect(entry.props.listOverlay.props.inline).toBe(true);
+  expect(entry.props.listOverlay.props.title).toContain("del dashboard");
+  expect(entry.props.listOverlay.props.body).toContain("Sus notificaciones se conservarán con su estado actual");
+  expect(entry.props.listOverlay.props.destructive).toBe(false);
   expect(renderer.root.findByType(QuickDetectedMovementEntry)).toBe(entry);
 });
 

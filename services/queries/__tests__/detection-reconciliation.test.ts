@@ -136,6 +136,20 @@ it("deshacer un lote respeta cada estado original y una resolución posterior", 
   expect(mockFrom).toHaveBeenCalledTimes(2);
 });
 
+it("Omitir todos conserva intactas las notificaciones y su estado leído", async () => {
+  const update = chain([{ ...receipt, status: "discarded", updated_at: "2026-10-09T13:00:00Z" }]);
+  mockFrom.mockReturnValue(update);
+  useDetectedMovementOmissionsMutation("tester", 1);
+  const mutation = mockUseMutation.mock.calls[0][0];
+  const result = await mutation.mutationFn({ action: "omit", suggestions: [omissionTarget(7)], markNotificationsRead: false });
+  mutation.onSuccess(result);
+  expect(result.changes[0].after.status).toBe("discarded");
+  expect(mockFrom).toHaveBeenCalledTimes(1);
+  expect(mockFrom).toHaveBeenCalledWith("notification_detected_movement_suggestions");
+  expect(mockFrom).not.toHaveBeenCalledWith("notifications");
+  expect(mockClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["notifications", "tester"] });
+});
+
 it("un error de lote conserva los pendientes y permite reintentar", async () => {
   mockFrom.mockReturnValue(chain(null, { message: "offline" }));
   useDetectedMovementOmissionsMutation("tester", 1);

@@ -502,7 +502,7 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
 
 export type DetectionOmissionChange = { before: DetectedMovementSuggestion; after: DetectedMovementSuggestion };
 type DetectionOmissionInput =
-  | { action: "omit"; suggestions: DetectedMovementSuggestion[] }
+  | { action: "omit"; suggestions: DetectedMovementSuggestion[]; markNotificationsRead?: boolean }
   | { action: "restore"; changes: DetectionOmissionChange[] };
 
 /** Actualiza solo los pendientes confirmados; deshacer no pisa una resolución posterior. */
@@ -538,7 +538,7 @@ export function useDetectedMovementOmissionsMutation(userId: string | null, work
           }
         } catch { failed += group.length; }
       }
-      if (input.action === "omit" && changes.length) {
+      if (input.action === "omit" && input.markNotificationsRead !== false && changes.length) {
         // Leer el aviso es independiente: se conserva para consultar el estado omitido.
         try {
           await supabase.from("notifications").update({ status: "read", read_at: new Date().toISOString() })
