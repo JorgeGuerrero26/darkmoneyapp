@@ -1,4 +1,5 @@
 import { buildDedupeKey, extractAliasToken, extractSenderAddress, htmlToText, parseReceiptEmail } from "./logic.ts";
+import { extractReceiptAccountHints } from "./account-hints.ts";
 import type { ReceivedEmail, ReceivedEvent } from "./resend.ts";
 import type { AiReceipt, AiReceiptInput, ReceiptCategory } from "./ai.ts";
 
@@ -90,6 +91,7 @@ export async function processReceivedEvent(
       content: text, bank: parsed.financialAppKey, operationDate: parsed.occurredAt }),
     metadata: { source: "email", provider: "resend", app_label: parsed.appLabel, resendEmailId: email.id,
       operationNumber: parsed.operationNumber, senderAuthenticated: authenticated, dateSource: parsed.occurredAt ? "receipt" : "received",
+      accountHints: extractReceiptAccountHints(text, parsed.movementType),
       parser: ai ? "ai" : "mapped", ...(ai ? { categoryId: ai.categoryId, aiProvider: "deepseek" } : {}) },
   });
   // Un reintento recupera el aviso si su insert falló después de guardar la sugerencia.

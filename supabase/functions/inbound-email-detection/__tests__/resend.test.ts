@@ -50,6 +50,14 @@ describe("procesamiento de correo", () => {
     appLabel: "Banco Ficticio", financialAppKey: "email_ai:banco.test", confidence: "medium" as const,
     occurredAt: null, operationNumber: null, categoryId: 1 };
 
+  it("retains only masked account references for personal learning", async () => {
+    const repo = repository();
+    await processReceivedEvent(event, repo, async () => ({ ...email, text: `${email.text}\nDesde\tCuenta de ahorro\n**** 6068\nMoneda\tSoles` }));
+    expect(repo.saveSuggestion).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({
+      accountHints: { source: { kind: "account", last4: "6068" } },
+    }) }));
+  });
+
   it("usa IA sólo cuando no hay mapa y guarda la categoría propuesta en la bandeja compartida", async () => {
     const repo = repository(), detect = jest.fn().mockResolvedValue(aiReceipt);
     await processReceivedEvent(event, repo, async () => unknownEmail, detect);
