@@ -67,7 +67,7 @@ jest.mock("../../../../hooks/useMovementRiskExplanation", () => ({ useMovementRi
 jest.mock("../../../../hooks/useMovementBudgetImpact", () => ({ useMovementBudgetImpact: () => ({ impact: null }) }));
 
 let current: DetectedMovementReview;
-function Harness() { current = useDetectedMovementReview({ visible: true, suggestionId: 7, onClose: jest.fn(), onResolved: mockResolved }); return null; }
+function Harness({ visible = true, previewEnabled = false }: { visible?: boolean; previewEnabled?: boolean }) { current = useDetectedMovementReview({ visible, previewEnabled, suggestionId: 7, onClose: jest.fn(), onResolved: mockResolved }); return null; }
 let renderer: ReturnType<typeof create>;
 beforeEach(async () => { jest.clearAllMocks(); mockWorkspaceId = 9; mockUndo.mockResolvedValue({}); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
 afterEach(async () => { await act(async () => renderer.unmount()); });
@@ -265,6 +265,34 @@ it("Guardar permanece disponible y explica qué falta en una transferencia", asy
   expect(current.saveError).toBe("Elige el destino");
   expect(mockCreate).not.toHaveBeenCalled();
   expect(current.busy).toBe(false);
+});
+
+it("cerrar la revisión limpia el error del intento y conserva el borrador en el dashboard", async () => {
+  await act(async () => { current.setAccountId(null); current.setDescription("ANTHROPIC*"); });
+  await act(async () => { await current.submit(); });
+  expect(current.saveError).toBe("Elige una cuenta");
+  expect(mockCreate).not.toHaveBeenCalled();
+  const editedDraft = current.draft;
+  await act(async () => renderer.update(React.createElement(Harness, { visible: false, previewEnabled: true })));
+  expect(current.saveError).toBeNull();
+  expect(current.draft).toEqual(editedDraft);
+  expect(current.cardMissing).toContain("Elige una cuenta");
+  expect(current.readyToSave).toBe(false);
+  await act(async () => renderer.update(React.createElement(Harness, { visible: true, previewEnabled: true })));
+  expect(current.saveError).toBeNull();
+  expect(current.draft).toEqual(editedDraft);
+});
+
+it("el fallo de guardado directo en la tarjeta conserva su reintento hasta abrir la revisión", async () => {
+  await act(async () => renderer.update(React.createElement(Harness, { visible: false, previewEnabled: true })));
+  mockCreate.mockRejectedValueOnce(new Error("Sin conexión al guardar"));
+  await act(async () => { await current.submit(); });
+  expect(current.saveError).toBeTruthy();
+  await act(async () => renderer.update(React.createElement(Harness, { visible: false, previewEnabled: true })));
+  expect(current.saveError).toBeTruthy();
+  await act(async () => renderer.update(React.createElement(Harness, { visible: true, previewEnabled: true })));
+  expect(current.saveError).toBeNull();
+  expect(current.accountId).toBe(1);
 });
 
 it("un fallo al actualizar el aviso no convierte un registro exitoso en error", async () => {

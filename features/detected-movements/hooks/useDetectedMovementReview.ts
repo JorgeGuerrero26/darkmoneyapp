@@ -147,6 +147,11 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // El controlador sigue montado para la tarjeta. El error del intento pertenece
+  // a la revisión que se abre/cierra; conserva el borrador, pero no ese error.
+  // Un fallo al guardar directamente desde la tarjeta permanece hasta reintentar
+  // o abrir la revisión, porque no cambia `visible`.
+  useEffect(() => { setSaveError(null); }, [visible]);
   const [duplicateCandidate, setDuplicateCandidate] = useState<MovementRecord | null>(null);
   const reconciliationCandidateId = useRef<number | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
