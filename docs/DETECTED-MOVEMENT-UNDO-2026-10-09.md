@@ -1,6 +1,7 @@
 # Deshacer detecciones: contrato compartido
 
-9 de octubre de 2026. Código preparado y migración desplegada; actualización móvil pendiente.
+Implementación del 9 de octubre de 2026; migración desplegada y OTA disponible desde el 11.
+Recepción y validación en dispositivos reales pendientes.
 
 El flujo anterior borraba solo el primer movimiento de una división y reabría la detección
 en otra petición. Se sustituye por `undo_detected_movement_registration(workspace, suggestion,
@@ -37,7 +38,53 @@ Se verificaron el historial, los cuerpos de ambas funciones contra el SQL local,
 vacío y permisos: Deshacer es `security invoker`; el helper de lectura es `security definer`;
 `authenticated` puede ejecutar y `anon`/PUBLIC no. Las consultas remotas fueron de esquema,
 permisos e historial; no se invocó Deshacer ni se registraron o eliminaron movimientos reales.
-Falta validar con fixtures de integración y publicar el cliente móvil. No se hizo OTA:
-el teléfono con la versión anterior no usa el nuevo flujo atómico por desplegar solo SQL.
+Al desplegar SQL aún faltaba publicar el cliente móvil. La OTA posterior se documenta abajo;
+desplegar solo SQL no actualizaba el flujo del teléfono. Falta la validación entre dispositivos.
 El diccionario local `DATABASE_DICTIONARY.md` se actualizó y se mantuvo fuera de Git.
 Crear divisiones detectadas en web, aprendizaje/IA e integración entre dispositivos siguen pendientes.
+
+## Publicación y verificación: 11 de octubre de 2026
+
+- Se validó una copia aislada del commit `86bf65a2`, sin incluir ediciones locales de
+  Suscripciones, Invitaciones o del Asistente que estaban en curso. Typecheck pasó,
+  al igual que cinco pruebas del validador OTA y 88 pruebas en diez suites de detecciones
+  y conteo de avisos. No se ejecutó Jest completo.
+- La suite del hook de revisión tenía un mock desactualizado: faltaba la nueva mutación
+  de Deshacer. Se actualizó y se añadieron casos del botón tras cambiar de espacio y
+  de fallo tras cerrar la revisión, sin fallback de borrar/actualizar por separado.
+- Se exportaron iOS y Android para los tres runtimes con caché limpia y se validaron
+  4.978/4.985 entradas en mapas de código, 32 fuentes tipográficas y 63 recursos por plataforma.
+  Se comprobaron los archivos de Deshacer en los mapas y la ausencia de las credenciales
+  privadas de la base de datos en bundles/mapas; no se publicaron los mapas de fuentes.
+- Esta continuación publicó los grupos `27aa3d30-82a8-4faf-b8b0-c42b4f512195` (1.0.10)
+  y `3986048e-bd7b-41b6-9f24-63cb28cf8e40` (1.0.9), en `preview`, para ambas plataformas.
+- Se detectó una publicación concurrente del Asistente, basada en commits posteriores
+  que incluyen esta corrección. No se publicó encima la exportación anterior de 1.0.8.
+  La publicación posterior de `4cae82e8` conserva Deshacer y campana, incorpora el Asistente
+  y limpia los errores al salir del formulario. Se preservó esa versión más reciente.
+- Disponibilidad final en `preview`, para iOS y Android:
+
+  | Runtime | Grupo publicado |
+  | --- | --- |
+  | 1.0.10 | `e9d50a95-9555-4fd6-ac88-d801066f95ce` |
+  | 1.0.9 | `417b4814-ac47-46df-9879-5ff075682e6b` |
+  | 1.0.8 | `2e7e9347-84c6-4ebd-b787-3eca8b0d4c69` |
+
+- Se consultó el endpoint que usan los clientes con plataforma/runtime/canal, siguiendo
+  [Expo Updates v1](https://docs.expo.dev/technical-specs/expo-updates-1/). Los seis manifiestos
+  entregan 63 recursos y 32 fuentes. Se descargó solo el bundle de código en memoria usando
+  los encabezados de recursos indicados por el servidor: SHA-256 coincide con el manifiesto
+  y el bundle contiene `undo_detected_movement_registration`. No se descargaron fotos.
+- Una consulta agregada de arranques no encontró sesiones ejecutando esos seis IDs al
+  verificar. Eso no demuestra que no se hayan descargado: recepción y prueba en el teléfono
+  siguen sin confirmación. No se probó Deshacer en datos reales.
+- Al ampliar la ejecución en el directorio principal, Jest incluyó una copia temporal
+  de la otra publicación y contó dos veces los casos; TypeScript también incluyó sus
+  Edge Functions de Deno. No se editó ese checkout ajeno ni se cambió tsconfig para ocultarlo.
+  Tras retirarse ese checkout, `npm run typecheck` volvió a pasar sin cambios de configuración.
+  La ejecución por diez rutas explícitas pasó 90 pruebas sobre la versión actual, sin contar
+  copias temporales. Una OTA disponible no prueba que el teléfono la haya descargado o ejecutado.
+- Las comprobaciones remotas fueron de esquema/permisos y paquetes publicados. No se
+  crearon ni eliminaron movimientos reales. La prueba de guardar/deshacer entre dos
+  dispositivos, la contención real de Postgres y las demás funciones de paridad siguen
+  pendientes. El directorio temporal de esta publicación se retiró, sin tocar el principal.
