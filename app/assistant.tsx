@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Mic, Send, Sparkles, Trash2, Volume2, VolumeX } from "lucide-react-native";
+import { History, Mic, Send, Sparkles, Volume2, VolumeX } from "lucide-react-native";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -19,11 +19,20 @@ import {
   isDictationAvailable,
   useSpeechRecognitionEvent,
 } from "../lib/speech-recognition-safe";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { TextField } from "../components/ui/TextField";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
+import { AssistantChatsSheet } from "../features/assistant/components/AssistantChatsSheet";
+import {
+  MAX_STORED_ITEMS,
+  chatFromLegacy,
+  newChatId,
+  parseChatStore,
+  removeChat,
+  upsertChat,
+  type StoredChat,
+} from "../features/assistant/lib/chat-store";
 import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
 import { THINKING_SEARCH, thinkingLabel } from "../features/assistant/lib/thinking-label";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
@@ -103,9 +112,9 @@ function pickDefaultAccount(
   );
 }
 
-const CHAT_STORAGE_KEY = "assistant/chat";
-/** Tope de lo guardado: por encima del historial que el servidor acepta, sin llenar el disco. */
-const MAX_STORED_ITEMS = 40;
+/** El chat único de antes. Se lee una vez para convertirlo en la primera conversación. */
+const LEGACY_CHAT_KEY = "assistant/chat";
+const CHATS_STORAGE_KEY = "assistant/chats/v1";
 
 const WELCOME =
   "Hola, soy tu asistente. Pregúntame lo que quieras sobre tus movimientos — o toca una sugerencia para empezar:";
@@ -135,7 +144,10 @@ function AssistantScreen() {
   const [items, setItems] = useState<ChatItem[]>([
     { id: "welcome", role: "assistant", content: WELCOME },
   ]);
-  const [clearVisible, setClearVisible] = useState(false);
+  const [chats, setChats] = useState<StoredChat[]>([]);
+  const [activeId, setActiveId] = useState(() => newChatId());
+  const [chatsVisible, setChatsVisible] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingText, setThinkingText] = useState(THINKING_SEARCH);
@@ -182,54 +194,102 @@ function AssistantScreen() {
   }, []);
 
   /**
-   * La conversación vivía SOLO en memoria: salir de la pantalla la borraba entera, y con ella
-   * el contexto de las repreguntas ("¿y si además invierto 200 al mes?"). Se guarda en el
-   * teléfono, no en el servidor: son cifras personales y no hay razón para que salgan de aquí.
+   * Las conversaciones viven en el teléfono, no en el servidor: son cifras personales y no hay
+   * razón para que salgan de aquí. El servidor tampoco las necesita: en cada pregunta recibe el
+   * historial de la conversación abierta, y ese es todo su "contexto".
    *
    * Solo texto y rol. Los borradores y la evidencia no se persisten a propósito: un borrador
    * restaurado tentaría a confirmar un movimiento cuyo contexto ya no existe.
    */
   const [chatLoaded, setChatLoaded] = useState(false);
   useEffect(() => {
-    void AsyncStorage.getItem(CHAT_STORAGE_KEY)
-      .then((raw) => {
-        if (!raw) return;
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed) || parsed.length === 0) return;
-        const restored = parsed
-          .filter((i): i is { id: string; role: "user" | "assistant"; content: string } =>
-            typeof i === "object" && i !== null &&
-            typeof (i as ChatItem).content === "string" &&
-            ((i as ChatItem).role === "user" || (i as ChatItem).role === "assistant"),
-          )
-          .slice(-MAX_STORED_ITEMS)
-          .map((i) => ({ id: i.id, role: i.role, content: i.content }));
-        if (restored.length) setItems(restored);
-      })
-      .catch(() => { /* guardado corrupto: se empieza limpio, no vale romper la pantalla */ })
-      .finally(() => setChatLoaded(true));
+    void (async () => {
+      try {
+        const store = parseChatStore(await AsyncStorage.getItem(CHATS_STORAGE_KEY));
+        let saved = store.chats;
+        let active = store.chats.find((chat) => chat.id === store.activeId) ?? null;
+        if (saved.length === 0) {
+          // Primera vez con varias conversaciones: el chat de antes pasa a ser la primera.
+          const legacy = chatFromLegacy(await AsyncStorage.getItem(LEGACY_CHAT_KEY));
+          if (legacy) {
+            saved = [legacy];
+            active = legacy;
+          }
+        }
+        setChats(saved);
+        if (active) {
+          setActiveId(active.id);
+          setItems(active.items);
+        }
+      } catch {
+        /* guardado corrupto: se empieza limpio, no vale romper la pantalla */
+      } finally {
+        setChatLoaded(true);
+      }
+    })();
   }, []);
 
+  // La conversación abierta se refleja en la lista cada vez que cambia.
   useEffect(() => {
     if (!chatLoaded) return; // no pisar lo guardado con el saludo inicial antes de leerlo
     const toStore = items
       .filter((i) => i.id !== "welcome" && !i.error)
       .slice(-MAX_STORED_ITEMS)
       .map(({ id, role, content }) => ({ id, role, content }));
-    if (toStore.length === 0) {
-      void AsyncStorage.removeItem(CHAT_STORAGE_KEY);
+    setChats((current) => upsertChat(current, activeId, toStore));
+  }, [items, activeId, chatLoaded]);
+
+  useEffect(() => {
+    if (!chatLoaded) return;
+    void AsyncStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify({ activeId, chats }));
+    void AsyncStorage.removeItem(LEGACY_CHAT_KEY);
+  }, [chats, activeId, chatLoaded]);
+
+  const openChat = useCallback((id: string, nextItems: ChatItem[]) => {
+    Speech.stop();
+    setInput("");
+    setActiveId(id);
+    setItems(nextItems);
+    setChatsVisible(false);
+  }, []);
+
+  const startNewChat = useCallback(() => {
+    if (isThinking) return;
+    const empty = items.every((item) => item.id === "welcome");
+    // Ya está en una conversación vacía: otra igual solo ensuciaría la lista.
+    if (empty) {
+      setChatsVisible(false);
       return;
     }
-    void AsyncStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toStore));
-  }, [items, chatLoaded]);
+    openChat(newChatId(), [{ id: "welcome", role: "assistant", content: WELCOME }]);
+  }, [isThinking, items, openChat]);
 
-  const clearChat = useCallback(() => {
-    setClearVisible(false);
-    setItems([{ id: "welcome", role: "assistant", content: WELCOME }]);
-    void AsyncStorage.removeItem(CHAT_STORAGE_KEY);
-    Speech.stop();
+  const selectChat = useCallback(
+    (id: string) => {
+      if (isThinking) return;
+      if (id === activeId) {
+        setChatsVisible(false);
+        return;
+      }
+      const target = chats.find((chat) => chat.id === id);
+      if (target) openChat(id, target.items);
+    },
+    [activeId, chats, isThinking, openChat],
+  );
+
+  const confirmDeleteChat = useCallback(() => {
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    if (!id) return;
+    setChats((current) => removeChat(current, id));
+    // Borrar la que está abierta deja una conversación nueva, vacía.
+    if (id === activeId) {
+      Speech.stop();
+      setActiveId(newChatId());
+      setItems([{ id: "welcome", role: "assistant", content: WELCOME }]);
+    }
     showToast("Conversación borrada", "success");
-  }, [showToast]);
+  }, [activeId, pendingDeleteId, showToast]);
 
   const toggleSpeakMode = useCallback(() => {
     setSpeakMode((prev) => {
@@ -840,14 +900,13 @@ function AssistantScreen() {
              activo del modo hablante lo pinta el propio componente. */
           <HeaderActionGroup
             actions={[
-              ...(items.length > 1
-                ? [{
-                    key: "clear",
-                    icon: Trash2,
-                    accessibilityLabel: "Borrar la conversación",
-                    onPress: () => setClearVisible(true),
-                  }]
-                : []),
+              {
+                key: "chats",
+                icon: History,
+                label: "Chats",
+                accessibilityLabel: "Ver conversaciones",
+                onPress: () => setChatsVisible(true),
+              },
               {
                 key: "speak",
                 icon: speakMode ? Volume2 : VolumeX,
@@ -943,17 +1002,21 @@ function AssistantScreen() {
         duplicateMovement={editDuplicate}
       />
 
-      {/* Aquí sí como Modal normal: esta pantalla no vive dentro de un BottomSheet, y el
-          formulario de arriba nunca está abierto a la vez (lo abre otra acción). */}
-      <ConfirmDialog
-        visible={clearVisible}
-        icon="🗑️"
-        title="¿Borrar la conversación?"
-        body="Se borrará de este teléfono y no podrás recuperarla. Tus movimientos y tus datos no se tocan."
-        confirmLabel="Borrar"
-        cancelLabel="Cancelar"
-        onCancel={() => setClearVisible(false)}
-        onConfirm={clearChat}
+      <AssistantChatsSheet
+        visible={chatsVisible}
+        chats={chats}
+        activeId={activeId}
+        locked={isThinking}
+        pendingDelete={chats.find((chat) => chat.id === pendingDeleteId) ?? null}
+        onSelect={selectChat}
+        onNew={startNewChat}
+        onAskDelete={setPendingDeleteId}
+        onCancelDelete={() => setPendingDeleteId(null)}
+        onConfirmDelete={confirmDeleteChat}
+        onClose={() => {
+          setChatsVisible(false);
+          setPendingDeleteId(null);
+        }}
       />
     </View>
   );
