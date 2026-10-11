@@ -8,6 +8,8 @@ import type { LearningMovement } from "../../lib/personal-learning";
 
 const { create, act } = require("react-test-renderer");
 const mockCreate = jest.fn();
+const mockUndo = jest.fn().mockResolvedValue({});
+const mockDelete = jest.fn();
 const mockMark = jest.fn().mockResolvedValue({});
 const mockDuplicate = jest.fn().mockResolvedValue(null);
 const mockResolved = jest.fn();
@@ -21,6 +23,7 @@ let mockSettingsLoading = false;
 let mockSettings: NotificationDetectionAppSetting[] = [];
 let mockSuggestion = mockReceipt;
 let mockLearning: LearningMovement[] = [];
+let mockWorkspaceId = 9;
 jest.mock("../../../../services/queries/detection-learning", () => ({ useDetectionLearningQuery: () => ({ data: mockLearning, isPending: false }) }));
 jest.mock("../../components/DetectedMovementReviewSheet", () => ({ DetectedMovementReviewSheet: ({ status, visible }: any) => status ? require("react").createElement(require("../../../../components/ui/BottomSheet").BottomSheet, { title: status.title, visible }, status.content) : null }));
 jest.mock("../../../../components/ui/BottomSheet", () => ({ BottomSheet: ({ title, children }: any) => require("react").createElement(require("react-native").View, { testID: "status-sheet", title }, children) }));
@@ -28,13 +31,14 @@ jest.mock("../../components/DetectedMovementExtras", () => ({ DetectedMovementEx
 jest.mock("../../../movements/components/form/SplitCategoriesSheet", () => ({ SplitCategoriesSheet: () => null }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 jest.mock("../../../../lib/auth-context", () => ({ useAuth: () => ({ profile: { id: "tester", email: "tester@test.invalid" } }) }));
-jest.mock("../../../../lib/workspace-context", () => ({ useWorkspace: () => ({ activeWorkspaceId: 9, activeWorkspace: { baseCurrencyCode: "PEN" } }) }));
+jest.mock("../../../../lib/workspace-context", () => ({ useWorkspace: () => ({ activeWorkspaceId: mockWorkspaceId, activeWorkspace: { baseCurrencyCode: "PEN" } }) }));
 jest.mock("../../../../hooks/useToast", () => ({ useToast: () => mockToast }));
 jest.mock("../../../../hooks/useHaptics", () => ({ useHaptics: () => ({ error: jest.fn(), success: jest.fn() }) }));
 jest.mock("../../../../services/queries/notification-detection", () => ({
   useDetectedMovementSuggestionQuery: () => ({ data: mockSuggestion, refetch: jest.fn() }),
   useNotificationDetectionSettingsQuery: () => ({ data: mockSettings, isLoading: mockSettingsLoading }),
   useMarkDetectedMovementSuggestionMutation: () => ({ ...mockMutation, mutateAsync: mockMark }),
+  useUndoDetectedMovementRegistrationMutation: () => ({ ...mockMutation, mutateAsync: mockUndo }),
   useAiUsageTodayQuery: () => ({ data: null }),
   findPossibleDuplicateMovement: (...args: unknown[]) => mockDuplicate(...args),
   recordSuggestionAction: jest.fn().mockResolvedValue(null),
@@ -42,7 +46,7 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
 jest.mock("../../../../services/queries/workspace-data", () => ({
   useWorkspaceSnapshotQuery: () => ({ data: mockSnapshot }),
   useCreateMovementMutation: () => ({ ...mockMutation, mutateAsync: mockCreate }),
-  useDeleteMovementMutation: () => mockMutation,
+  useDeleteMovementMutation: () => ({ ...mockMutation, mutateAsync: mockDelete, mutate: mockDelete }),
   useCreateCategoryMutation: () => mockMutation,
   useCreateCounterpartyMutation: () => mockMutation,
   useCreateSubscriptionMutation: () => mockMutation,
@@ -65,7 +69,7 @@ jest.mock("../../../../hooks/useMovementBudgetImpact", () => ({ useMovementBudge
 let current: DetectedMovementReview;
 function Harness() { current = useDetectedMovementReview({ visible: true, suggestionId: 7, onClose: jest.fn(), onResolved: mockResolved }); return null; }
 let renderer: ReturnType<typeof create>;
-beforeEach(async () => { jest.clearAllMocks(); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
+beforeEach(async () => { jest.clearAllMocks(); mockWorkspaceId = 9; mockUndo.mockResolvedValue({}); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
 afterEach(async () => { await act(async () => renderer.unmount()); });
 
 function learnedMovement(id: number, overrides: Partial<LearningMovement> = {}): LearningMovement {
@@ -279,4 +283,32 @@ it("reintentar un descarte fallido vuelve a descartar y nunca registra", async (
   expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "discarded", expectedStatus: "pending" });
   expect(mockCreate).not.toHaveBeenCalled();
   expect(mockResolved).toHaveBeenCalledWith(7, "discarded");
+});
+
+it("Deshacer usa una sola mutación con el registro original tras cambiar de espacio", async () => {
+  await act(async () => { await current.submit(); });
+  const banner = mockToast.showRichToast.mock.calls[0][0];
+  mockMark.mockClear();
+  mockWorkspaceId = 99;
+  mockSuggestion = { ...mockReceipt, id: 80, workspaceId: 99 };
+  await act(async () => renderer.update(React.createElement(Harness, { key: "another-space" })));
+  await act(async () => { banner.onUndo(); });
+  expect(mockUndo).toHaveBeenCalledTimes(1);
+  expect(mockUndo).toHaveBeenCalledWith({ movementId: 13, suggestionId: 7, workspaceId: 9, userId: "tester" });
+  expect(mockDelete).not.toHaveBeenCalled();
+  expect(mockMark).not.toHaveBeenCalled();
+});
+
+it("un fallo de Deshacer se muestra aunque la revisión ya esté cerrada y no hace fallback", async () => {
+  await act(async () => { await current.submit(); });
+  const banner = mockToast.showRichToast.mock.calls[0][0];
+  const error = new Error("El registro tiene un comprobante");
+  mockMark.mockClear();
+  mockUndo.mockRejectedValueOnce(error);
+  await act(async () => renderer.update(null));
+  await act(async () => { banner.onUndo(); });
+  expect(mockToast.showErrorToast).toHaveBeenCalledWith("No se pudo deshacer el registro", error);
+  expect(mockUndo).toHaveBeenCalledTimes(1);
+  expect(mockDelete).not.toHaveBeenCalled();
+  expect(mockMark).not.toHaveBeenCalled();
 });
