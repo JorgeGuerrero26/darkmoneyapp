@@ -370,6 +370,27 @@ export function monthlyDiscretionarySpend<TMovement extends SpendHistoryMovement
   return orderedKeys.map((key) => totals.get(key) ?? 0);
 }
 
+/**
+ * Espejo de `isOneOffSpend` de `discretionary-history.ts`: si un gasto es de los que NO se repetirán y por eso no mide la costumbre.
+ *
+ * El tipo del movimiento manda; si no dice nada, hereda el de su categoría (la misma regla que
+ * `effectiveSpendTypeId`). Sigue siendo gasto en todo lo demás: solo se aparta de la mediana.
+ */
+export function isOneOffSpend(
+  movement: { spendTypeId?: number | null; categoryId?: number | null },
+  oneOffTypeIds: ReadonlySet<number>,
+  categoryDefaults: ReadonlyMap<number, number | null>,
+): boolean {
+  if (oneOffTypeIds.size === 0) return false;
+  const typeId =
+    movement.spendTypeId != null
+      ? movement.spendTypeId
+      : movement.categoryId != null
+        ? (categoryDefaults.get(movement.categoryId) ?? null)
+        : null;
+  return typeId != null && oneOffTypeIds.has(typeId);
+}
+
 // ─── Aritmética de calendario ────────────────────────────────────────────────
 
 type Ymd = { y: number; m: number; d: number };

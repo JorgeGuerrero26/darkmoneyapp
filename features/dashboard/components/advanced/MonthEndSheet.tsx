@@ -121,7 +121,7 @@ export function MonthEndSheet({ currency, balance, accounts, committedNet, varia
           </Text>
           <Text style={styles.kicker}>CÓMO SE MIDE EL MES TÍPICO</Text>
           <Text style={styles.detailIntro}>
-            Es la mediana de tus últimos {typicalSpend.monthsUsed} {typicalSpend.monthsUsed === 1 ? "mes" : "meses"}: el mes de en medio, no el promedio, para que un mes con compras grandes no se repita en todos los que vienen. No cuenta suscripciones, cuotas ni lo cargado a tarjetas, que ya salen en sus propias líneas.
+            Es la mediana de tus últimos {typicalSpend.monthsUsed} {typicalSpend.monthsUsed === 1 ? "mes" : "meses"}: el mes de en medio, no el promedio, para que un mes con compras grandes no se repita en todos los que vienen. No cuenta suscripciones, cuotas ni lo cargado a tarjetas, que ya salen en sus propias líneas. Tampoco cuenta los gastos de un tipo marcado como “Compras únicas” (en Tipos de gasto).
           </Text>
           {typicalSpend.months.length ? [...typicalSpend.months].reverse().map((month) => (
             <View key={month.monthKey} style={styles.accountLine}>

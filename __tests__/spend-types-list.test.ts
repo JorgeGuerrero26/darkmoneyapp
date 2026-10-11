@@ -1,7 +1,7 @@
 import { buildSpendTypeSections, filterSpendTypes } from "../features/spend-types/lib/spendTypeList";
 import type { SpendType } from "../services/queries/spend-types";
 const type = (id: number, props: Partial<SpendType> = {}): SpendType => ({
-  id, workspaceId: 1, name: `Tipo ${id}`, color: null, icon: null, sortOrder: id, isActive: true, ...props,
+  id, workspaceId: 1, name: `Tipo ${id}`, color: null, icon: null, sortOrder: id, isActive: true, excludedFromTypical: false, ...props,
 });
 
 it("combina búsqueda y estado sin perder inactivos", () => {

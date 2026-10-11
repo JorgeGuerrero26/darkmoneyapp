@@ -12,6 +12,8 @@ export type SpendType = {
   icon: string | null;
   sortOrder: number;
   isActive: boolean;
+  /** Sus gastos no entran a la medición del gasto típico: son compras que no se repetirán. */
+  excludedFromTypical: boolean;
 };
 
 export type SpendTypeInput = {
@@ -19,6 +21,7 @@ export type SpendTypeInput = {
   color?: string | null;
   icon?: string | null;
   sortOrder?: number;
+  excludedFromTypical?: boolean;
 };
 
 function mapRow(row: Record<string, unknown>): SpendType {
@@ -30,6 +33,7 @@ function mapRow(row: Record<string, unknown>): SpendType {
     icon: (row.icon as string | null) ?? null,
     sortOrder: Number(row.sort_order ?? 0),
     isActive: row.is_active !== false,
+    excludedFromTypical: row.excluded_from_typical === true,
   };
 }
 
@@ -40,7 +44,7 @@ export function useSpendTypesQuery(workspaceId: number | null) {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { data, error } = await supabase
         .from("spend_types")
-        .select("id, workspace_id, name, color, icon, sort_order, is_active")
+        .select("id, workspace_id, name, color, icon, sort_order, is_active, excluded_from_typical")
         .eq("workspace_id", workspaceId!)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
@@ -65,6 +69,7 @@ export function useCreateSpendTypeMutation(workspaceId: number | null, userId?: 
         color: input.color ?? null,
         icon: input.icon ?? null,
         sort_order: input.sortOrder ?? 0,
+        excluded_from_typical: input.excludedFromTypical ?? false,
       });
       // 23505 = ya existe uno con ese nombre en este espacio. Se dice con palabras.
       if (error) {
@@ -93,6 +98,7 @@ export function useUpdateSpendTypeMutation(workspaceId: number | null) {
       if (input.icon !== undefined) payload.icon = input.icon;
       if (input.sortOrder !== undefined) payload.sort_order = input.sortOrder;
       if (input.isActive !== undefined) payload.is_active = input.isActive;
+      if (input.excludedFromTypical !== undefined) payload.excluded_from_typical = input.excludedFromTypical;
       const { error } = await supabase
         .from("spend_types")
         .update(payload)

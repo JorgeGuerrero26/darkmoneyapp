@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Los tipos de gasto ahora tienen la opción \"Compras únicas\". Si marcas así un tipo (por ejemplo, para el reloj o el monitor que no vas a volver a comprar), esos gastos siguen contando como gasto, pero la proyección ya no los toma como tu costumbre mensual. El asistente usa la misma regla.",
       "Las transferencias que dejas programadas ahora cuentan bien en la proyección: pasar plata a una cuenta de inversión sale de tu plata disponible, rescatarla vuelve, y moverla entre tus cuentas de banco o efectivo no cambia nada. Antes la app las restaba como si fueran un gasto y el asistente las sumaba como si fueran un ingreso.",
       "Si tu sueldo va a subir (o bajar) desde una fecha, ahora puedes anotarlo: en Ingresos fijos, al editar, abre \"Cambios de monto\" y pon desde cuándo y cuánto te llegará. La proyección usa el monto nuevo a partir de ese día. Para la gratificación de julio y diciembre, créala como dos ingresos fijos anuales; el asistente te lo propone.",
       "El asistente ahora guarda varias conversaciones. Con el botón Chats empiezas una nueva o vuelves a una anterior, y también puedes borrarlas. Cada una conserva lo que hablaron y el asistente solo recuerda la que tienes abierta. Se guardan en tu teléfono; tu conversación de antes pasa a ser la primera de la lista.",

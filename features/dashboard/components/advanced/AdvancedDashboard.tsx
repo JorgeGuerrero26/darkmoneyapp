@@ -59,6 +59,7 @@ import {
   buildPaymentOptimizationPlan,
   type PaymentOptimizationRecommendation,
 } from "../../../../services/analytics/payment-optimization";
+import { useSpendTypesQuery } from "../../../../services/queries/spend-types";
 import { clusterHistoryMonths } from "../../../../services/analytics/month-clustering";
 import { detectHistoryChangePoint } from "../../../../services/analytics/history-change-points";
 import { findProbableDuplicateGroups } from "../../../../services/analytics/duplicate-detection";
@@ -221,10 +222,22 @@ export function AdvancedDashboard({
   // salía de dos meses, que es su promedio, y no descartaba nada.
   const projectionHistoryQuery = useProjectionHistoryQuery(workspaceId, userId);
   const projectionHistory = projectionHistoryQuery.data;
+  // Los tipos marcados como "compras únicas" no miden tu costumbre mensual.
+  const spendTypesQuery = useSpendTypesQuery(workspaceId);
+  const oneOffSpend = useMemo(
+    () => ({
+      typeIds: new Set((spendTypesQuery.data ?? []).filter((type) => type.excludedFromTypical).map((type) => type.id)),
+      categoryDefaults: new Map<number, number | null>(
+        (snapshot?.categories ?? []).map((category: { id: number; defaultSpendTypeId?: number | null }) => [category.id, category.defaultSpendTypeId ?? null] as const),
+      ),
+    }),
+    [spendTypesQuery.data, snapshot?.categories],
+  );
   const projectionInputs = useMemo<CashflowProjectionInputs>(() => ({
     movements,
     historyMovements: projectionHistory,
     historyCoveredFrom: projectionHistory ? projectionHistoryStart() : null,
+    oneOffSpend,
     obligations: obligations.map((obligation) => ({
       ...obligation,
       principalAmount: obligation.principalAmount ?? obligation.pendingAmount,
@@ -241,7 +254,7 @@ export function AdvancedDashboard({
     exchangeRateMap,
     accountCurrencyMap,
     accounts: activeAccounts,
-  }), [movements, projectionHistory, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts]);
+  }), [movements, projectionHistory, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts, oneOffSpend]);
   const { projection: monthCalendar, liquid: liquidToday, typicalSpend: monthTypicalSpend } = useCashflowProjection(projectionInputs, 2);
 
   /*

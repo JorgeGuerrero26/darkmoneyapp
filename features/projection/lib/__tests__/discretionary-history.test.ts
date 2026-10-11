@@ -1,4 +1,4 @@
-import { monthlyDiscretionarySpend, type SpendHistoryMovement } from "../discretionary-history";
+import { isOneOffSpend, monthlyDiscretionarySpend, type SpendHistoryMovement } from "../discretionary-history";
 
 const NOW = new Date("2026-09-16T12:00:00.000Z");
 
@@ -100,5 +100,24 @@ describe("monthlyDiscretionarySpend", () => {
     });
 
     expect(totals).toEqual([]);
+  });
+});
+
+describe("isOneOffSpend", () => {
+  const defaults = new Map<number, number | null>([[10, 7]]);
+  const oneOff = new Set([7]);
+
+  it("el tipo propio del movimiento manda", () => {
+    expect(isOneOffSpend({ spendTypeId: 7, categoryId: 5 }, oneOff, defaults)).toBe(true);
+    expect(isOneOffSpend({ spendTypeId: 3, categoryId: 10 }, oneOff, defaults)).toBe(false);
+  });
+
+  it("sin tipo propio hereda el de su categoría", () => {
+    expect(isOneOffSpend({ spendTypeId: null, categoryId: 10 }, oneOff, defaults)).toBe(true);
+    expect(isOneOffSpend({ spendTypeId: null, categoryId: 11 }, oneOff, defaults)).toBe(false);
+  });
+
+  it("sin tipos de compra única no aparta nada", () => {
+    expect(isOneOffSpend({ spendTypeId: 7 }, new Set(), defaults)).toBe(false);
   });
 });

@@ -9,7 +9,7 @@
  * que el dashboard y el asistente están a punto de decir dos cifras distintas para el mismo mes.
  */
 import { buildCashflowCalendar as appEngine } from "../cashflow-calendar";
-import { monthlyDiscretionarySpend as appHistory } from "../discretionary-history";
+import { isOneOffSpend as appOneOff, monthlyDiscretionarySpend as appHistory } from "../discretionary-history";
 import { liquidBalance as appLiquid } from "../liquid-balance";
 import {
   movementActsAsExpense as appActsAsExpense,
@@ -20,6 +20,7 @@ import {
 import {
   buildCashflowCalendar as denoEngine,
   liquidBalance as denoLiquid,
+  isOneOffSpend as denoOneOff,
   monthlyDiscretionarySpend as denoHistory,
   movementActsAsExpense as denoActsAsExpense,
   movementActsAsIncome as denoActsAsIncome,
@@ -630,4 +631,19 @@ describe("paridad del saldo de partida", () => {
       expect(denoLiquid(accounts, onlyPen)).toEqual(appLiquid(accounts, onlyPen));
     },
   );
+});
+
+describe("isOneOffSpend: la app y el asistente coinciden", () => {
+  const cases: Array<[{ spendTypeId?: number | null; categoryId?: number | null }, number[]]> = [
+    [{ spendTypeId: 7 }, [7]],
+    [{ spendTypeId: 3, categoryId: 10 }, [7]],
+    [{ spendTypeId: null, categoryId: 10 }, [7]],
+    [{ spendTypeId: null, categoryId: 99 }, [7]],
+    [{}, [7]],
+    [{ spendTypeId: 7 }, []],
+  ];
+  it.each(cases)("%j con tipos %j", (movement, ids) => {
+    const defaults = new Map<number, number | null>([[10, 7]]);
+    expect(denoOneOff(movement, new Set(ids), defaults)).toBe(appOneOff(movement, new Set(ids), defaults));
+  });
 });

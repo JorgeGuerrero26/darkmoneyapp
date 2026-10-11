@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { movementDisplayAccountId } from "../../../lib/movement-amounts";
 import { DASHBOARD_MOVEMENTS_WINDOW_DAYS, PROJECTION_HISTORY_MONTHS } from "../../../services/queries/workspace-data";
 import { buildCashflowCalendar, typicalMonthlySpend } from "../../projection/lib/cashflow-calendar";
-import { monthlyDiscretionarySpend } from "../../projection/lib/discretionary-history";
+import { isOneOffSpend, monthlyDiscretionarySpend } from "../../projection/lib/discretionary-history";
 import { plannedCashEffect } from "../../projection/lib/planned-cash-effect";
 import { liquidBalance } from "../../projection/lib/liquid-balance";
 import { convertAmt, expenseAmt, isExpense } from "../lib/aggregations";
@@ -39,6 +39,11 @@ export type CashflowProjectionInputs = {
   historyMovements?: DashboardMovementRow[];
   /** Desde cuándo está cargado `historyMovements`. */
   historyCoveredFrom?: Date | null;
+  /**
+   * Los tipos de gasto marcados como "compras únicas" y el tipo por defecto de cada categoría.
+   * Lo que cae ahí sigue siendo gasto, pero no mide la costumbre: se aparta de la mediana.
+   */
+  oneOffSpend?: { typeIds: ReadonlySet<number>; categoryDefaults: ReadonlyMap<number, number | null> };
   obligations: ProjectionObligationInput[];
   subscriptions: Array<{
     id?: number;
@@ -94,6 +99,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
     movements,
     historyMovements,
     historyCoveredFrom,
+    oneOffSpend,
     obligations,
     subscriptions,
     recurringIncome,
@@ -148,6 +154,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
       earliestCoveredDate: coveredFrom,
       expenseAmountOf: (movement) => {
         if (!isExpense(movement)) return 0;
+        if (oneOffSpend && isOneOffSpend(movement, oneOffSpend.typeIds, oneOffSpend.categoryDefaults)) return 0;
         const accountId = movementDisplayAccountId(movement);
         if (accountId != null && cardIds.has(accountId)) return 0;
         return expenseAmt(movement, conversionCtx);
@@ -163,7 +170,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
       return { monthKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`, total };
     });
     return { typical: typicalMonthlySpend(history), monthsUsed: history.length, months };
-  }, [historySource, coveredFrom, conversionCtx, cardIds]);
+  }, [historySource, coveredFrom, conversionCtx, cardIds, oneOffSpend]);
 
   /** Una entrada por tarjeta: lo que ya se debe y lo que se le suele cargar al mes. */
   const creditCards = useMemo(() => {
@@ -175,6 +182,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
         earliestCoveredDate: coveredFrom,
         expenseAmountOf: (movement) => {
           if (!isExpense(movement)) return 0;
+          if (oneOffSpend && isOneOffSpend(movement, oneOffSpend.typeIds, oneOffSpend.categoryDefaults)) return 0;
           return movementDisplayAccountId(movement) === id ? expenseAmt(movement, conversionCtx) : 0;
         },
       });
@@ -189,7 +197,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
         typicalMonthlySpend: typicalMonthlySpend(perCard),
       };
     });
-  }, [cardAccounts, historySource, coveredFrom, conversionCtx, baseCurrency]);
+  }, [cardAccounts, historySource, coveredFrom, conversionCtx, baseCurrency, oneOffSpend]);
 
   const accountTypeById = useMemo(
     () => new Map(accounts.filter((a) => a.id != null).map((a) => [Number(a.id), a.type] as const)),

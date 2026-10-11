@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Switch, Text, View } from "react-native";
 
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
@@ -39,6 +39,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
 
   const [name, setName] = useState("");
   const [color, setColor] = useState<string>(COLOR_CHOICES[0]);
+  const [oneOff, setOneOff] = useState(false);
   const isEditing = Boolean(editSpendType);
   const submittingRef = useRef(false);
 
@@ -46,6 +47,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
     if (!visible) return;
     setName(editSpendType?.name ?? "");
     setColor(editSpendType?.color ?? COLOR_CHOICES[0]);
+    setOneOff(editSpendType?.excludedFromTypical ?? false);
   }, [visible, editSpendType]);
 
   async function handleSubmit() {
@@ -58,10 +60,10 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
     submittingRef.current = true;
     try {
       if (isEditing && editSpendType) {
-        await updateMutation.mutateAsync({ id: editSpendType.id, input: { name: trimmed, color } });
+        await updateMutation.mutateAsync({ id: editSpendType.id, input: { name: trimmed, color, excludedFromTypical: oneOff } });
         showToast("Tipo actualizado", "warning");
       } else {
-        await createMutation.mutateAsync({ name: trimmed, color });
+        await createMutation.mutateAsync({ name: trimmed, color, excludedFromTypical: oneOff });
         showToast("Tipo de gasto creado", "success", trimmed);
       }
       onClose();
@@ -119,6 +121,24 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
           ))}
         </View>
 
+        <View style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <Text style={styles.switchLabel} maxFontSizeMultiplier={1.4}>
+              Compras únicas
+            </Text>
+            <Text style={styles.hint} maxFontSizeMultiplier={1.4}>
+              Actívalo si lo de este tipo no se va a repetir (un reloj, un monitor). Sigue contando como gasto,
+              pero la proyección no lo toma como tu costumbre mensual.
+            </Text>
+          </View>
+          <Switch
+            value={oneOff}
+            onValueChange={setOneOff}
+            trackColor={{ false: SURFACE.inputBorder, true: COLORS.pro }}
+            accessibilityLabel="Compras únicas: no entran al gasto típico"
+          />
+        </View>
+
         <Text style={styles.hint}>
           El tipo dice si el gasto hacía falta. La categoría dice en qué se fue.
         </Text>
@@ -150,6 +170,9 @@ const styles = StyleSheet.create({
   colors: { flexDirection: "row", gap: SPACING.sm, flexWrap: "wrap" },
   swatch: { width: 36, height: 36, borderRadius: RADIUS.full, borderWidth: 2, borderColor: "transparent" },
   swatchActive: { borderColor: COLORS.ink },
+  switchRow: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
+  switchText: { flex: 1, gap: 2 },
+  switchLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
   hint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 18 },
   footer: { gap: SPACING.sm },
   note: {

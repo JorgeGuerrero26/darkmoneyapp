@@ -10,6 +10,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordAiUsage } from "../_shared/ai-usage.ts";
 import {
   buildCashflowCalendar,
+  isOneOffSpend,
   liquidBalance,
   monthlyDiscretionarySpend,
   movementActsAsExpense,
@@ -733,10 +734,20 @@ async function runProjectCashflow(
   historyStart.setDate(1);
   const { data: historyRows } = await client
     .from("movements")
-    .select("movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
+    .select("movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id")
     .eq("workspace_id", workspaceId)
     .gte("occurred_at", historyStart.toISOString())
     .limit(4000);
+
+  // Los tipos de gasto marcados "compras únicas" no miden la costumbre (igual que en el dashboard).
+  const [{ data: oneOffTypes }, { data: categoryRows }] = await Promise.all([
+    client.from("spend_types").select("id").eq("workspace_id", workspaceId).eq("excluded_from_typical", true),
+    client.from("categories").select("id, default_spend_type_id").eq("workspace_id", workspaceId).not("default_spend_type_id", "is", null),
+  ]);
+  const oneOffTypeIds = new Set((oneOffTypes ?? []).map((row) => Number(row.id)));
+  const categoryDefaults = new Map<number, number | null>(
+    (categoryRows ?? []).map((row) => [Number(row.id), row.default_spend_type_id == null ? null : Number(row.default_spend_type_id)] as const),
+  );
 
   const currencyByAccount = new Map<number, string>();
   const typeByAccount = new Map<number, string>();
@@ -753,6 +764,8 @@ async function runProjectCashflow(
     destinationAmount: row.destination_amount == null ? null : Number(row.destination_amount),
     sourceAccountId: row.source_account_id == null ? null : Number(row.source_account_id),
     destinationAccountId: row.destination_account_id == null ? null : Number(row.destination_account_id),
+    categoryId: row.category_id == null ? null : Number(row.category_id),
+    spendTypeId: row.spend_type_id == null ? null : Number(row.spend_type_id),
   }));
 
   // Las tarjetas se sacan del gasto tipico y viajan por su propia via: lo que se carga a una
@@ -774,6 +787,7 @@ async function runProjectCashflow(
     months: PROJECTION_HISTORY_MONTHS,
     expenseAmountOf: (movement) => {
       if (!movementActsAsExpense(movement)) return 0;
+      if (isOneOffSpend(movement, oneOffTypeIds, categoryDefaults)) return 0;
       const accountId = movementDisplayAccountId(movement);
       if (accountId != null && cardIds.has(accountId)) return 0;
       return expenseIn(movement);
@@ -791,7 +805,11 @@ async function runProjectCashflow(
       movements: historyMovements,
       months: PROJECTION_HISTORY_MONTHS,
       expenseAmountOf: (movement) =>
-        movementActsAsExpense(movement) && movementDisplayAccountId(movement) === id ? expenseIn(movement) : 0,
+        movementActsAsExpense(movement) &&
+        !isOneOffSpend(movement, oneOffTypeIds, categoryDefaults) &&
+        movementDisplayAccountId(movement) === id
+          ? expenseIn(movement)
+          : 0,
     });
     // El saldo de una tarjeta es negativo cuando se debe; un saldo a favor no es deuda.
     const balance = balanceByAccount.get(id) ?? 0;
