@@ -13,3 +13,12 @@ export function integerField(value: string, min: number, max: number, optional =
   return { value, missing: !optional && !value.trim() ? "Ingresa un número" : null,
     invalid: value.trim() && (!Number.isInteger(number) || number < min || number > max) ? `Ingresa un número entre ${min} y ${max}` : null };
 }
+
+export function emailField(value: string, optional = false): FormFieldRule {
+  const rule = requiredField(value, "Escribe tu correo", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? null : "Escribe un correo válido");
+  return optional ? { ...rule, missing: null } : rule;
+}
+
+export function passwordField(value: string, minimum = 0): FormFieldRule {
+  return requiredField(value, "Escribe tu contraseña", value.length < minimum ? `Usa al menos ${minimum} caracteres` : null);
+}

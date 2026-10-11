@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewProps } from "react-native";
 import type { RefObject } from "react";
 import { AlertCircle, Ellipsis, RotateCw } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { humanizeError } from "../../lib/errors";
+import { formErrorFields } from "../../lib/form-errors";
 
 export type FieldFeedback = { kind: "missing" | "invalid"; message: string } | null;
 export type FormFieldRule = {
@@ -13,6 +14,7 @@ export type FormFieldRule = {
   open?: () => void;
   reveal?: () => void;
   autoContinue?: boolean;
+  serverKeys?: readonly string[];
 };
 type ContextValue = {
   feedback: (id?: string) => FieldFeedback;
@@ -27,6 +29,17 @@ export function FormFieldScrollScope({ scroll, offset, children }: { scroll: Ref
   return <ScrollContext.Provider value={{ scroll, offset }}>{children}</ScrollContext.Provider>;
 }
 
+export function FormScrollView({ children, onScroll, ...props }: ScrollViewProps) {
+  const scroll = useRef<ScrollView>(null);
+  const offset = useRef(0);
+  return <ScrollView keyboardShouldPersistTaps="handled" {...props} ref={scroll} scrollEventThrottle={16}
+    onScroll={(event) => { offset.current = event.nativeEvent.contentOffset.y; onScroll?.(event); }}>
+    <FormFieldScrollScope scroll={scroll} offset={offset}>{children}</FormFieldScrollScope>
+  </ScrollView>;
+}
+
+export function useFormSubmit() { return useContext(Context)?.submit; }
+
 /** Rules belong to the form; this controller only coordinates feedback and focus. */
 export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = false, resetKey, children }: {
   fields: Record<string, FormFieldRule>; onSubmit: () => void | Promise<void>;
@@ -35,6 +48,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [serverErrors, setServerErrors] = useState<Record<string, { value: unknown; message: string }>>({});
   const savingRef = useRef(false);
   const generation = useRef(0);
   const waiting = useRef<{ id: string; value: unknown } | null>(null);
@@ -52,6 +66,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
     const state = latest.current;
     if (savingRef.current || state.busy || !state.visible) return;
     setFailure(null);
+    setServerErrors({});
     setAttempted(true);
     const entries = Object.entries(state.fields);
     const missing = entries.find(([, rule]) => rule.missing);
@@ -79,12 +94,23 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
       const operation = state.onSubmit();
       if (operation && typeof operation.then === "function") {
         operation.catch((error: unknown) => {
-          if (latest.current.visible && generation.current === submissionGeneration) setFailure(humanizeError(error));
+          if (latest.current.visible && generation.current === submissionGeneration) reportFailure(error, state.fields);
         }).finally(() => { savingRef.current = false; setSaving(false); });
       } else { savingRef.current = false; setSaving(false); }
     } catch (error) {
-      setFailure(humanizeError(error)); savingRef.current = false; setSaving(false);
+      reportFailure(error, state.fields); savingRef.current = false; setSaving(false);
     }
+  }
+  function reportFailure(error: unknown, submittedFields: Record<string, FormFieldRule>) {
+    const mapped = formErrorFields(error, submittedFields);
+    if (!Object.keys(mapped).length) { setFailure(humanizeError(error)); return; }
+    const entries = Object.entries(mapped).filter(([id]) => Object.is(submittedFields[id].value, latest.current.fields[id]?.value));
+    if (!entries.length) return;
+    setServerErrors(Object.fromEntries(entries.map(([id, message]) => [id, { value: latest.current.fields[id].value, message }])));
+    const [id] = entries[0];
+    latest.current.fields[id].reveal?.();
+    if (targets.current.has(id)) targets.current.get(id)?.reveal();
+    else focusPending.current = { id, mode: "reveal" };
   }
   useEffect(() => {
     generation.current += 1;
@@ -92,6 +118,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
     focusPending.current = null;
     setAttempted(false);
     setFailure(null);
+    setServerErrors({});
   }, [visible, resetKey]);
   const submitRef = useRef(submit);
   submitRef.current = submit;
@@ -112,6 +139,8 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
       const rule = id ? fields[id] : undefined;
       if (rule?.missing) return { kind: "missing", message: rule.missing };
       if (attempted && rule?.invalid) return { kind: "invalid", message: rule.invalid };
+      const server = id ? serverErrors[id] : undefined;
+      if (server && Object.is(server.value, rule?.value)) return { kind: "invalid", message: server.message };
       return null;
     },
     register: (id, open, reveal, autoContinue) => {
@@ -156,31 +185,32 @@ export function FieldFeedbackMessage({ feedback }: { feedback: FieldFeedback }) 
     style={[styles.message, { color: feedback.kind === "missing" ? COLORS.warning : COLORS.dangerStrong }]}>{feedback.message}</Text> : null;
 }
 
-export function FormSaveFailure({ error }: { error?: string | null }) {
+export function FormSaveFailure({ error, title = "No se pudo guardar" }: { error?: string | null; title?: string }) {
   if (!error) return null;
   return <View style={styles.failure} accessibilityRole="alert">
     <AlertCircle size={18} color={COLORS.dangerStrong} />
-    <View style={styles.copy}><Text style={styles.failureTitle}>No se pudo guardar</Text>
+    <View style={styles.copy}><Text style={styles.failureTitle}>{title}</Text>
       <Text style={styles.failureBody}>{error.replace(/\.?\s*Tus cambios siguen aqu[ií]\.?$/i, "").replace(/[.\s]+$/, "")}. Tus cambios siguen aquí.</Text>
     </View>
   </View>;
 }
 
-export function FormSubmitBar({ onSubmit, label = "Guardar", loading = false, disabled = false, error, onMore, children }: {
+export function FormSubmitBar({ onSubmit, label = "Guardar", loading = false, loadingLabel = "Guardando…", failureTitle, disabled = false, error, onMore, children }: {
   onSubmit: () => void; label?: string; loading?: boolean; disabled?: boolean;
   error?: string | null; onMore?: () => void; children?: ReactNode;
+  loadingLabel?: string; failureTitle?: string;
 }) {
   const context = useContext(Context);
   const pending = loading || Boolean(context?.busy);
   const saveError = error || context?.failure;
   return <View style={styles.bar}>
-    <FormSaveFailure error={saveError} />
+    <FormSaveFailure error={saveError} title={failureTitle} />
     <View style={styles.actions}>{children}
       {onMore ? <Pressable onPress={onMore} disabled={pending || disabled} accessibilityRole="button" accessibilityLabel="Más opciones" style={styles.more}><Ellipsis color={COLORS.ink} size={20} /></Pressable> : null}
       <Pressable onPress={context?.submit ?? onSubmit} disabled={pending || disabled} accessibilityRole="button" accessibilityLabel={saveError ? "Reintentar" : label}
         accessibilityState={{ disabled: pending || disabled, busy: pending }} style={[styles.save, (pending || disabled) && styles.disabled]}>
         {pending ? <ActivityIndicator size="small" color={COLORS.actionText} /> : saveError ? <RotateCw size={18} color={COLORS.actionText} /> : null}
-        <Text style={styles.saveLabel}>{pending ? "Guardando…" : saveError ? "Reintentar" : label}</Text>
+        <Text style={styles.saveLabel}>{pending ? loadingLabel : saveError ? "Reintentar" : label}</Text>
       </Pressable>
     </View>
   </View>;

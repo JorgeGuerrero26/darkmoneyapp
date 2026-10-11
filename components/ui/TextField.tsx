@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from "react-native";
 
-import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
+import { FieldFeedbackMessage, useFormField, useFormSubmit } from "./FormFeedback";
 import { COLORS, FONT_FAMILY, FONT_SIZE } from "../../constants/theme";
 
 /*
@@ -49,6 +49,7 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
   const fieldRef = useRef<View>(null);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
   const feedback = useFormField(fieldId, () => inputRef.current?.focus(), fieldRef);
+  const submit = useFormSubmit();
   const flat = StyleSheet.flatten(style) ?? {};
   const { flex, ...inputStyle } = flat;
 
@@ -67,6 +68,7 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
         style={[inputStyle, feedback?.kind === "invalid" && { borderColor: COLORS.dangerStrong, backgroundColor: COLORS.dangerStrong + "12" }]}
         accessibilityLabel={accessibilityLabel ?? placeholder}
         {...rest}
+        onSubmitEditing={fieldId && submit && rest.onSubmitEditing ? () => submit() : rest.onSubmitEditing}
       />
       {showPlaceholder ? (
         <View

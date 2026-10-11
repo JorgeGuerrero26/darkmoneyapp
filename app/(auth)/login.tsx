@@ -1,18 +1,8 @@
+import { FormFeedbackProvider, FormScrollView, FormSubmitBar } from "../../components/ui/FormFeedback";
+import { emailField, passwordField } from "../../lib/form-field-rules";
+import { authFormError } from "../../lib/form-errors";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  BackHandler,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { Animated, BackHandler, Image, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -26,13 +16,7 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import {
-  REMEMBER_EMAIL_KEY,
-  REMEMBER_FLAG_KEY,
-  REMEMBER_PASS_KEY,
-  SECURE_EMAIL_KEY,
-  SECURE_PASS_KEY,
-} from "../../lib/device-auth-state";
+import { REMEMBER_EMAIL_KEY, REMEMBER_FLAG_KEY, REMEMBER_PASS_KEY, SECURE_EMAIL_KEY, SECURE_PASS_KEY } from "../../lib/device-auth-state";
 
 type FormErrors = { email?: string; password?: string; general?: string };
 const EASTER_EGG_TAP_COUNT = 7;
@@ -151,17 +135,8 @@ export default function LoginScreen() {
     void triggerBiometricLogin();
   }, [bioAvailable, bioCredsStored, triggerBiometricLogin]);
 
-  function validate(): boolean {
-    const newErrors: FormErrors = {};
-    if (!email.trim()) newErrors.email = "El correo es requerido";
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Correo inválido";
-    if (!password) newErrors.password = "La contraseña es requerida";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }
 
   async function handleLogin() {
-    if (!validate()) return;
     setIsLoading(true);
     setErrors({});
     try {
@@ -184,7 +159,7 @@ export default function LoginScreen() {
         setBioPromptVisible(true);
       }
     } catch (err: unknown) {
-      setErrors({ general: humanizeError(err) });
+      throw authFormError(err);
     } finally {
       setIsLoading(false);
     }
@@ -325,13 +300,16 @@ export default function LoginScreen() {
     outputRange: ["-7deg", "7deg"],
   });
 
+  const validationFields = { email: emailField(email), password: passwordField(password) };
+
   return (
+    <FormFeedbackProvider onSubmit={handleLogin} busy={isLoading || isBioLoading} fields={validationFields}>
     <>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <ScrollView
+        <FormScrollView
           contentContainerStyle={[
             styles.container,
             compact && styles.containerCompact,
@@ -383,11 +361,6 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.formCard}>
-            {errors.general ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorBannerText}>{errors.general}</Text>
-              </View>
-            ) : null}
 
             {/* Biometric quick-access button */}
             {showBioButton ? (
@@ -419,12 +392,11 @@ export default function LoginScreen() {
               </View>
             ) : null}
 
-            <Input
+            <Input fieldId="email"
               label="Correo electrónico"
               placeholder="tu@correo.com"
               value={email}
               onChangeText={setEmail}
-              error={errors.email}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -433,12 +405,11 @@ export default function LoginScreen() {
               returnKeyType="next"
             />
 
-            <Input
+            <Input fieldId="password"
               label="Contraseña"
               placeholder="Tu contraseña"
               value={password}
               onChangeText={setPassword}
-              error={errors.password}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoComplete="off"
@@ -474,13 +445,7 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
 
-            <Button
-              label="Iniciar sesión"
-              onPress={handleLogin}
-              loading={isLoading}
-              loadingLabel="Iniciando sesión"
-              style={styles.submitButton}
-            />
+            <FormSubmitBar label="Iniciar sesión" onSubmit={handleLogin} loading={isLoading || isBioLoading} error={errors.general} />
 
             <View style={styles.formFooterLinks}>
               <Link href="/(auth)/recovery" asChild>
@@ -499,7 +464,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </Link>
           </View>
-        </ScrollView>
+        </FormScrollView>
       </KeyboardAvoidingView>
 
       {/* Dialog: offer to enable biometric after first password login */}
@@ -541,6 +506,7 @@ export default function LoginScreen() {
         </View>
       </Modal>
     </>
+    </FormFeedbackProvider>
   );
 }
 

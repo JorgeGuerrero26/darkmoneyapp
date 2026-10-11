@@ -1,29 +1,15 @@
+import { FormFeedbackProvider, FormScrollView, FormSubmitBar } from "../../components/ui/FormFeedback";
+import { requiredField, emailField, passwordField } from "../../lib/form-field-rules";
+import { authFormError } from "../../lib/form-errors";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
-import { Button } from "../../components/ui/Button";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
-type FormErrors = {
-  fullName?: string;
-  email?: string;
-  password?: string;
-  confirmPassword?: string;
-  general?: string;
-};
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
@@ -33,26 +19,12 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
 
-  function validate(): boolean {
-    const newErrors: FormErrors = {};
-    if (!fullName.trim()) newErrors.fullName = "El nombre es requerido";
-    if (!email.trim()) newErrors.email = "El correo es requerido";
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Correo inválido";
-    if (!password) newErrors.password = "La contraseña es requerida";
-    else if (password.length < 8) newErrors.password = "Mínimo 8 caracteres";
-    if (password !== confirmPassword) newErrors.confirmPassword = "Las contraseñas no coinciden";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }
 
   async function handleRegister() {
-    if (!validate()) return;
     setIsLoading(true);
-    setErrors({});
     try {
       const result = await signUp({
         email: email.trim(),
@@ -63,7 +35,7 @@ export default function RegisterScreen() {
         setConfirmationSent(true);
       }
     } catch (err: unknown) {
-      setErrors({ general: humanizeError(err) });
+      throw authFormError(err);
     } finally {
       setIsLoading(false);
     }
@@ -94,12 +66,15 @@ export default function RegisterScreen() {
     );
   }
 
+  const validationFields = { fullName: requiredField(fullName, "Escribe tu nombre"), email: emailField(email), password: passwordField(password, 8), confirmPassword: requiredField(confirmPassword, "Confirma tu contraseña", password !== confirmPassword ? "Las contraseñas no coinciden" : null) };
+
   return (
+    <FormFeedbackProvider onSubmit={handleRegister} busy={isLoading} fields={validationFields}>
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <FormScrollView
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl },
@@ -112,57 +87,43 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.form}>
-          {errors.general ? (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorBannerText}>{errors.general}</Text>
-            </View>
-          ) : null}
 
-          <Input
+          <Input fieldId="fullName"
             label="Nombre completo"
             placeholder="Tu nombre"
             value={fullName}
             onChangeText={setFullName}
-            error={errors.fullName}
             autoCapitalize="words"
             returnKeyType="next"
           />
-          <Input
+          <Input fieldId="email"
             label="Correo electrónico"
             placeholder="tu@correo.com"
             value={email}
             onChangeText={setEmail}
-            error={errors.email}
             keyboardType="email-address"
             autoCapitalize="none"
             returnKeyType="next"
           />
-          <Input
+          <Input fieldId="password"
             label="Contraseña"
             placeholder="Mínimo 8 caracteres"
             value={password}
             onChangeText={setPassword}
-            error={errors.password}
             secureTextEntry
             returnKeyType="next"
           />
-          <Input
+          <Input fieldId="confirmPassword"
             label="Confirmar contraseña"
             placeholder="Repite la contraseña"
             value={confirmPassword}
             onChangeText={setConfirmPassword}
-            error={errors.confirmPassword}
             secureTextEntry
             returnKeyType="done"
             onSubmitEditing={handleRegister}
           />
 
-          <Button
-            label="Crear cuenta"
-            onPress={handleRegister}
-            loading={isLoading}
-            style={styles.submitButton}
-          />
+          <FormSubmitBar label="Crear cuenta" onSubmit={handleRegister} loading={isLoading} />
         </View>
 
         <View style={styles.footer}>
@@ -173,8 +134,9 @@ export default function RegisterScreen() {
             </TouchableOpacity>
           </Link>
         </View>
-      </ScrollView>
+      </FormScrollView>
     </KeyboardAvoidingView>
+    </FormFeedbackProvider>
   );
 }
 

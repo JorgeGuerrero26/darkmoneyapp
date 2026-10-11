@@ -1,21 +1,14 @@
+import { FormFeedbackProvider, FormScrollView, FormSubmitBar } from "../../components/ui/FormFeedback";
+import { emailField } from "../../lib/form-field-rules";
+import { authFormError } from "../../lib/form-errors";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react-native";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
-import { Button } from "../../components/ui/Button";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 export default function RecoveryScreen() {
@@ -23,23 +16,17 @@ export default function RecoveryScreen() {
   const { resetPassword } = useAuth();
 
   const [email, setEmail] = useState("");
-  const [emailError, setEmailError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const [generalError, setGeneralError] = useState<string | undefined>();
 
   async function handleReset() {
-    setEmailError(undefined);
-    setGeneralError(undefined);
-    if (!email.trim()) { setEmailError("El correo es requerido"); return; }
-    if (!/\S+@\S+\.\S+/.test(email)) { setEmailError("Correo inválido"); return; }
 
     setIsLoading(true);
     try {
       await resetPassword(email.trim());
       setSent(true);
     } catch (err: unknown) {
-      setGeneralError(humanizeError(err));
+      throw authFormError(err);
     } finally {
       setIsLoading(false);
     }
@@ -68,12 +55,15 @@ export default function RecoveryScreen() {
     );
   }
 
+  const validationFields = { email: emailField(email) };
+
   return (
+    <FormFeedbackProvider onSubmit={handleReset} busy={isLoading} fields={validationFields}>
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <FormScrollView
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl },
@@ -87,25 +77,19 @@ export default function RecoveryScreen() {
           </Text>
         </View>
 
-        {generalError ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>{generalError}</Text>
-          </View>
-        ) : null}
 
-        <Input
+        <Input fieldId="email"
           label="Correo electrónico"
           placeholder="tu@correo.com"
           value={email}
           onChangeText={setEmail}
-          error={emailError}
           keyboardType="email-address"
           autoCapitalize="none"
           returnKeyType="done"
           onSubmitEditing={handleReset}
         />
 
-        <Button label="Enviar enlace" onPress={handleReset} loading={isLoading} />
+        <FormSubmitBar loadingLabel="Enviando?" failureTitle="No se pudo enviar el enlace" label="Enviar enlace" onSubmit={handleReset} loading={isLoading} />
 
         <Link href="/(auth)/login" asChild>
           <TouchableOpacity style={styles.backLink}>
@@ -113,8 +97,9 @@ export default function RecoveryScreen() {
             <Text style={styles.backLinkText}>Volver al inicio de sesión</Text>
           </TouchableOpacity>
         </Link>
-      </ScrollView>
+      </FormScrollView>
     </KeyboardAvoidingView>
+    </FormFeedbackProvider>
   );
 }
 

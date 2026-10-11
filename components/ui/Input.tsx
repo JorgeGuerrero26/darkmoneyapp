@@ -2,7 +2,7 @@ import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } fro
 import { StyleSheet, Text, TextInput, View, type TextInputProps, type StyleProp, type ViewStyle } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "./TextField";
-import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
+import { FieldFeedbackMessage, useFormField, useFormSubmit } from "./FormFeedback";
 
 type Props = TextInputProps & {
   fieldId?: string;
@@ -35,6 +35,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
   const fieldRef = useRef<View>(null);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
   const feedback = useFormField(fieldId, () => inputRef.current?.focus(), fieldRef);
+  const submit = useFormSubmit();
 
   // El placeholder lo pinta `TextField` como `Text`: iOS aprieta el kerning del nativo hasta
   // que la frase entre, y deja de parecerse a la tipografía del resto de la app.
@@ -54,6 +55,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           accessibilityLabel={resolvedAccessibilityLabel}
           accessibilityHint={resolvedAccessibilityHint}
           {...rest}
+          onSubmitEditing={fieldId && submit && rest.onSubmitEditing ? () => submit() : rest.onSubmitEditing}
         />
         {rightElement ? <View style={styles.rightSlot}>{rightElement}</View> : null}
       </View>

@@ -1,19 +1,13 @@
+import { FormFeedbackProvider, FormScrollView, FormSubmitBar } from "../components/ui/FormFeedback";
+import { requiredField } from "../lib/form-field-rules";
+import { authFormError } from "../lib/form-errors";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../lib/auth-context";
-import { humanizeError } from "../lib/errors";
 import { Input } from "../components/ui/Input";
-import { Button } from "../components/ui/Button";
 import { CurrencySelector } from "../components/ui/CurrencySelector";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
@@ -25,14 +19,9 @@ export default function OnboardingScreen() {
 
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
   const [baseCurrencyCode, setBaseCurrencyCode] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
-  const [nameError, setNameError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
-  const [generalError, setGeneralError] = useState<string | undefined>();
 
   async function handleSave() {
-    setNameError(undefined);
-    setGeneralError(undefined);
-    if (!fullName.trim()) { setNameError("El nombre es requerido"); return; }
     if (!baseCurrencyCode.trim()) return;
 
     setIsLoading(true);
@@ -44,18 +33,21 @@ export default function OnboardingScreen() {
       });
       router.replace("/(app)/dashboard");
     } catch (err: unknown) {
-      setGeneralError(humanizeError(err));
+      throw authFormError(err);
     } finally {
       setIsLoading(false);
     }
   }
 
+  const validationFields = { fullName: requiredField(fullName, "Escribe tu nombre") };
+
   return (
+    <FormFeedbackProvider onSubmit={handleSave} busy={isLoading} fields={validationFields}>
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <FormScrollView
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + SPACING.xxxl, paddingBottom: insets.bottom + SPACING.xl },
@@ -70,19 +62,13 @@ export default function OnboardingScreen() {
           </Text>
         </View>
 
-        {generalError ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>{generalError}</Text>
-          </View>
-        ) : null}
 
         <View style={styles.form}>
-          <Input
+          <Input fieldId="fullName"
             label="Tu nombre"
             placeholder="Nombre completo"
             value={fullName}
             onChangeText={setFullName}
-            error={nameError}
             autoCapitalize="words"
           />
 
@@ -94,9 +80,10 @@ export default function OnboardingScreen() {
           />
         </View>
 
-        <Button label="Comenzar" onPress={handleSave} loading={isLoading} size="lg" />
-      </ScrollView>
+        <FormSubmitBar label="Comenzar" onSubmit={handleSave} loading={isLoading} />
+      </FormScrollView>
     </KeyboardAvoidingView>
+    </FormFeedbackProvider>
   );
 }
 

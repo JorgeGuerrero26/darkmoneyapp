@@ -1,21 +1,13 @@
+import { FormFeedbackProvider, FormScrollView, FormSubmitBar } from "../../components/ui/FormFeedback";
+import { requiredField } from "../../lib/form-field-rules";
+
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Pencil } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { Button } from "../../components/ui/Button";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Input } from "../../components/ui/Input";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -63,7 +55,6 @@ function ProfileScreen() {
   }
 
   async function handleSave() {
-    if (!fullName.trim()) return;
     setIsSaving(true);
     try {
       await saveProfile({
@@ -74,7 +65,7 @@ function ProfileScreen() {
       await syncDefaultExchangeCurrency(baseCurrencyCode);
       showToast("Perfil guardado", "success");
     } catch (err: unknown) {
-      showErrorToast("No se pudo guardar el perfil", err);
+      throw err;
     } finally {
       setIsSaving(false);
     }
@@ -116,11 +107,14 @@ function ProfileScreen() {
     }
   }
 
+  const validationFields = { fullName: requiredField(fullName, "Escribe tu nombre") };
+
   return (
+    <FormFeedbackProvider onSubmit={handleSave} busy={isSaving} fields={validationFields}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Perfil" onBack={handleBack} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView
+        <FormScrollView
           contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACING.xxxl }]}
           keyboardShouldPersistTaps="handled"
         >
@@ -151,7 +145,7 @@ function ProfileScreen() {
             </TouchableOpacity>
           ) : null}
 
-          <Input label="Nombre completo" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
+          <Input fieldId="fullName" label="Nombre completo" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
 
           {/* El correo no se edita: como campo deshabilitado se leía en gris de placeholder y no
               se distinguía de uno vacío. Como texto se ve que está puesto. */}
@@ -160,10 +154,11 @@ function ProfileScreen() {
             <Text style={styles.readonlyValue}>{profile?.email ?? "—"}</Text>
           </View>
 
-          <Button label="Guardar perfil" onPress={handleSave} loading={isSaving} style={styles.saveButton} />
-        </ScrollView>
+          <FormSubmitBar label="Guardar perfil" onSubmit={handleSave} loading={isSaving} />
+        </FormScrollView>
       </KeyboardAvoidingView>
     </View>
+    </FormFeedbackProvider>
   );
 }
 

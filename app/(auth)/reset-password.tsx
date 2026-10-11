@@ -1,22 +1,16 @@
+import { FormFeedbackProvider, FormScrollView, FormSubmitBar } from "../../components/ui/FormFeedback";
+import { requiredField, passwordField } from "../../lib/form-field-rules";
+import { authFormError } from "../../lib/form-errors";
 import { CheckCircle2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
-import { Button } from "../../components/ui/Button";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 
 function extractRecoveryTokens(url: string | null) {
@@ -53,9 +47,6 @@ export default function ResetPasswordScreen() {
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordError, setPasswordError] = useState<string | undefined>();
-  const [confirmError, setConfirmError] = useState<string | undefined>();
-  const [generalError, setGeneralError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -81,13 +72,7 @@ export default function ResetPasswordScreen() {
   }, []);
 
   async function handleSubmit() {
-    setPasswordError(undefined);
-    setConfirmError(undefined);
-    setGeneralError(undefined);
 
-    if (!password) { setPasswordError("La contraseña es requerida"); return; }
-    if (password.length < 8) { setPasswordError("Mínimo 8 caracteres"); return; }
-    if (password !== confirmPassword) { setConfirmError("Las contraseñas no coinciden"); return; }
 
     setIsLoading(true);
     try {
@@ -95,7 +80,7 @@ export default function ResetPasswordScreen() {
       setDone(true);
       setTimeout(() => router.replace("/(app)/dashboard"), 2000);
     } catch (err: unknown) {
-      setGeneralError(humanizeError(err));
+      throw authFormError(err);
     } finally {
       setIsLoading(false);
     }
@@ -111,12 +96,15 @@ export default function ResetPasswordScreen() {
     );
   }
 
+  const validationFields = { password: passwordField(password, 8), confirmPassword: requiredField(confirmPassword, "Confirma tu contraseña", password !== confirmPassword ? "Las contraseñas no coinciden" : null) };
+
   return (
+    <FormFeedbackProvider onSubmit={handleSubmit} busy={isLoading} fields={validationFields}>
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <FormScrollView
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + SPACING.xl, paddingBottom: insets.bottom + SPACING.xl },
@@ -128,35 +116,29 @@ export default function ResetPasswordScreen() {
           <Text style={styles.subtitle}>Ingresa y confirma tu nueva contraseña.</Text>
         </View>
 
-        {generalError ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>{generalError}</Text>
-          </View>
-        ) : null}
 
-        <Input
+        <Input fieldId="password"
           label="Nueva contraseña"
           placeholder="Mínimo 8 caracteres"
           value={password}
           onChangeText={setPassword}
-          error={passwordError}
           secureTextEntry
           returnKeyType="next"
         />
-        <Input
+        <Input fieldId="confirmPassword"
           label="Confirmar contraseña"
           placeholder="Repite la contraseña"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
-          error={confirmError}
           secureTextEntry
           returnKeyType="done"
           onSubmitEditing={handleSubmit}
         />
 
-        <Button label="Actualizar contraseña" onPress={handleSubmit} loading={isLoading} />
-      </ScrollView>
+        <FormSubmitBar label="Actualizar contraseña" onSubmit={handleSubmit} loading={isLoading} />
+      </FormScrollView>
     </KeyboardAvoidingView>
+    </FormFeedbackProvider>
   );
 }
 
