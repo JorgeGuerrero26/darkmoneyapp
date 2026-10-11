@@ -185,8 +185,8 @@ function runPendingStatusPreservedForNonTransfer() {
   assert(result.status === "pending", "expense pending debe preservarse");
 }
 
-function runUpdateInputDoesNotIncludeMetadataNorMovementType() {
-  // buildMovementUpdateInput omite metadata y movementType porque son inmutables en update.
+function runUpdateInputIncludesTypeAndOmitsMetadata() {
+  // Editing keeps the requested type and leaves persisted metadata untouched.
   const update = buildMovementUpdateInput({
     movementType: "expense",
     status: "posted",
@@ -198,7 +198,7 @@ function runUpdateInputDoesNotIncludeMetadataNorMovementType() {
     destinationAmount: 0,
     categoryId: 11,
   });
-  assert(!("movementType" in update), "update no debe incluir movementType");
+  assert(update.movementType === "expense", "update conserva el tipo elegido");
   assert(!("metadata" in update), "update no debe incluir metadata");
   assert(update.status === "posted", "update preserva status");
   assert(update.categoryId === 11, "update preserva categoryId");
@@ -216,7 +216,7 @@ function main() {
     ["metadata default vacío", runMetadataDefaultsToEmptyObject],
     ["metadata passthrough", runMetadataPassthrough],
     ["pending status preservado en expense", runPendingStatusPreservedForNonTransfer],
-    ["update input omite metadata/movementType", runUpdateInputDoesNotIncludeMetadataNorMovementType],
+    ["update input conserva tipo y omite metadata", runUpdateInputIncludesTypeAndOmitsMetadata],
   ];
 
   let passed = 0;
