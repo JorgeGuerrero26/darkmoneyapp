@@ -74,6 +74,12 @@ export type ProjectionRecurringIncome = {
   nextExpectedDate: string;
   endDate?: string | null;
   status: string;
+  /**
+   * Cambios de monto ya acordados: desde `effectiveDate` llegan `amount`, hasta el cambio
+   * siguiente. Sin esto un aumento a futuro no aparece en ningún mes. Mismo monto neto que
+   * `amount`: lo que ENTRA a la cuenta.
+   */
+  scheduledChanges?: readonly { effectiveDate: string; amount: number }[] | null;
 };
 
 export type ProjectionSubscription = {
@@ -653,6 +659,22 @@ type MonthBucket = {
   unconvertedCount: number;
 };
 
+/**
+ * Cuánto llega en una fecha: el último cambio programado que ya empezó, o el monto de hoy.
+ * Las fechas son `yyyy-MM-dd`, así que comparar texto es comparar fechas.
+ */
+function incomeAmountOn(income: ProjectionRecurringIncome, isoDate: string): number {
+  let amount = income.amount;
+  let appliedFrom = "";
+  for (const change of income.scheduledChanges ?? []) {
+    if (change.effectiveDate <= isoDate && change.effectiveDate >= appliedFrom && Number.isFinite(change.amount)) {
+      amount = change.amount;
+      appliedFrom = change.effectiveDate;
+    }
+  }
+  return amount;
+}
+
 export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult {
   const fromDate = parseYmd(input.fromDate);
   const monthCount = Math.max(1, Math.floor(input.months));
@@ -682,8 +704,6 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
 
   for (const income of input.recurringIncome) {
     if (income.status !== "active") continue;
-    const converted = input.convert(income.amount, income.currencyCode);
-    const amount = converted ?? 0;
     for (const date of occurrencesWithin(
       income.nextExpectedDate,
       income.frequency,
@@ -692,6 +712,8 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
       fromDate,
       horizonDate,
     )) {
+      const converted = input.convert(incomeAmountOn(income, toIso(date)), income.currencyCode);
+      const amount = converted ?? 0;
       push(date, { kind: "recurring_income", label: income.name, amount, source: "scheduled", refId: income.id }, "inflows", converted);
     }
   }

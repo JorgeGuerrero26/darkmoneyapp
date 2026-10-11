@@ -530,6 +530,8 @@ export type RecurringIncomeSummary = {
   grossAmount?: number | null;
   /** Descuentos copiados de la boleta: `[{name, amount}]`. La app no calcula retenciones. */
   deductions?: { name: string; amount: number }[];
+  /** Cambios de monto acordados: desde `effectiveDate` llegan `amount` (neto). */
+  scheduledChanges?: { effectiveDate: string; amount: number }[];
   frequency: RecurringIncomeFrequency;
   frequencyLabel: string;
   intervalCount: number;

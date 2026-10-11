@@ -60,6 +60,7 @@ export type CashflowProjectionInputs = {
     nextExpectedDate: string;
     endDate?: string | null;
     status: string;
+    scheduledChanges?: { effectiveDate: string; amount: number }[];
   }>;
   displayCurrency: string;
   baseCurrency: string;

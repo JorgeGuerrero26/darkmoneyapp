@@ -27,6 +27,8 @@ import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { RecurringIncomeOptionalsSheet } from "../../features/recurring-income/components/RecurringIncomeOptionalsSheet";
 import { IncomeBreakdownSection } from "../../features/recurring-income/components/IncomeBreakdownSection";
+import { ScheduledChangesSection } from "../../features/recurring-income/components/ScheduledChangesSection";
+import { collectChanges, toChangeDrafts, type ScheduledChangeDraft } from "../../features/recurring-income/lib/scheduledChanges";
 import { collectDeductions, parseMoney as parseBreakdownMoney, toDrafts, type DeductionDraft } from "../../features/recurring-income/lib/incomeBreakdown";
 import { formatCurrency } from "../../lib/format-currency";
 import { describeRecurringCadence } from "../../features/recurring-income/lib/recurringIncomeSchedule";
@@ -123,6 +125,8 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [grossAmount, setGrossAmount] = useState("");
   const [deductions, setDeductions] = useState<DeductionDraft[]>([]);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [scheduledChanges, setScheduledChanges] = useState<ScheduledChangeDraft[]>([]);
   const [showDiscard, setShowDiscard] = useState(false);
   const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
@@ -157,6 +161,9 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setDeductions(storedDeductions);
       // Si ya hay desglose guardado se abre solo: el usuario entro a ver justo eso.
       setBreakdownOpen(storedGross != null || storedDeductions.length > 0);
+      const storedChanges = toChangeDrafts(editRecurringIncome.scheduledChanges);
+      setScheduledChanges(storedChanges);
+      setChangesOpen(storedChanges.length > 0);
     } else {
       setName("");
       setPayerPartyId(null);
@@ -181,6 +188,8 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setGrossAmount("");
       setDeductions([]);
       setBreakdownOpen(false);
+      setScheduledChanges([]);
+      setChangesOpen(false);
     }
     setNameError("");
     setAmountError("");
@@ -301,7 +310,9 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
         accountId !== (ri.accountId ?? null) ||
         categoryId !== (ri.categoryId ?? null) ||
         remindDaysBefore !== ri.remindDaysBefore ||
-        (notes.trim() || "") !== (ri.notes?.trim() ?? "")
+        (notes.trim() || "") !== (ri.notes?.trim() ?? "") ||
+        JSON.stringify(collectChanges(scheduledChanges)) !==
+          JSON.stringify(collectChanges(toChangeDrafts(ri.scheduledChanges)))
       )
       : Boolean(name.trim() || amount.trim() || notes.trim());
     if (isDirty) setShowDiscard(true);
@@ -384,6 +395,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       // NO se valida que bruto - descuentos = amount: ver incomeBreakdown.ts.
       grossAmount: parseBreakdownMoney(grossAmount),
       deductions: collectDeductions(deductions),
+      scheduledChanges: collectChanges(scheduledChanges),
     };
 
     submittingRef.current = true;
@@ -589,6 +601,13 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             onChangeDeductions={setDeductions}
             netAmount={amount}
             formatAmount={(value) => formatCurrency(value, currencyCode)}
+          />
+
+          <ScheduledChangesSection
+            open={changesOpen}
+            onToggle={() => setChangesOpen((current) => !current)}
+            changes={scheduledChanges}
+            onChange={setScheduledChanges}
           />
 
           {/* Lo obligatorio, en una tarjeta. "Entra a" sube aquí: sin cuenta, confirmar una

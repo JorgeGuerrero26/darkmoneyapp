@@ -594,6 +594,20 @@ async function runListSubscriptions(
   return { count: (data ?? []).length, upcoming: data ?? [] };
 }
 
+/** `[{effective_date, amount}]` de la base → la forma que lee el calendario. Lo ilegible se descarta. */
+function readScheduledChanges(raw: unknown): { effectiveDate: string; amount: number }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { effectiveDate: string; amount: number }[] = [];
+  for (const row of raw) {
+    if (typeof row !== "object" || row === null) continue;
+    const r = row as Record<string, unknown>;
+    const effectiveDate = String(r.effective_date ?? "");
+    const amount = Number(r.amount);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) && Number.isFinite(amount) && amount > 0) out.push({ effectiveDate, amount });
+  }
+  return out;
+}
+
 async function runListRecurringIncome(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
@@ -602,7 +616,7 @@ async function runListRecurringIncome(
     .from("recurring_income")
     .select(
       // Literal única, no concatenada. Ver el comentario en runListObligations.
-      "name, amount, currency_code, frequency, interval_count, day_of_month, next_expected_date, end_date, status, payer_party_id, description",
+      "name, amount, currency_code, frequency, interval_count, day_of_month, next_expected_date, end_date, status, payer_party_id, description, scheduled_changes",
     )
     .eq("workspace_id", workspaceId)
     .eq("status", "active")
@@ -676,7 +690,7 @@ async function runProjectCashflow(
     client.from("accounts").select("id, name, type, currency_code, payment_day, is_archived").eq("workspace_id", workspaceId),
     client
       .from("recurring_income")
-      .select("name, amount, currency_code, frequency, interval_count, next_expected_date, end_date, status")
+      .select("name, amount, currency_code, frequency, interval_count, next_expected_date, end_date, status, scheduled_changes")
       .eq("workspace_id", workspaceId)
       .eq("status", "active"),
     client
@@ -821,6 +835,7 @@ async function runProjectCashflow(
       nextExpectedDate: String(row.next_expected_date ?? ""),
       endDate: row.end_date == null ? null : String(row.end_date),
       status: String(row.status ?? ""),
+      scheduledChanges: readScheduledChanges(row.scheduled_changes),
     })),
     subscriptions: (subs.data ?? []).map((row) => ({
       name: String(row.name ?? "Suscripción"),
@@ -954,6 +969,19 @@ async function runProjectionGaps(
       items: staleIncome.map((row) => ({ name: row.name, expectedOn: row.next_expected_date, amount: Number(row.amount ?? 0) })),
       impact: "Su próxima llegada quedó en el pasado porque nunca se confirmó, así que NO están sumando en ningún mes de la proyección y el saldo sale más bajo de lo real.",
       fix: "Confirmar la llegada en la pantalla de Ingresos fijos; eso mueve la fecha al siguiente período.",
+    });
+  }
+
+  // La gratificación (julio y diciembre) es la mayor diferencia entre una proyección anual y la
+  // realidad de quien está en planilla, y no da error al faltar: simplemente no suma. Se
+  // pregunta, no se supone: un independiente no la recibe.
+  const hasSalary = incomeRows.some((row) => /sueldo|salario|planilla|remuneraci/i.test(String(row.name ?? "")));
+  const hasGratificacion = incomeRows.some((row) => /gratific/i.test(String(row.name ?? "")));
+  if (hasSalary && !hasGratificacion) {
+    gaps.push({
+      gap: "gratificacion_no_registrada",
+      impact: "Si el empleador paga gratificación en julio y diciembre, esos dos meses de la proyección salen cortos por un sueldo entero. Si no la recibe (independiente, por honorarios), ignora este aviso.",
+      fix: "Pregunta si la recibe y cuánto le llega NETO cada vez. Si sí, propón DOS draft_recurring kind='recurring_income' frequency='yearly': 'Gratificación julio' con nextDate el 15 de julio y 'Gratificación diciembre' con nextDate el 15 de diciembre. No calcules el monto tú.",
     });
   }
 

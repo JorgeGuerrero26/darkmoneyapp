@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum, type NumericLike } from "./_shared";
+import { toScheduledChangesRows } from "../../features/recurring-income/lib/scheduledChanges";
 import { markSubscriptionPaid } from "../../features/subscriptions/lib/markSubscriptionPaid";
 import {
   isCoreSnapshot,
@@ -59,6 +60,7 @@ export type RecurringIncomeFormInput = {
   grossAmount?: number | null;
   /** Descuentos copiados de la boleta. La app no calcula retenciones. */
   deductions?: { name: string; amount: number }[];
+  scheduledChanges?: { effectiveDate: string; amount: number }[];
 };
 
 export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
@@ -93,6 +95,7 @@ export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
           remind_days_before: input.remindDaysBefore,
           gross_amount: input.grossAmount ?? null,
           deductions: input.deductions ?? [],
+          scheduled_changes: toScheduledChangesRows(input.scheduledChanges),
           description: input.description ?? null,
           notes: input.notes ?? null,
           status: "active",
@@ -133,6 +136,7 @@ export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
       // El desglose se borra igual que se pone: `null` y `[]` son valores validos, no "sin dato".
       if (input.grossAmount !== undefined) payload.gross_amount = input.grossAmount;
       if (input.deductions !== undefined) payload.deductions = input.deductions;
+      if (input.scheduledChanges !== undefined) payload.scheduled_changes = toScheduledChangesRows(input.scheduledChanges);
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.status !== undefined) payload.status = input.status;

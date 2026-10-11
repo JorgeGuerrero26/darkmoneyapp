@@ -1,4 +1,5 @@
 ﻿import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { parseScheduledChanges } from "../../features/recurring-income/lib/scheduledChanges";
 import { useCallback, useMemo } from "react";
 import { InteractionManager, Platform } from "react-native";
 import type { WorkspaceInvitationStatus } from "../../types/domain";
@@ -517,6 +518,7 @@ type RecurringIncomeRow = {
   gross_amount?: NumericLike | null;
   /** Descuentos copiados de la boleta: `[{name, amount}]`. */
   deductions?: { name: string; amount: number }[] | null;
+  scheduled_changes?: { effective_date: string; amount: number }[] | null;
   frequency: RecurringIncomeFrequency;
   interval_count: number;
   day_of_month: number | null;
@@ -941,7 +943,7 @@ export async function fetchWorkspaceSnapshot(
       .order("next_due_date", { ascending: true }),
     supabase
       .from("recurring_income")
-      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, gross_amount, deductions, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
+      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, gross_amount, deductions, scheduled_changes, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
       .eq("workspace_id", activeWorkspaceId)
       .order("next_expected_date", { ascending: true }),
     fetchCatalogMovementRows(supabase, activeWorkspaceId, "subscription_id").catch((error: unknown) => ({ data: [], error })),
@@ -3828,6 +3830,7 @@ function mapRecurringIncome(
     // El desglose del sueldo. `amount` sigue siendo el neto y el que manda.
     grossAmount: row.gross_amount == null ? null : Number(row.gross_amount),
     deductions: Array.isArray(row.deductions) ? row.deductions : [],
+    scheduledChanges: parseScheduledChanges(row.scheduled_changes),
     endDate: row.end_date,
     remindDaysBefore: row.remind_days_before,
     description: row.description,

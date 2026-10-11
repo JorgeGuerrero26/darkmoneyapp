@@ -186,7 +186,7 @@ export function AdvancedDashboard({
   // cronograma solo puede repartir el saldo a ojo, que es justo lo que no debe hacer.
   obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; principalAmount?: number; currentPrincipalAmount?: number | null; paymentPlan?: unknown; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string; counterparty: string }>;
   subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; endDate?: string | null; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
-  recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; endDate?: string | null; frequency?: string; intervalCount?: number | null; status: string }>;
+  recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; endDate?: string | null; frequency?: string; intervalCount?: number | null; status: string; scheduledChanges?: { effectiveDate: string; amount: number }[] }>;
   snapshot: any;
   // `type` y `paymentDay` los pide la proyeccion: arranca del saldo liquido, no del patrimonio
   // neto, y una tarjeta se paga en un mes distinto al que se gasta.

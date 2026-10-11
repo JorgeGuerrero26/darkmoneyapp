@@ -483,3 +483,64 @@ describe("buildCashflowCalendar", () => {
     expect(result.endingBalance).toBe(3200);
   });
 });
+
+describe("ingresos con cambios de monto programados", () => {
+  const run = (income: Parameters<typeof buildCashflowCalendar>[0]["recurringIncome"][number], months = 8) =>
+    buildCashflowCalendar({
+      startingBalance: 0,
+      fromDate: "2026-10-11",
+      months,
+      typicalDiscretionarySpend: 0,
+      convert: (amount) => amount,
+      recurringIncome: [income],
+      subscriptions: [],
+      obligations: [],
+      plannedMovements: [],
+    });
+  const inflowOf = (result: ReturnType<typeof run>, monthKey: string) =>
+    result.months.find((m) => m.monthKey === monthKey)?.inflows.reduce((sum, l) => sum + l.amount, 0) ?? 0;
+
+  const sueldo = { name: "Sueldo", amount: 3659, currencyCode: "PEN", frequency: "monthly", nextExpectedDate: "2026-10-30", status: "active" };
+
+  it("el aumento rige desde su fecha y el monto de hoy vale hasta entonces", () => {
+    const result = run({ ...sueldo, scheduledChanges: [{ effectiveDate: "2027-01-01", amount: 4500 }] });
+    expect(inflowOf(result, "2026-12")).toBe(3659);
+    expect(inflowOf(result, "2027-01")).toBe(4500);
+    expect(inflowOf(result, "2027-03")).toBe(4500);
+  });
+
+  it("un cambio posterior reemplaza al anterior, sin importar el orden de la lista", () => {
+    const result = run({
+      ...sueldo,
+      scheduledChanges: [
+        { effectiveDate: "2027-03-01", amount: 5000 },
+        { effectiveDate: "2027-01-01", amount: 4500 },
+      ],
+    });
+    expect(inflowOf(result, "2027-02")).toBe(4500);
+    expect(inflowOf(result, "2027-03")).toBe(5000);
+  });
+
+  it("un cambio que ya empezó antes de hoy ya rige hoy", () => {
+    const result = run({ ...sueldo, scheduledChanges: [{ effectiveDate: "2026-09-01", amount: 4000 }] });
+    expect(inflowOf(result, "2026-10")).toBe(4000);
+  });
+
+  it("la gratificación son dos ingresos anuales: julio y diciembre no están a seis meses parejos", () => {
+    const result = buildCashflowCalendar({
+      startingBalance: 0,
+      fromDate: "2026-10-11",
+      months: 10,
+      typicalDiscretionarySpend: 0,
+      convert: (amount) => amount,
+      recurringIncome: [
+        { name: "Gratificación julio", amount: 3659, currencyCode: "PEN", frequency: "yearly", nextExpectedDate: "2027-07-15", status: "active" },
+        { name: "Gratificación diciembre", amount: 3659, currencyCode: "PEN", frequency: "yearly", nextExpectedDate: "2026-12-15", status: "active" },
+      ],
+      subscriptions: [],
+      obligations: [],
+      plannedMovements: [],
+    });
+    expect(result.months.filter((m) => m.inflows.length > 0).map((m) => m.monthKey)).toEqual(["2026-12", "2027-07"]);
+  });
+});

@@ -63,6 +63,25 @@ const sueldo = {
 const SCENARIOS: Scenario[] = [
   { name: "vacío", input: base() },
   {
+    name: "aumento de sueldo programado",
+    input: base({
+      recurringIncome: [
+        { ...sueldo, scheduledChanges: [{ effectiveDate: "2026-11-01", amount: 4100 }, { effectiveDate: "2027-01-01", amount: 4500 }] },
+      ],
+    }),
+  },
+  {
+    name: "gratificación en julio y diciembre",
+    input: base({
+      months: 10,
+      recurringIncome: [
+        sueldo,
+        { name: "Gratificación diciembre", amount: 3659, currencyCode: "PEN", frequency: "yearly", nextExpectedDate: "2026-12-15", status: "active" },
+        { name: "Gratificación julio", amount: 3659, currencyCode: "PEN", frequency: "yearly", nextExpectedDate: "2027-07-15", status: "active" },
+      ],
+    }),
+  },
+  {
     name: "cronograma a medida con cola",
     input: base({
       obligations: [
