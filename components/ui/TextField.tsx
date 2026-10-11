@@ -1,13 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  type StyleProp,
-  type TextInputProps,
-  type ViewStyle,
-} from "react-native";
+import { StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from "react-native";
 
 import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 import { COLORS, FONT_FAMILY, FONT_SIZE } from "../../constants/theme";
@@ -54,8 +46,9 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
   ref,
 ) {
   const inputRef = useRef<TextInput>(null);
+  const fieldRef = useRef<View>(null);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
-  const feedback = useFormField(fieldId, () => inputRef.current?.focus());
+  const feedback = useFormField(fieldId, () => inputRef.current?.focus(), fieldRef);
   const flat = StyleSheet.flatten(style) ?? {};
   const { flex, ...inputStyle } = flat;
 
@@ -67,7 +60,7 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
   const top = rest.multiline ? (flat.paddingTop ?? flat.paddingVertical ?? flat.padding ?? 0) : 0;
 
   return (
-    <View style={[flex === undefined ? null : { flex }, containerStyle]}>
+    <View ref={fieldRef} collapsable={false} style={[flex === undefined ? null : { flex }, containerStyle]}>
       <View>
       <TextInput
         ref={inputRef}

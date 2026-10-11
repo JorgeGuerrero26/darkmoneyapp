@@ -5,11 +5,7 @@ import { useConfirmRecurringIncomeArrivalMutation } from "../../../services/quer
 import { useToast } from "../../../hooks/useToast";
 import { humanizeError } from "../../../lib/errors";
 import type { RecurringIncomeSummary } from "../../../types/domain";
-import {
-  parseMoneyInput,
-  validateArrivalDraft,
-  type RecurringIncomeBaseChangeMode,
-} from "./arrival-validation";
+import { parseMoneyInput, validateArrivalDraft, type RecurringIncomeBaseChangeMode } from "./arrival-validation";
 
 /**
  * Estado + validación + submit del sheet "¿Llegó tu ingreso?" — compartido por
@@ -18,7 +14,7 @@ import {
  */
 export function useArrivalSheetController(workspaceId: number | null) {
   const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(workspaceId);
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
 
   const [target, setTarget] = useState<RecurringIncomeSummary | null>(null);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -97,9 +93,8 @@ export function useArrivalSheetController(workspaceId: number | null) {
       showToast("Llegada confirmada", "success");
     } catch (err) {
       setError(humanizeError(err));
-      showErrorToast("No se pudo confirmar la llegada", err);
     }
-  }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, notes, showToast, showErrorToast, target]);
+  }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, notes, showToast, target]);
 
   return {
     target,

@@ -3,15 +3,7 @@ import { mergePreviewAttachments } from "../../lib/attachments/merge-preview-att
 import { useObligationDetailHistoryFilter } from "../../features/obligations/lib/useObligationDetailHistoryFilter";
 import { useObligationDetailOwnerRequests } from "../../features/obligations/lib/useObligationDetailOwnerRequests";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import {
-  ActivityIndicator,
-  Platform,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  UIManager,
-  View,
-} from "react-native";
+import { ActivityIndicator, Platform, ScrollView, Text, UIManager, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,54 +16,14 @@ import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
 import { sortByName } from "../../lib/sort-locale";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
-import {
-  useWorkspaceSnapshotQuery,
-  useNotificationsQuery,
-} from "../../services/queries/workspace-data";
-import {
-  useCreateObligationShareInviteMutation,
-  useUnlinkObligationShareMutation,
-  useSharedObligationsQuery,
-  useObligationPaymentRequestsQuery,
-  useCreateObligationEventDeleteRequestMutation,
-  useObligationEventViewerLinksQuery,
-  useUpsertLinkEventToAccountMutation,
-  useDeleteViewerEventLinkMutation,
-  useObligationEventsQuery,
-  useViewerPaymentRequestsQuery,
-} from "../../services/queries/obligations";
-import {
-  type EntityAttachmentFile,
-  useObligationEventAttachmentCountsQuery,
-  useObligationEventAttachmentsQuery,
-  useMovementAttachmentCountsQuery,
-  useMovementAttachmentsQuery,
-} from "../../services/queries/attachments";
-import type {
-  ObligationEventSummary,
-  ObligationPaymentRequest,
-  ObligationSummary,
-  SharedObligationSummary,
-} from "../../types/domain";
-import {
-  obligationPerspectiveDirectionLabel,
-  obligationViewerActsAsCollector,
-  obligationViewerPaymentRequestTitle,
-} from "../../lib/obligation-viewer-labels";
-import {
-  ownerDefaultAccountId,
-  viewerEventAccountDelta,
-  viewerEventAccountImpactCopy,
-} from "../../lib/obligation-viewer-account-impact";
+import { useWorkspaceSnapshotQuery, useNotificationsQuery } from "../../services/queries/workspace-data";
+import { useCreateObligationShareInviteMutation, useUnlinkObligationShareMutation, useSharedObligationsQuery, useObligationPaymentRequestsQuery, useCreateObligationEventDeleteRequestMutation, useObligationEventViewerLinksQuery, useUpsertLinkEventToAccountMutation, useDeleteViewerEventLinkMutation, useObligationEventsQuery, useViewerPaymentRequestsQuery } from "../../services/queries/obligations";
+import { type EntityAttachmentFile, useObligationEventAttachmentCountsQuery, useObligationEventAttachmentsQuery, useMovementAttachmentCountsQuery, useMovementAttachmentsQuery } from "../../services/queries/attachments";
+import type { ObligationEventSummary, ObligationSummary, SharedObligationSummary } from "../../types/domain";
+import { obligationPerspectiveDirectionLabel, obligationViewerActsAsCollector, obligationViewerPaymentRequestTitle } from "../../lib/obligation-viewer-labels";
+import { viewerEventAccountDelta, viewerEventAccountImpactCopy } from "../../lib/obligation-viewer-account-impact";
 import { EVENT_LABEL_PAYABLE } from "../../lib/obligation-event-presentation";
-import {
-  readEventDeletePayload,
-  readEventEditPayload,
-  type EventDeleteStatus,
-  type EventEditStatus,
-  type PendingOwnerDeleteRequest,
-  type PendingOwnerEditRequest,
-} from "../../lib/obligation-event-payloads";
+import { readEventDeletePayload, readEventEditPayload, type EventDeleteStatus, type EventEditStatus, type PendingOwnerDeleteRequest, type PendingOwnerEditRequest } from "../../lib/obligation-event-payloads";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { DetailActionBar } from "../../components/ui/DetailActionBar";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
@@ -85,7 +37,7 @@ import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustm
 import { ObligationEventEditRequestForm } from "../../components/forms/ObligationEventEditRequestForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
-import { Button } from "../../components/ui/Button";
+
 import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
 import { ObligationEventDeleteImpact } from "../../components/domain/ObligationEventDeleteImpact";
 import { ObligationEventActionSheet } from "../../components/domain/ObligationEventActionSheet";
@@ -114,24 +66,13 @@ import { OwnerRespondEditRequestSheet } from "../../features/obligations/compone
 import { RejectRequestSheet } from "../../features/obligations/components/detail/RejectRequestSheet";
 import { ShareInviteBottomSheet } from "../../features/obligations/components/detail/ShareInviteBottomSheet";
 import { ObligationReportSheet } from "../../features/obligations/components/detail/ObligationReportSheet";
-import {
-  buildObligationReport,
-  type ObligationReportResult,
-} from "../../features/obligations/lib/obligationReport";
+import { buildObligationReport, type ObligationReportResult } from "../../features/obligations/lib/obligationReport";
 import { sharePdfFromHtml } from "../../lib/share-pdf-file";
 import * as Clipboard from "expo-clipboard";
-import {
-  buildObligationEventActions,
-  buildObligationEventNotices,
-  buildObligationEventQuickActions,
-  EDITABLE_OBLIGATION_EVENT_TYPES,
-  obligationEventAmountLabel,
-  obligationEventDateLabel,
-  obligationEventStatusBadge,
-} from "../../lib/obligation-event-action-sheet";
+import { buildObligationEventActions, buildObligationEventNotices, buildObligationEventQuickActions, obligationEventAmountLabel, obligationEventDateLabel, obligationEventStatusBadge } from "../../lib/obligation-event-action-sheet";
 import { toastedMutate } from "../../lib/toasted-mutate";
 import { styles } from "../../features/obligations/lib/obligation-detail.styles";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS } from "../../constants/theme";
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -772,7 +713,7 @@ function ObligationDetailScreen() {
         duration: 5000,
       });
     } catch (err) {
-      showErrorToast("No se pudo enviar la invitación", err);
+      throw err;
     }
   }
 

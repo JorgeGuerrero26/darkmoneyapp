@@ -1,22 +1,18 @@
 import { humanizeError } from "../../lib/errors";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { requiredField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import {
-  useCreateCounterpartyMutation,
-  useUpdateCounterpartyMutation,
-  type CounterpartyFormInput,
-} from "../../services/queries/workspace-data";
+import { useCreateCounterpartyMutation, useUpdateCounterpartyMutation, type CounterpartyFormInput } from "../../services/queries/workspace-data";
 import type { CounterpartyOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
-import { Button } from "../ui/Button";
+
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { sortByLabel } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -40,7 +36,7 @@ type Props = {
 
 export function ContactForm({ visible, onClose, onSuccess, editContact }: Props) {
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateCounterpartyMutation(activeWorkspaceId);
   const updateMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
@@ -259,7 +255,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
         />
       </View>
 
-      
+
     </BottomSheet>
     </>
     </FormFeedbackProvider>

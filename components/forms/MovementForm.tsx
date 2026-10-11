@@ -1,73 +1,49 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
 import { isAuthLikeError } from "../../lib/auth-error";
-import { todayPeru, dateStrToISO, dateTimeStrToISO, isoToDateStr, isoToTimeStr, nowTimePeru } from "../../lib/date";
-import {
-  useWorkspaceSnapshotQuery,
-  useCreateMovementMutation,
-  useDeleteMovementMutation,
-  useUpdateMovementMutation,
-  useCreateCategoryMutation,
-  useCreateCounterpartyMutation,
-  useCreateRecurringIncomeMutation,
-  useDashboardAnalyticsQuery,
-  usePersistLearningFeedbackMutation,
-  useCreateSubscriptionMutation,
-  useUserEntitlementQuery,
-} from "../../services/queries/workspace-data";
+import { todayPeru, dateTimeStrToISO, isoToDateStr, isoToTimeStr, nowTimePeru } from "../../lib/date";
+import { useWorkspaceSnapshotQuery, useCreateMovementMutation, useDeleteMovementMutation, useUpdateMovementMutation, useCreateCategoryMutation, useCreateCounterpartyMutation, useCreateRecurringIncomeMutation, useDashboardAnalyticsQuery, usePersistLearningFeedbackMutation, useCreateSubscriptionMutation, useUserEntitlementQuery } from "../../services/queries/workspace-data";
 import { useMovementAttachmentsQuery } from "../../services/queries/movements";
-import { useMovementPatternsQuery, type PatternMovement } from "../../services/queries/movement-patterns";
-import {
-  buildPatternMaps,
-  suggestCategoryFromDescription,
-  suggestCategoryFromCounterparty,
-  suggestCounterpartyFromCategory,
-  suggestAccountFromCounterparty,
-} from "../../lib/movement-patterns";
+import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import { buildPatternMaps, suggestCategoryFromDescription, suggestCategoryFromCounterparty, suggestCounterpartyFromCategory } from "../../lib/movement-patterns";
 import { useAuth } from "../../lib/auth-context";
 import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
+
 import { SplitCategoriesSheet } from "../../features/movements/components/form/SplitCategoriesSheet";
 import { DateTimeSheet } from "../ui/DateTimeSheet";
 import { useMovementDescriptionCleanup } from "../../hooks/useMovementDescriptionCleanup";
 import { useMovementCounterpartyAiSuggestion } from "../../hooks/useMovementCounterpartyAiSuggestion";
 import type { CounterpartySuggestionResult } from "../../lib/movement-counterparty-suggestions";
 import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurringAiSuggestion";
-import { useMovementRiskExplanation } from "../../hooks/useMovementRiskExplanation";
+
 import { useMovementBudgetImpact } from "../../hooks/useMovementBudgetImpact";
-import {
-  recurringFrequencyToSubscriptionFields,
-  type MovementRecurringHistoryItem,
-  type MovementRecurringSuggestionResult,
-} from "../../lib/movement-recurring-suggestions";
-import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
+import { recurringFrequencyToSubscriptionFields, type MovementRecurringHistoryItem, type MovementRecurringSuggestionResult } from "../../lib/movement-recurring-suggestions";
+
 import { BottomSheet, type BottomSheetEntranceAnimation } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { type Attachment } from "../domain/AttachmentPicker";
-import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
+
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
 import { isAmbiguousTransportError, newClientDedupeKey } from "../../lib/idempotency";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
-import {
-  learnedConfidence as movementFormLearnedConfidence,
-  movementTextSimilarity as movementFormTextSimilarity,
-  patternMovementAmount,
-} from "../../features/movements/lib/pattern-heuristics";
-import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
+import { patternMovementAmount } from "../../features/movements/lib/pattern-heuristics";
+
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
+import type { MovementType, MovementRecord } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
@@ -79,32 +55,13 @@ import { describeSavedMovement } from "../../features/movements/lib/describeSave
 import { availableSourceBalance } from "../../features/movements/lib/available-balance";
 import { formatCurrency } from "../../lib/format-currency";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
-import {
-  validateMovementForm,
-  type MovementFormWarnings,
-} from "../../features/movements/lib/form-validation";
+import { validateMovementForm, type MovementFormWarnings } from "../../features/movements/lib/form-validation";
 import { StepAccountsAndAmounts } from "../../features/movements/components/form/steps/StepAccountsAndAmounts";
 import { StepDetails } from "../../features/movements/components/form/steps/StepDetails";
 
 // Tipos y helpers puros extraídos a features/movements/lib/movement-form-support.ts
 // (fase 1 del refactor R7). Alias locales para no tocar los ~100 usos internos.
-import {
-  findTransferExchangeRate,
-  formatExchangeRateInput,
-  formatExchangeRateLabel,
-  formatTransferAmount,
-  getInitialMovementForm as getInitialForm,
-  isSuggestionCashflow,
-  parseDecimalInput,
-  readMovementLinkedEventId,
-  suggestionActsAsIncome,
-  type CategoryFeedbackIntent,
-  type CategorySuggestionState,
-  isMovementFormDirty,
-  type MovementFormState as FormState,
-  type MovementFormStep as Step,
-  type MovementSuggestionLike,
-} from "../../features/movements/lib/movement-form-support";
+import { getInitialMovementForm as getInitialForm, readMovementLinkedEventId, type CategoryFeedbackIntent, type CategorySuggestionState, isMovementFormDirty, type MovementFormState as FormState, type MovementFormStep as Step } from "../../features/movements/lib/movement-form-support";
 
 type Props = {
   visible: boolean;
@@ -898,8 +855,8 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
   }
 
   function goNext() {
-    if (validateAmountStep()) { haptics.selection(); setStep(2); }
-    else haptics.error();
+    haptics.selection();
+    setStep(2);
   }
 
   function goBack() {
@@ -1178,7 +1135,20 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
     : step === 1 ? "Nuevo movimiento" : "Detalles";
   const overlayEntranceAnimation = entranceAnimation === "springFade" ? "springFade" : "none";
 
+  const validationFields = {
+
+      sourceAmount: form.movementType === "income" ? { value: form.sourceAmount } : { ...positiveAmountField(form.sourceAmount), reveal: () => setStep(1) },
+      destinationAmount: form.movementType === "income" || transferCurrenciesDiffer ? { ...positiveAmountField(form.destinationAmount), reveal: () => setStep(1) } : { value: form.destinationAmount },
+      sourceAccountId: form.movementType === "income" ? { value: form.sourceAccountId } : requiredField(form.sourceAccountId, "Elige una cuenta", null, () => setSourceAccountPickerOpen(true)),
+      destinationAccountId: form.movementType === "income" || form.movementType === "transfer" ? { ...requiredField(form.destinationAccountId, "Elige el destino", form.movementType === "transfer" && form.sourceAccountId === form.destinationAccountId ? "El destino debe ser diferente del origen" : null, () => setDestinationAccountPickerOpen(true)), reveal: () => setStep(1) } : { value: form.destinationAccountId },
+      occurredAt: { ...requiredField(form.occurredAt, "Elige la fecha", form.movementType === "expense" && form.status === "posted" && form.occurredAt > todayPeru() ? "Un gasto no puede tener fecha futura" : null, () => { setStep(2); setDateTimeOpen(true); }), reveal: () => setStep(2) },
+      split: { value: splitLines, invalid: splitLines ? validateSplit(splitLines, (form.movementType === "income" ? destinationAmountNum : sourceAmountNum) ?? 0).error : null, reveal: () => setStep(2) },
+      transferRate: { ...positiveAmountField(fx.transferRateInput, "Ingresa el tipo de cambio"), invalid: transferCurrenciesDiffer && fx.transferRateInput.trim() ? positiveAmountField(fx.transferRateInput).invalid : null, missing: transferCurrenciesDiffer && !fx.transferRateInput.trim() && !fx.transferBaseFxSuggestion ? "Ingresa el tipo de cambio" : null, reveal: () => setStep(1) },
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={submitLoading} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
     <BottomSheet
       visible={visible}
@@ -1189,22 +1159,9 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
       scrollRef={sheetScrollRef}
       /* Regla 3 de la plantilla: barra fija al pie. Antes el botón solo aparecía al
          desplazarse hasta el final, así que en la primera pantalla no había ninguno. */
-      footer={
-        <View style={styles.submitBar}>
-          <View style={styles.submitRow}>
-            {step === 2 ? (
-              <Button label="Atrás" variant="ghost" size="lg" onPress={goBack} style={styles.btnBack} />
-            ) : null}
-            <Button
-              label={isEditing ? "Actualizar" : "Guardar"}
-              onPress={handleSubmit}
-              loading={submitLoading}
-              size="lg"
-              style={styles.btnSubmit}
-            />
-          </View>
-        </View>
-      }
+      footer={<FormSubmitBar label={isEditing ? "Actualizar" : "Guardar"} onSubmit={handleSubmit} loading={submitLoading} error={submitError} onMore={step === 1 ? () => setStep(2) : undefined}>
+        {step === 2 ? <Button label="Atrás" variant="ghost" onPress={goBack} /> : null}
+      </FormSubmitBar>}
       // Dentro del sheet y no como hermano: iOS solo presenta un Modal a la vez y el diálogo
       // no llegaba a aparecer, dejando el formulario sin poder cerrarse (reportado 2026-08-13).
       overlay={
@@ -1531,6 +1488,7 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
       })() : null}
     </BottomSheet>
     </>
+    </FormFeedbackProvider>
   );
 }
 

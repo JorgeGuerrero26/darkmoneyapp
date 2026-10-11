@@ -1,16 +1,10 @@
 import { humanizeError } from "../../lib/errors";
-import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { FormFeedbackProvider } from "../ui/FormFeedback";
+import { requiredField } from "../../lib/form-field-rules";
 import { Clock, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Switch, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -20,11 +14,7 @@ import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { getAccountIcon, getAccountIconOption, ACCOUNT_ICON_OPTIONS } from "../../lib/account-icons";
 import { parseDisplayDate } from "../../lib/date";
-import {
-  useCreateAccountMutation,
-  useUpdateAccountMutation,
-  type AccountFormInput,
-} from "../../services/queries/workspace-data";
+import { useCreateAccountMutation, useUpdateAccountMutation, type AccountFormInput } from "../../services/queries/workspace-data";
 import type { AccountSummary } from "../../types/domain";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { FormSheetScaffold } from "../ui/FormSheetScaffold";
@@ -60,7 +50,7 @@ function parseCreditLimit(value: string): number | null {
 export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { user } = useAuth();
-  const { showToast, showRichToast, showErrorToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateAccountMutation(activeWorkspaceId);
   const updateMutation = useUpdateAccountMutation(activeWorkspaceId);

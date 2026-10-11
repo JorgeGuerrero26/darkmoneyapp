@@ -142,13 +142,15 @@ function runTransferMultiCurrencyEmptyDestRejected() {
   assert(result.errors.destinationAmount === "Ingresa monto destino", "dest vacío en multi-currency rechazado");
 }
 
-function runFutureDateProducesWarning() {
+function runFutureExpenseIsInvalid() {
   const result = validateMovementForm(
     snap({ occurredAt: "2026-06-01" }),
     ctx({ todayYmd: "2026-05-26" }),
   );
-  assert(result.valid === true, "fecha futura no bloquea submit");
-  assert(result.warnings.occurredAt === "La fecha del movimiento es futura", "warning de fecha futura");
+  assert(result.valid === false, "gasto registrado con fecha futura bloquea submit");
+  assert(result.errors.occurredAt === "Un gasto no puede tener fecha futura", "error dentro de la fecha");
+  const pending = validateMovementForm(snap({ occurredAt: "2026-06-01", status: "pending" }), ctx({ todayYmd: "2026-05-26" }));
+  assert(pending.valid && Boolean(pending.warnings.occurredAt), "gasto pendiente conserva el aviso sin bloquear");
 }
 
 function runPastDateNoWarning() {
@@ -209,7 +211,7 @@ function main() {
     ["transfer multi-currency sin FX rechazado", runTransferMultiCurrencyRequiresFx],
     ["transfer multi-currency con FX OK", runTransferMultiCurrencyOkWithFx],
     ["transfer multi-currency monto dest vacío rechazado", runTransferMultiCurrencyEmptyDestRejected],
-    ["fecha futura → warning, no error", runFutureDateProducesWarning],
+    ["gasto futuro → error; pendiente → aviso", runFutureExpenseIsInvalid],
     ["fecha pasada sin warning", runPastDateNoWarning],
     ["fecha hoy sin warning", runTodayNoWarning],
     ["overdraft → warning, no error", runOverdraftProducesWarning],

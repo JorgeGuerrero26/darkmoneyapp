@@ -1,8 +1,8 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { positiveAmountField } from "../../lib/form-field-rules";
 import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { AlertCircle, Clock, Info } from "lucide-react-native";
+import { Clock, Info } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -12,14 +12,10 @@ import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import { useCreatePaymentRequestMutation } from "../../services/queries/obligations";
-import {
-  obligationViewerActsAsCollector,
-  obligationViewerPaymentRequestNoun,
-  obligationViewerPaymentRequestTitle,
-} from "../../lib/obligation-viewer-labels";
+import { obligationViewerActsAsCollector, obligationViewerPaymentRequestNoun, obligationViewerPaymentRequestTitle } from "../../lib/obligation-viewer-labels";
 import type { SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
-import { Button } from "../ui/Button";
+
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
@@ -262,7 +258,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
         </View>
       </View>
 
-      
+
     </BottomSheet>
     </FormFeedbackProvider>
   );

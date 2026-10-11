@@ -1,8 +1,11 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../../components/ui/FormFeedback";
+import { FormOptionRow } from "../../../../components/ui/FormOptionRow";
+import { splitFormFields } from "../../lib/split-form-feedback";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Plus } from "lucide-react-native";
 
-import { Button } from "../../../../components/ui/Button";
+
 import { CurrencyInput } from "../../../../components/ui/CurrencyInput";
 import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 import { InlineFormSheet } from "../../../../components/ui/InlineFormSheet";
@@ -100,7 +103,10 @@ export function SplitCategoriesSheet({
     patchLine(index, { amount: allocation.proposalAmount });
   }
 
+  const validationFields = splitFormFields(lines, allocation);
+  lines.forEach((_, index) => { validationFields[`category-${index}`].open = () => setPickerIndex(index); validationFields[`amount-${index}`].reveal = () => setFocusedIndex(index); });
   return (
+    <FormFeedbackProvider visible={visible} fields={validationFields} onSubmit={onClose}>
     <InlineFormSheet
       visible={visible}
       entranceAnimation={entranceAnimation}
@@ -158,21 +164,7 @@ export function SplitCategoriesSheet({
         />
         </>
       }
-      footer={
-        <View style={styles.footer}>
-          {triedToSave && blocking ? <Text style={styles.blocking}>{blocking}</Text> : null}
-          <Button
-            label="Guardar división"
-            size="lg"
-            onPress={() => {
-              /* El motivo se enseña al intentar guardar, no desde el primer pintado: un
-                 formulario recién abierto no está mal, está vacío. */
-              if (blocking) { setTriedToSave(true); return; }
-              onClose();
-            }}
-          />
-        </View>
-      }
+      footer={<FormSubmitBar label={"Guardar divisi\u00f3n"} onSubmit={onClose} />}
     >
       <View style={styles.content}>
         <View style={styles.totalRow}>
@@ -203,18 +195,8 @@ export function SplitCategoriesSheet({
                     se piensa. "Parte 1" y "Parte 2" numeraban algo sin orden y obligaban a
                     renumerar al borrar una. */}
                 <View style={styles.lineCopy}>
-                  <Pressable onPress={() => setPickerIndex(index)}>
-                    <Text style={[styles.lineName, !category && styles.lineNamePending]} numberOfLines={1}>
-                      {category?.name ?? "Elegir categoría"}
-                    </Text>
-                    <Text style={styles.lineHint} numberOfLines={1}>
-                      {proposed
-                        ? `Toca y toma los ${money(allocation.remaining)} que faltan`
-                        : category
-                          ? "Toca para cambiar"
-                          : "Toca para elegir"}
-                    </Text>
-                  </Pressable>
+                  <FormOptionRow fieldId={`category-${index}`} label={"Categor\u00eda"} value={category?.name} onPress={() => setPickerIndex(index)} grouped last />
+
 
                   {/* Cada parte tiene su categoría, así que también su tipo: repartir una compra
                       entre mercado y antojos es justo el caso en que una mitad hacía falta y la
@@ -249,6 +231,7 @@ export function SplitCategoriesSheet({
                 ) : (
                   <View style={styles.amountWrap}>
                     <CurrencyInput
+                      fieldId={`amount-${index}`}
                       size="compact"
                       value={line.amount}
                       onChangeText={(value) => patchLine(index, { amount: value })}
@@ -296,6 +279,7 @@ export function SplitCategoriesSheet({
       </View>
 
     </InlineFormSheet>
+    </FormFeedbackProvider>
   );
 }
 

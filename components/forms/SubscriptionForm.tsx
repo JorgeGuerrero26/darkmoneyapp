@@ -2,26 +2,16 @@ import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { AlertCircle, HelpCircle } from "lucide-react-native";
+import { HelpCircle } from "lucide-react-native";
 import { format } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import {
-  useCreateSubscriptionMutation,
-  useUpdateSubscriptionMutation,
-  useWorkspaceSnapshotQuery,
-  type SubscriptionFormInput,
-} from "../../services/queries/workspace-data";
+import { useCreateSubscriptionMutation, useUpdateSubscriptionMutation, useWorkspaceSnapshotQuery, type SubscriptionFormInput } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
-import {
-  buildPatternMaps,
-  suggestAccountFromCounterparty,
-  suggestCategoryFromCounterparty,
-  suggestCategoryFromDescription,
-} from "../../lib/movement-patterns";
+import { buildPatternMaps, suggestAccountFromCounterparty, suggestCategoryFromCounterparty, suggestCategoryFromDescription } from "../../lib/movement-patterns";
 import { LAST_DAY_ANCHOR, subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
@@ -30,7 +20,7 @@ import { FormOptionRow } from "../ui/FormOptionRow";
 import { FormFirstRunHelp, useFormFirstRunHelp } from "./FormFirstRunHelp";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
-import { Button } from "../ui/Button";
+
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
@@ -380,15 +370,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   );
   // El botón vivía al final de 2.400 px: para saber si ya podías guardar había que volver a
   // subir a repasar los campos. Ahora lo NOMBRA.
-  const missingLabel = !name.trim()
-    ? "Falta el nombre"
-    : !amount.trim() || Number(amount) <= 0
-      ? "Falta el monto"
-      : !nextDueDate.trim()
-        ? "Falta el próximo cobro"
-        : autoCreateMovement && accountId === null
-          ? "Falta la cuenta con la que se paga"
-          : null;
+
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
@@ -439,17 +421,16 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     setAccSuggestionId(suggestAccountFromCounterparty(vendorPartyId, patternMaps));
   }, [vendorPartyId, accountId, patternMaps]);
 
+  const anchorIssue = (frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") ? integerField(dayOfMonth, 1, 31, true).invalid : frequency === "weekly" && dayOfWeek != null && (dayOfWeek < 0 || dayOfWeek > 6) ? "Elige una fecha para corregir el día de la semana" : null;
   const validationFields = {
 
       name: requiredField(name, "Escribe el nombre"),
       amount: positiveAmountField(amount),
-      nextDueDate: requiredField(nextDueDate, "Elige el próximo cobro", nextDueDate < startDate ? "El próximo cobro debe ser igual o posterior al inicio" : null),
+      nextDueDate: requiredField(nextDueDate, "Elige el próximo cobro", nextDueDate < startDate ? "El próximo cobro debe ser igual o posterior al inicio" : anchorIssue),
       accountId: { value: accountId, missing: autoCreateMovement && accountId == null ? "Elige una cuenta" : null, open: () => setAccountOpen(true) },
-      startDate: requiredField(startDate, "Elige el inicio", null, () => setOptionalsOpen(true)),
-      endDate: { value: endDate, invalid: endDate && endDate < startDate ? "La fecha de fin no puede ser anterior al inicio" : null, open: () => setOptionalsOpen(true) },
+      startDate: { ...requiredField(startDate, "Elige el inicio"), autoContinue: true, reveal: () => setOptionalsOpen(true) },
+      endDate: { value: endDate, invalid: endDate && endDate < startDate ? "La fecha de fin no puede ser anterior al inicio" : null, reveal: () => setOptionalsOpen(true) },
       intervalCount: integerField(intervalCount, 1, 9999),
-      dayOfMonth: integerField(dayOfMonth, 1, 31, true),
-      dayOfWeek: { value: dayOfWeek, invalid: frequency === "weekly" && dayOfWeek != null && (dayOfWeek < 0 || dayOfWeek > 6) ? "Elige un día de la semana" : null },
       remindDaysBefore: { value: remindDaysBefore, invalid: !Number.isFinite(remindDaysBefore) || remindDaysBefore < 0 ? "Elige un recordatorio válido" : null, open: () => setRemindOpen(true) },
       currencyCode: requiredField(currencyCode, "Elige una moneda", null, () => setOptionalsOpen(true)),
   };
@@ -658,7 +639,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       {/* Cada cuánto y desde cuándo, en una tarjeta. Antes eran tres controles para la primera
           pregunta —seis cápsulas, un campo numérico y una línea que traducía lo recién elegido—. */}
       <View style={styles.group}>
-        <FormOptionRow
+        <FormOptionRow fieldId={frequency === "custom" ? undefined : "intervalCount"}
           grouped
           label="Se repite"
           value={recurrenceLabel}
@@ -675,6 +656,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
             if (anchorDay !== LAST_DAY_ANCHOR && ["monthly", "quarterly", "yearly"].includes(frequency)) {
               setDayOfMonth(String(parseLocalYmd(value).getDate()));
             }
+            if (frequency === "weekly") setDayOfWeek(parseLocalYmd(value).getDay());
           }}
           placeholder="Elegir fecha"
           minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
@@ -723,7 +705,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
       {/* Con el gasto automático la cuenta deja de ser opcional, así que sube aquí: el toggle no
           puede pedir algo que solo se responde saliendo del formulario. */}
-      {autoCreateMovement && activeAccounts.length > 0 ? (
+      {autoCreateMovement ? (
         <View style={[styles.group, !accountId ? styles.groupError : null]}>
           <FormOptionRow fieldId="accountId"
             grouped

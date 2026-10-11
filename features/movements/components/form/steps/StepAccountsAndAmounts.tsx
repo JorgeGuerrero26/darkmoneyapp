@@ -7,14 +7,7 @@ import { currencyPluralName } from "../../../../../constants/currencies";
 import { CurrencyInput } from "../../../../../components/ui/CurrencyInput";
 import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
 import { Input } from "../../../../../components/ui/Input";
-import {
-  COLORS,
-  FONT_FAMILY,
-  FONT_SIZE,
-  RADIUS,
-  SPACING,
-  SURFACE,
-} from "../../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../../constants/theme";
 import { SegmentedControl } from "../../../../../components/ui/SegmentedControl";
 import { MOVEMENT_LABELS } from "../../../lib/labels";
 import type { AccountSummary, MovementStatus, MovementType } from "../../../../../types/domain";
@@ -181,13 +174,13 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
           intercambiaban de sitio bajo el dedo. En un ingreso el monto es el que entra; en los
           demás, el que sale. */}
       <CurrencyInput
+        fieldId={isIncome ? "destinationAmount" : "sourceAmount"}
         label="Monto"
         value={isIncome ? destinationAmount : sourceAmount}
         onChangeText={isIncome ? onChangeDestinationAmount : onChangeSourceAmount}
         currencyCode={
           (isIncome ? destinationAccount?.currencyCode : sourceAccount?.currencyCode) ?? baseCurrencyCode
         }
-        error={isIncome ? errors.destinationAmount : errors.sourceAmount}
       />
       {!isIncome && warnings.sourceAmount ? (
         <Text
@@ -206,6 +199,7 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
         {!isIncome ? (
           <FormOptionRow
             grouped
+            fieldId="sourceAccountId"
             label={isTransfer ? "Sale de" : "Cuenta"}
             value={sourceAccount?.name ?? null}
             placeholder="Elegir cuenta"
@@ -216,6 +210,7 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
         {isIncome || isTransfer ? (
           <FormOptionRow
             grouped
+            fieldId="destinationAccountId"
             label={isTransfer ? "Entra a" : "Cuenta"}
             value={destinationAccount?.name ?? null}
             placeholder="Elegir cuenta"
@@ -224,30 +219,21 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
           />
         ) : null}
       </View>
-      {errors.sourceAccountId ? (
-        <Text style={styles.fieldError} accessibilityLiveRegion="polite" accessibilityRole="alert">
-          {errors.sourceAccountId}
-        </Text>
-      ) : null}
-      {errors.destinationAccountId ? (
-        <Text style={styles.fieldError} accessibilityLiveRegion="polite" accessibilityRole="alert">
-          {errors.destinationAccountId}
-        </Text>
-      ) : null}
 
       {isTransfer ? (
         <>
           {isTransfer && transferCurrenciesDiffer ? (
             <CurrencyInput
+              fieldId="destinationAmount"
               label={`Monto destino (${destinationAccount?.currencyCode ?? ""})`}
               value={destinationAmount}
               onChangeText={onChangeTransferDestinationAmount}
               currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
-              error={errors.destinationAmount}
             />
           ) : null}
           {isTransfer && transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
             <Input
+              fieldId="transferRate"
               label={`Tipo de cambio (${sourceAccount.currencyCode} → ${destinationAccount.currencyCode})`}
               value={transferRateInput}
               onChangeText={onChangeTransferRate}

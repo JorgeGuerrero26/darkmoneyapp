@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Check } from "lucide-react-native";
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { detectionFormFields } from "../lib/form-feedback";
+import { todayPeru } from "../../../lib/date";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
-import { DetailActionBar } from "../../../components/ui/DetailActionBar";
+
 import { DetailFieldRow } from "../../../components/ui/DetailFieldRow";
 import { TextField } from "../../../components/ui/TextField";
 import { SearchableSelectSheet } from "../../../components/ui/SearchableSelectSheet";
@@ -24,17 +26,21 @@ type Selector = "account" | "destination" | "category" | "date" | "description" 
 
 /** Presentación compartida; toda validación y escritura vive en el controlador. */
 export function DetectedMovementReviewSheet({ visible, onClose, review: r, position, extras, overlay: extraOverlay, list, listHeaderAction, listOverlay, status }: Props) {
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [selector, setSelector] = useState<Selector>(null);
-  useEffect(() => { setSelector(null); }, [r.suggestion?.id, visible]);
+  useEffect(() => { setSelector(null); setOptionsOpen(false); }, [r.suggestion?.id, visible]);
   const source = r.activeAccounts.find((a) => a.id === r.accountId);
   const destination = r.activeAccounts.find((a) => a.id === r.destinationAccountId);
   const category = r.categories.find((c) => c.id === r.categoryId);
   const currency = source?.currencyCode ?? r.suggestion?.currencyCode ?? "PEN";
   const isTransfer = r.movementType === "transfer";
-  const warning = r.missing[0] ?? (r.suggestion?.status === "needs_review" ? "Revisa los datos del comprobante antes de guardar" : null);
   const close = () => { if (!r.busy) onClose(); };
-  return <BottomSheet visible={visible} onClose={close} title={status?.title ?? (list ? "Por revisar" : "Revisar movimiento")} entranceAnimation="springFade" snapHeight={status?.height ?? 0.92} scrollEnabled={Boolean(status) || !list}
-    headerAction={status ? undefined : list ? listHeaderAction : r.initialized ? <Button label="Omitir" accessibilityLabel="Omitir detección" variant="ghost" size="sm" disabled={r.busy} loading={r.isDiscarding} loadingLabel="Omitiendo…" onPress={() => { void r.discard(); }} /> : undefined}
+  const rules = r.draft ? detectionFormFields(r.draft, r.activeAccounts, todayPeru()) : {};
+  for (const [id, target] of Object.entries({ description: "description", date: "date", accountId: "account", destinationAccountId: "destination" })) {
+    if (rules[id]) rules[id].open = () => setSelector(target as Selector);
+  }
+  return <FormFeedbackProvider resetKey={r.suggestion?.id} visible={visible && !list && !status} busy={r.busy} fields={rules} onSubmit={() => r.saveError ? r.retry() : r.submit(Boolean(r.duplicateCandidate))}><BottomSheet visible={visible} onClose={close} title={status?.title ?? (list ? "Por revisar" : "Revisar movimiento")} entranceAnimation="springFade" snapHeight={status?.height ?? 0.92} scrollEnabled={Boolean(status) || !list}
+    headerAction={status ? undefined : list ? listHeaderAction : undefined}
     overlay={status ? undefined : list ? listOverlay : selector === "description" ? (
       <InlineFormSheet visible entranceAnimation="springFade" title="Descripción" onBack={() => setSelector(null)} footer={<Button label="Listo" onPress={() => setSelector(null)} />}>
         <TextField value={r.description} onChangeText={r.setDescription} multiline style={styles.descriptionInput} accessibilityLabel="Descripción del movimiento" />
@@ -47,12 +53,18 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
         value={selector === "category" ? r.categoryId : selector === "destination" ? r.destinationAccountId : r.accountId}
         onChange={(id) => { if (selector === "category") r.selectCategoryManually(id); else if (selector === "destination") r.setDestinationAccountId(id); else r.setAccountId(id); }}
         onClose={() => setSelector(null)} />
-    ) : extraOverlay} contentStyle={styles.sheetContent}
+    ) : optionsOpen ? <>
+      <InlineFormSheet visible entranceAnimation="springFade" title="Más opciones" onBack={() => setOptionsOpen(false)}>
+        <Button label="Omitir detección" variant="ghost" disabled={r.busy} onPress={() => { void r.discard(); }} />
+        {extras}
+      </InlineFormSheet>
+      {extraOverlay}
+    </> : extraOverlay} contentStyle={styles.sheetContent}
     footer={status ? status.footer : list || !r.initialized ? undefined : <View>
-      {warning ? <Text style={styles.footerWarning}>{warning}</Text> : null}
-      {r.saveError ? <Text style={styles.footerError} accessibilityRole="alert">{r.saveError}</Text> : null}
-      {r.duplicateCandidate ? <View style={styles.duplicateFooter}><DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} omitting={r.isDiscarding} showOmitAction={false} onOpen={r.openDuplicate} onSame={() => { void r.useExistingDuplicate(); }} onSaveAnyway={() => { void r.submit(true); }} onDiscard={() => { void r.discard(); }} /></View> : <DetailActionBar primarySide="right"
-        primary={{ label: r.busy && !r.isDiscarding ? "Guardando…" : r.saveError ? "Reintentar" : "Guardar", accessibilityLabel: r.saveError ? "Reintentar la última acción" : "Guardar movimiento revisado", icon: Check, loading: r.isSaving, disabled: r.busy, onPress: () => { if (r.saveError) void r.retry(); else void r.submit(false); } }} />}
+      <FormSubmitBar label={r.duplicateCandidate ? "Guardar igual" : "Guardar"} onSubmit={() => { void r.submit(Boolean(r.duplicateCandidate)); }} loading={r.isSaving} disabled={r.busy} error={r.saveError} onMore={() => setOptionsOpen(true)}>
+        {r.duplicateCandidate ? <Button label="Es el mismo" style={{ flex: 1 }} variant="secondary" disabled={r.busy} onPress={() => { void r.useExistingDuplicate(); }} /> : null}
+      </FormSubmitBar>
+
     </View>}
   >
     {status?.content ?? list ?? (!r.initialized ? <View style={styles.loading}><ActivityIndicator color={COLORS.storm} /><Text style={styles.meta}>Cargando la detección…</Text></View> : <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>
@@ -60,26 +72,26 @@ export function DetectedMovementReviewSheet({ visible, onClose, review: r, posit
       {r.learningHint ? <Text style={styles.meta}>{r.learningHint}</Text> : null}
       <View style={styles.segment}>{(["expense", "income", "transfer"] as const).map((type) => <Pressable key={type} style={[styles.option, r.movementType === type && styles.optionActive]} accessibilityRole="button" accessibilityState={{ selected: r.movementType === type }} onPress={() => r.switchMovementType(type)} disabled={r.busy}><Text style={[styles.optionLabel, r.movementType === type && { color: detectionTone(type) }]}>{type === "expense" ? "Gasto" : type === "income" ? "Ingreso" : "Transferencia"}</Text></Pressable>)}</View>
       <View style={styles.amountGroup}>
-        <View style={styles.amountRow}><Text style={[styles.amountPrefix, { color: detectionTone(r.movementType) }]}>{r.movementType === "income" ? "+" : r.movementType === "expense" ? "−" : ""}{currency === "PEN" ? "S/" : currency === "USD" ? "US$" : currency}</Text><TextField value={r.amount} onChangeText={r.setAmount} keyboardType="decimal-pad" editable={!r.busy} style={[styles.amountInput, { color: detectionTone(r.movementType) }]} accessibilityLabel="Importe del movimiento" /></View>
+        <View style={styles.amountRow}><Text style={[styles.amountPrefix, { color: detectionTone(r.movementType) }]}>{r.movementType === "income" ? "+" : r.movementType === "expense" ? "−" : ""}{currency === "PEN" ? "S/" : currency === "USD" ? "US$" : currency}</Text><TextField fieldId="amount" value={r.amount} onChangeText={r.setAmount} keyboardType="decimal-pad" editable={!r.busy} style={[styles.amountInput, { color: detectionTone(r.movementType) }]} accessibilityLabel="Importe del movimiento" /></View>
         <Text style={styles.currency}>{currency}</Text>
       </View>
       <View style={styles.fields}>
-        <DetailFieldRow label="Descripción" value={r.description || "Escribir descripción"} onPress={() => setSelector("description")} />
-        <DetailFieldRow label="Fecha y hora" value={`${r.date.split("-").reverse().join("/")} · ${r.time}`} onPress={() => setSelector("date")} />
-        <DetailFieldRow label={isTransfer ? "Desde" : "Cuenta"} value={source?.name ?? "Elegir cuenta"} onPress={() => setSelector("account")} />
+        <DetailFieldRow fieldId="description" label="Descripción" value={r.description || "Escribir descripción"} onPress={() => setSelector("description")} />
+        <DetailFieldRow fieldId="date" label="Fecha y hora" value={`${r.date.split("-").reverse().join("/")} · ${r.time}`} onPress={() => setSelector("date")} />
+        <DetailFieldRow fieldId="accountId" label={isTransfer ? "Desde" : "Cuenta"} value={source?.name ?? "Elegir cuenta"} onPress={() => setSelector("account")} />
         {isTransfer ? <>
-          <DetailFieldRow label="Hacia" value={destination?.name ?? "Elige el destino"} onPress={() => setSelector("destination")} last={!r.transferCurrenciesDiffer} />
+          <DetailFieldRow fieldId="destinationAccountId" label="Hacia" value={destination?.name ?? "Elige el destino"} onPress={() => setSelector("destination")} last={!r.transferCurrenciesDiffer} />
           {r.transferCurrenciesDiffer ? <>
-            <View style={styles.inputRow}><Text style={styles.fieldLabel}>Llega ({destination?.currencyCode})</Text><TextField value={r.destinationAmount} onChangeText={r.setDestinationAmount} editable={!r.busy} keyboardType="decimal-pad" placeholder="0.00" style={styles.rowInput} accessibilityLabel="Importe que llega al destino" /></View>
-            <View style={styles.inputRow}><Text style={styles.fieldLabel}>Tipo de cambio</Text><TextField value={r.transferFxRate} onChangeText={r.setTransferFxRate} editable={!r.busy} keyboardType="decimal-pad" placeholder="0.00" style={styles.rowInput} accessibilityLabel="Tipo de cambio" /></View>
+            <View style={styles.inputRow}><Text style={styles.fieldLabel}>Llega ({destination?.currencyCode})</Text><TextField fieldId="destinationAmount" value={r.destinationAmount} onChangeText={r.setDestinationAmount} editable={!r.busy} keyboardType="decimal-pad" placeholder="0.00" style={styles.rowInput} accessibilityLabel="Importe que llega al destino" /></View>
+            <View style={styles.inputRow}><Text style={styles.fieldLabel}>Tipo de cambio</Text><TextField fieldId="fxRate" value={r.transferFxRate} onChangeText={r.setTransferFxRate} editable={!r.busy} keyboardType="decimal-pad" placeholder="0.00" style={styles.rowInput} accessibilityLabel="Tipo de cambio" /></View>
             <Text style={styles.meta}>1 {currency} = {r.transferFxRate || "…"} {destination?.currencyCode}</Text>
           </> : null}
         </> : <DetailFieldRow label="Categoría" value={category?.name ?? "Sin categoría"} onPress={() => setSelector("category")} last />}
       </View>
+      {r.duplicateCandidate ? <DuplicateDecision candidate={r.duplicateCandidate} currency={currency} busy={r.busy} showActions={false} showOmitAction={false} onOpen={r.openDuplicate} onSame={r.useExistingDuplicate} onSaveAnyway={() => { void r.submit(true); }} onDiscard={r.discard} /> : null}
       <Text style={styles.meta}>Detectado: «{r.suggestion?.description}»</Text>
-      {extras}
     </View>)}
-  </BottomSheet>;
+  </BottomSheet></FormFeedbackProvider>;
 }
 
 const styles = StyleSheet.create({

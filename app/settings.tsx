@@ -1,21 +1,10 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../components/ui/FormFeedback";
+import { requiredField } from "../lib/form-field-rules";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
-import {
-  ActivityIndicator,
-  Image,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,27 +23,16 @@ import { ProBadge, ProFeatureSheet } from "../components/ui/ProFeatureSheet";
 import { EMAIL_DETECTION_PRO_DESCRIPTION, openDarkMoneyProPlans } from "../features/settings/lib/email-detection-pro";
 import { useEmailDetectionProAccessQuery } from "../services/queries/email-detection-access";
 import { DASHBOARD_AI_TONE_OPTIONS } from "../features/dashboard/lib/dashboard-ai-content";
-import {
-  fetchUserWorkspaces,
-  useCreateSharedWorkspaceMutation,
-  useCreateWorkspaceInvitationMutation,
-  useNotificationPreferencesQuery,
-  useUpdateNotificationPreferencesMutation,
-  type WorkspaceInvitationInput,
-} from "../services/queries/workspace-data";
+import { fetchUserWorkspaces, useCreateSharedWorkspaceMutation, useCreateWorkspaceInvitationMutation, useNotificationPreferencesQuery, useUpdateNotificationPreferencesMutation, type WorkspaceInvitationInput } from "../services/queries/workspace-data";
 import { useSyncExchangeRatePairMutation } from "../services/queries/exchange-rates";
 import { useNotificationDetectionSettingsQuery } from "../services/queries/notification-detection";
 import { notificationDetection } from "../lib/notification-detection-native";
 import { FINANCIAL_APPS } from "../lib/notification-detection-apps";
-import {
-  inboundEmailAddress,
-  useInboundEmailAliasQuery,
-  useRotateInboundEmailAliasMutation,
-} from "../services/queries/inbound-email-alias";
+import { inboundEmailAddress, useInboundEmailAliasQuery, useRotateInboundEmailAliasMutation } from "../services/queries/inbound-email-alias";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { BottomSheet } from "../components/ui/BottomSheet";
-import { Card } from "../components/ui/Card";
+
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { CurrencySelector } from "../components/ui/CurrencySelector";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
@@ -243,7 +221,7 @@ function SettingsScreen() {
   // Password setup modal (shown after biometric auth when enabling)
   const [bioSetupVisible, setBioSetupVisible] = useState(false);
   const [bioSetupPassword, setBioSetupPassword] = useState("");
-  const [bioSetupError, setBioSetupError] = useState("");
+
 
   useEffect(() => {
     void (async () => {
@@ -266,7 +244,7 @@ function SettingsScreen() {
       });
       if (result.success) {
         setBioSetupPassword("");
-        setBioSetupError("");
+
         setBioSetupVisible(true);
       }
     } else {
@@ -279,10 +257,10 @@ function SettingsScreen() {
 
   async function handleBioSetupConfirm() {
     if (!bioSetupPassword.trim()) {
-      setBioSetupError("Ingresa tu contraseña para continuar");
+
       return;
     }
-    setBioSetupError("");
+
     const email = profile?.email ?? "";
     await SecureStore.setItemAsync(SECURE_EMAIL_KEY, email);
     await SecureStore.setItemAsync(SECURE_PASS_KEY, bioSetupPassword);
@@ -296,7 +274,7 @@ function SettingsScreen() {
   function handleBioSetupCancel() {
     setBioSetupVisible(false);
     setBioSetupPassword("");
-    setBioSetupError("");
+
   }
 
   async function confirmSignOut() {
@@ -348,7 +326,7 @@ function SettingsScreen() {
         showToast("Invitación creada", "success", "No se envió correo");
       }
     } catch (err: unknown) {
-      showErrorToast("No se pudo enviar la invitación", err);
+      throw err;
     }
   }
 
@@ -395,7 +373,7 @@ function SettingsScreen() {
       setCreateWsSheetOpen(false);
       showToast("Workspace creado", "success", workspace.name);
     } catch (err: unknown) {
-      showErrorToast("No se pudo crear el workspace", err);
+      throw err;
     }
   }
 
@@ -933,6 +911,7 @@ function SettingsScreen() {
       </Modal>
 
       {/* Biometric setup — password prompt */}
+      <FormFeedbackProvider visible={bioSetupVisible} fields={{ password: requiredField(bioSetupPassword, "Ingresa tu contraseña") }} onSubmit={handleBioSetupConfirm}>
       <Modal
         visible={bioSetupVisible}
         transparent
@@ -947,7 +926,7 @@ function SettingsScreen() {
             <Text style={styles.soBody}>
               Ingresa tu contraseña una vez para vincularla a tu huella digital. No la guardaremos en ningún servidor.
             </Text>
-            <Input
+            <Input fieldId="password"
               label="Contraseña"
               value={bioSetupPassword}
               onChangeText={setBioSetupPassword}
@@ -955,16 +934,9 @@ function SettingsScreen() {
               autoCapitalize="none"
               autoComplete="off"
               importantForAutofill="no"
-              error={bioSetupError}
               containerStyle={styles.bioSetupInput}
             />
-            <Button
-              label="Activar huella digital"
-              variant="primary"
-              size="lg"
-              style={styles.bioFullBtn}
-              onPress={() => void handleBioSetupConfirm()}
-            />
+            <FormSubmitBar label="Activar huella digital" onSubmit={handleBioSetupConfirm} />
             <Button
               label="Cancelar"
               variant="ghost"
@@ -975,6 +947,7 @@ function SettingsScreen() {
           </View>
         </View>
       </Modal>
+      </FormFeedbackProvider>
 
       <ConfirmDialog
         visible={signOutVisible}
@@ -1034,17 +1007,19 @@ function SettingsScreen() {
         onClose={() => setEmailProSheetOpen(false)}
         onViewPro={handleViewEmailPro}
       />
+      <FormFeedbackProvider visible={inviteSheetOpen} busy={inviteMutation.isPending} onSubmit={handleSendInvite} fields={{ email: requiredField(inviteEmail, "Escribe el correo", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim()) ? null : "Escribe un correo válido") }}>
       <BottomSheet
         visible={inviteSheetOpen}
         onClose={() => setInviteSheetOpen(false)}
         title="Invitar miembro"
         snapHeight={0.72}
         backdropColor={SURFACE.scrim}
+        footer={<FormSubmitBar onSubmit={handleSendInvite} label="Enviar invitación" loading={inviteMutation.isPending} />}
       >
         <Text style={styles.sheetSubtitle}>Workspace: {activeWorkspace?.name}</Text>
 
-        <Input
-          label="Email *"
+        <Input fieldId="email"
+          label="Email"
           value={inviteEmail}
           onChangeText={setInviteEmail}
           keyboardType="email-address"
@@ -1078,26 +1053,24 @@ function SettingsScreen() {
           numberOfLines={2}
         />
 
-        <Button
-          label="Enviar invitación"
-          onPress={handleSendInvite}
-          loading={inviteMutation.isPending}
-          style={styles.sheetBtn}
-        />
+
       </BottomSheet>
+      </FormFeedbackProvider>
 
       {/* ── Create workspace sheet ────────────────────────────────────── */}
+      <FormFeedbackProvider visible={createWsSheetOpen} busy={createWsMutation.isPending} onSubmit={handleCreateWorkspace} fields={{ name: requiredField(newWsName, "Escribe el nombre") }}>
       <BottomSheet
         visible={createWsSheetOpen}
         onClose={() => setCreateWsSheetOpen(false)}
         title="Nuevo workspace"
         snapHeight={0.62}
         backdropColor={SURFACE.scrim}
+        footer={<FormSubmitBar onSubmit={handleCreateWorkspace} label="Crear workspace" loading={createWsMutation.isPending} />}
       >
         <Text style={styles.sheetSubtitle}>Se creará un workspace compartido</Text>
 
-        <Input
-          label="Nombre *"
+        <Input fieldId="name"
+          label="Nombre"
           value={newWsName}
           onChangeText={setNewWsName}
           placeholder="Ej. Empresa ABC"
@@ -1110,13 +1083,9 @@ function SettingsScreen() {
           hint={`El tipo de cambio contra ${DEFAULT_EXCHANGE_CURRENCY} se guardara automaticamente.`}
         />
 
-        <Button
-          label="Crear workspace"
-          onPress={handleCreateWorkspace}
-          loading={createWsMutation.isPending}
-          style={styles.sheetBtn}
-        />
+
       </BottomSheet>
+      </FormFeedbackProvider>
       </>
       }
     />

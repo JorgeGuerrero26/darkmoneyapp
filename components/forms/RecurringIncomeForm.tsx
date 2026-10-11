@@ -2,7 +2,7 @@ import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
-import { AlertCircle } from "lucide-react-native";
+
 import { format } from "date-fns";
 
 import { useWorkspace } from "../../lib/workspace-context";
@@ -10,19 +10,9 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import {
-  useCreateRecurringIncomeMutation,
-  useUpdateRecurringIncomeMutation,
-  useWorkspaceSnapshotQuery,
-  type RecurringIncomeFormInput,
-} from "../../services/queries/workspace-data";
+import { useCreateRecurringIncomeMutation, useUpdateRecurringIncomeMutation, useWorkspaceSnapshotQuery, type RecurringIncomeFormInput } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
-import {
-  buildPatternMaps,
-  suggestAccountFromCounterparty,
-  suggestCategoryFromCounterparty,
-  suggestCategoryFromDescription,
-} from "../../lib/movement-patterns";
+import { buildPatternMaps, suggestAccountFromCounterparty, suggestCategoryFromCounterparty, suggestCategoryFromDescription } from "../../lib/movement-patterns";
 import type { RecurringIncomeSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormDateRow } from "../ui/FormDateRow";
@@ -38,7 +28,7 @@ import { LAST_DAY_ANCHOR, subscriptionRecurrencePhrase } from "../../lib/subscri
 import { currencyPluralTitle } from "../../constants/currencies";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
-import { Button } from "../ui/Button";
+
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
@@ -245,15 +235,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   }, [defaultCurrency, snapshot?.accounts]);
 
   /* El botón nombra lo que falta mientras falte, en vez de esperar a que lo toques. */
-  const missingLabel = !name.trim()
-    ? "Falta el nombre"
-    : !amount.trim() || Number(amount) <= 0
-      ? "Falta el monto"
-      : !nextExpectedDate.trim()
-        ? "Falta la próxima llegada"
-        : accountId === null
-          ? "Falta la cuenta donde entra"
-          : null;
+
   const recurrenceLabel = subscriptionRecurrencePhrase(intervalValue, frequency, anchorDay);
   /* Lo que va a pasar, no cómo lo hace la app. Antes: "La app usa la próxima llegada como fecha
      base y desde ahí repite según esta frecuencia" y, aparte, "Cadencia actual: cada 1 mes". */
@@ -420,15 +402,15 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
     }
   }
 
+  const anchorIssue = (frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") ? integerField(dayOfMonth, 1, 31, true).invalid : frequency === "weekly" && dayOfWeek != null && (dayOfWeek < 0 || dayOfWeek > 6) ? "Elige una fecha para corregir el día de la semana" : null;
   const validationFields = {
 
       name: requiredField(name, "Escribe el nombre"),
       amount: positiveAmountField(amount),
-      nextExpectedDate: requiredField(nextExpectedDate, "Elige la próxima llegada", nextExpectedDate < startDate ? "La próxima llegada no puede ser anterior al inicio" : null),
+      nextExpectedDate: requiredField(nextExpectedDate, "Elige la próxima llegada", nextExpectedDate < startDate ? "La próxima llegada no puede ser anterior al inicio" : anchorIssue),
       accountId: requiredField(accountId, "Elige una cuenta", null, () => setAccountOpen(true)),
+      endDate: { value: endDate, invalid: endDate && endDate < startDate ? "La fecha de fin no puede ser anterior al inicio" : null, reveal: () => setOptionalsOpen(true) },
       intervalCount: integerField(intervalCount, 1, 9999),
-      dayOfMonth: integerField(dayOfMonth, 1, 31, true),
-      dayOfWeek: { value: dayOfWeek, invalid: frequency === "weekly" && dayOfWeek != null && (dayOfWeek < 0 || dayOfWeek > 6) ? "Elige un día de la semana" : null },
   };
 
   return (
@@ -619,7 +601,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           {/* Lo obligatorio, en una tarjeta. "Entra a" sube aquí: sin cuenta, confirmar una
               llegada no le suma el dinero a ningún saldo. */}
           <View style={styles.group}>
-            <FormOptionRow
+            <FormOptionRow fieldId={frequency === "custom" ? undefined : "intervalCount"}
               grouped
               label="Se repite"
               value={recurrenceLabel}

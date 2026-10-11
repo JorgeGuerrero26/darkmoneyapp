@@ -1,3 +1,4 @@
+import { detectionFormFields } from "../lib/form-feedback";
 import { applyPersonalProposal, buildDetectionDraft, detectionMissingFields, transferDestinationDraft, type DetectionDraft } from "../lib/review-draft";
 import { reconciliationCandidateForDraft } from "../lib/reconciliation";
 import { humanizeError } from "../../../lib/errors";
@@ -10,29 +11,9 @@ import { useAuth } from "../../../lib/auth-context";
 import { useWorkspace } from "../../../lib/workspace-context";
 import { useToast } from "../../../hooks/useToast";
 import { useHaptics } from "../../../hooks/useHaptics";
-import {
-  findPossibleDuplicateMovement,
-  countSameDayDetectionSignals,
-  confirmDuplicateWithAi,
-  recordSuggestionAction,
-  useAiUsageTodayQuery,
-  useNotificationDetectionSettingsQuery,
-  useDetectedMovementSuggestionQuery,
-  useMarkDetectedMovementSuggestionMutation,
-  useUndoDetectedMovementRegistrationMutation,
-} from "../../../services/queries/notification-detection";
+import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation } from "../../../services/queries/notification-detection";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../../lib/notification-detection-apps";
-import {
-  useCreateCategoryMutation,
-  useCreateCounterpartyMutation,
-  useCreateMovementMutation,
-  useCreateRecurringIncomeMutation,
-  useCreateSubscriptionMutation,
-  useMarkNotificationReadMutation,
-  usePersistLearningFeedbackMutation,
-  useUserEntitlementQuery,
-  useWorkspaceSnapshotQuery,
-} from "../../../services/queries/workspace-data";
+import { useCreateCategoryMutation, useCreateCounterpartyMutation, useCreateMovementMutation, useCreateRecurringIncomeMutation, useCreateSubscriptionMutation, useMarkNotificationReadMutation, usePersistLearningFeedbackMutation, useUserEntitlementQuery, useWorkspaceSnapshotQuery } from "../../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../../services/queries/movement-patterns";
 import { useDetectionLearningQuery } from "../../../services/queries/detection-learning";
 import { learningObject, proposeFromPersonalHistory, receiptAccountHints } from "../lib/personal-learning";
@@ -46,11 +27,7 @@ import type { CounterpartySuggestionResult } from "../../../lib/movement-counter
 import { useMovementRecurringAiSuggestion } from "../../../hooks/useMovementRecurringAiSuggestion";
 import { useMovementRiskExplanation } from "../../../hooks/useMovementRiskExplanation";
 import { useMovementBudgetImpact } from "../../../hooks/useMovementBudgetImpact";
-import {
-  recurringFrequencyToSubscriptionFields,
-  type MovementRecurringHistoryItem,
-  type MovementRecurringSuggestionResult,
-} from "../../../lib/movement-recurring-suggestions";
+import { recurringFrequencyToSubscriptionFields, type MovementRecurringHistoryItem, type MovementRecurringSuggestionResult } from "../../../lib/movement-recurring-suggestions";
 import type { MovementRiskItem } from "../../../lib/movement-risk-analysis";
 import type { CounterpartySummary } from "../../../types/domain";
 import { useMovementCreationController } from "../../movements/hooks/useMovementCreationController";
@@ -59,9 +36,7 @@ import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
 import { dateTimeStrToISO, todayPeru } from "../../../lib/date";
 import { validateMovementForm } from "../../movements/lib/form-validation";
 import { patternMovementAmount } from "../../movements/lib/pattern-heuristics";
-import {
-  mapAiCategoryRecommendation,
-} from "../../movements/lib/category-suggestion-derivation";
+import { mapAiCategoryRecommendation } from "../../movements/lib/category-suggestion-derivation";
 import { splitLineMetadata, splitLineDescription, validateSplit, type SplitLine } from "../../movements/lib/split-movement";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../../lib/movement-ai-orchestrator";
 import { useSpendTypesQuery } from "../../../services/queries/spend-types";
@@ -146,12 +121,13 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const [time, setTime] = useState("");
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   // El controlador sigue montado para la tarjeta. El error del intento pertenece
   // a la revisión que se abre/cierra; conserva el borrador, pero no ese error.
   // Un fallo al guardar directamente desde la tarjeta permanece hasta reintentar
   // o abrir la revisión, porque no cambia `visible`.
-  useEffect(() => { setSaveError(null); }, [visible]);
+  useEffect(() => { setSaveError(null); setFieldErrors({}); }, [visible]);
   const [duplicateCandidate, setDuplicateCandidate] = useState<MovementRecord | null>(null);
   const reconciliationCandidateId = useRef<number | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
@@ -673,9 +649,12 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
 
   async function submitInner(force: boolean) {
     if (!suggestion || !activeWorkspaceId) return;
-    const missingFields = detectionMissingFields({ movementType, amount, description, accountId,
-      destinationAccountId, destinationAmount, fxRate: transferFxRate, categoryId, date, time }, activeAccounts, false);
-    if (missingFields.length) { setSaveError(missingFields[0]); haptics.error(); return; }
+    const fields = detectionFormFields({ movementType, amount, description, accountId, destinationAccountId,
+      destinationAmount, fxRate: transferFxRate, categoryId, date, time }, activeAccounts, todayPeru());
+    const issues = Object.fromEntries(Object.entries(fields).filter(([, rule]) => rule.missing || rule.invalid)
+      .map(([id, rule]) => [id, rule.missing ?? rule.invalid!]));
+    setFieldErrors(issues);
+    if (Object.keys(issues).length) { haptics.error(); return; }
     const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN);
 
     // Validación compartida con MovementForm (cierra R3: criterios divergentes).
@@ -707,8 +686,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     );
     if (!validation.valid) {
       haptics.error();
-      const firstError = Object.values(validation.errors)[0];
-      setSaveError(firstError ?? "Revisa los datos del movimiento");
+      setFieldErrors(validation.errors);
       return;
     }
 
@@ -779,7 +757,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
         // resolver); QuickEntry la exige explícita cuando las monedas difieren.
         fx = manualFx ?? NaN;
         if (!Number.isFinite(fx) || fx <= 0) {
-          setSaveError("Ingresa un tipo de cambio válido");
+          setFieldErrors({ fxRate: "Ingresa un tipo de cambio válido" });
           return;
         }
       }
@@ -1136,7 +1114,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     (personalProposal.destinationAccountId != null && destinationAccountId === personalProposal.destinationAccountId && !destinationEdited.current)
     ? "Según tus movimientos anteriores" : null;
   return { suggestion, suggestionQuery, isPendingEmail, emailProAccess, learningHint,
-    draft, missing, cardMissing: detectionMissingFields(draft, activeAccounts), readyToSave, busy, isSaving, saveError, duplicateCandidate, useExistingDuplicate, openDuplicate,
+    draft, missing, cardMissing: detectionMissingFields(draft, activeAccounts), readyToSave, busy, isSaving, saveError, fieldErrors, duplicateCandidate, useExistingDuplicate, openDuplicate,
     movementType, switchMovementType, amount, setAmount: changeAmount, accountId, setAccountId: chooseAccount,
     destinationAccountId, setDestinationAccountId: chooseDestination, destinationAmount, setDestinationAmount: changeDestinationAmount,
     transferFxRate, setTransferFxRate: changeFxRate, categoryId, selectCategoryManually, description,

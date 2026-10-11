@@ -1,21 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Dimensions,
-  Keyboard,
-  LayoutAnimation,
-  Modal,
-  PanResponder,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { FormFieldScrollScope } from "./FormFeedback";
+import { Animated, Dimensions, Keyboard, LayoutAnimation, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SHADOW, SPACING, SURFACE } from "../../constants/theme";
@@ -91,6 +76,9 @@ export function BottomSheet({
   scrollEnabled = true,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const localScrollRef = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
+  const activeScrollRef = scrollRef ?? localScrollRef;
   const translateY = useRef(new Animated.Value(entranceAnimation === "springFade" ? 0 : SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const isSwiping = useRef(false);
@@ -293,7 +281,9 @@ export function BottomSheet({
         </View>
 
         {scrollEnabled ? <ScrollView
-          ref={scrollRef as React.RefObject<ScrollView> | undefined}
+          ref={activeScrollRef}
+          onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           // Se encoge para dejar sitio a la barra: sin esto el scroll empuja el pie fuera del
@@ -301,7 +291,7 @@ export function BottomSheet({
           style={styles.scroll}
           contentContainerStyle={[styles.content, contentStyle]}
         >
-          {children}
+          <FormFieldScrollScope scroll={activeScrollRef} offset={scrollOffset}>{children}</FormFieldScrollScope>
         </ScrollView> : <View style={[styles.scroll, styles.listContent, styles.content, contentStyle]}>{children}</View>}
         {footer}
       </Animated.View>

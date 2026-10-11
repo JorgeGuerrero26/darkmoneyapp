@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 
@@ -31,7 +31,8 @@ export function DetailFieldRow({
   valueAdornment,
   valueLines = 2,
 }: DetailFieldRowProps) {
-  const fieldFeedback = useFormField(fieldId, onPress);
+  const fieldRef = useRef<View>(null);
+  const fieldFeedback = useFormField(fieldId, onPress, fieldRef, true);
   const feedback = providedFeedback ?? fieldFeedback;
   const missing = feedback?.kind === "missing";
   const invalid = feedback?.kind === "invalid";
@@ -39,7 +40,7 @@ export function DetailFieldRow({
     <View style={styles.row}>
       <Text style={[styles.label, action && styles.labelAction, invalid && { color: COLORS.dangerStrong }]}>{label}</Text>
       {valueAdornment}
-      {missing ? <Text style={{ color: COLORS.warning }}>?</Text> : null}
+      {missing ? <Text style={{ color: COLORS.warning }}>•</Text> : null}
       <Text style={[styles.value, (muted || action) && styles.valueMuted, missing && { color: COLORS.warning }]} numberOfLines={valueLines}>
         {missing ? feedback.message : value}
       </Text>
@@ -49,7 +50,7 @@ export function DetailFieldRow({
   </>;
   const container = [!last && styles.rowDivided, invalid && { backgroundColor: COLORS.dangerStrong + "12" }];
   if (!onPress) return <View style={container}>{body}</View>;
-  return <TouchableOpacity style={container} onPress={onPress} activeOpacity={0.78}
+  return <TouchableOpacity ref={fieldRef} style={container} onPress={onPress} activeOpacity={0.78}
     accessibilityRole="button" accessibilityLabel={`${label}: ${missing ? feedback.message : value}`}>{body}</TouchableOpacity>;
 }
 

@@ -1,8 +1,8 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { positiveAmountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { AlertCircle } from "lucide-react-native";
+
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -11,13 +11,10 @@ import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
-import {
-  useCreatePrincipalAdjustmentMutation,
-  useUpdateObligationEventMutation,
-} from "../../services/queries/obligations";
+import { useCreatePrincipalAdjustmentMutation, useUpdateObligationEventMutation } from "../../services/queries/obligations";
 import type { ObligationEventSummary, ObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
-import { Button } from "../ui/Button";
+
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
 import { ConfirmDialog } from "../ui/ConfirmDialog";

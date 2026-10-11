@@ -285,7 +285,7 @@ function SubscriptionsScreen() {
         setMarkPaidTarget(null);
         showToast("Pago registrado", "success", `${markPaidTarget.name} · próximo cobro ${formatSubscriptionYmd(nextDueDate)}`);
       } catch (error: unknown) {
-        showErrorToast("No se pudo registrar el pago", error);
+        throw error;
       }
     },
     [markPaidMutation, markPaidTarget, showToast],
@@ -594,7 +594,7 @@ function SubscriptionsScreen() {
             accounts={snapshot?.accounts ?? []}
             isPending={markPaidMutation.isPending}
             onClose={() => setMarkPaidTarget(null)}
-            onConfirm={(args) => void handleMarkPaid(args)}
+            onConfirm={handleMarkPaid}
           />
         </>
       }

@@ -1,8 +1,8 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { positiveAmountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { ArrowRight, Info, AlertCircle } from "lucide-react-native";
+import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ArrowRight, Info } from "lucide-react-native";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,29 +16,19 @@ import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
-import {
-  useCreateObligationPaymentMutation,
-  useObligationEventsQuery,
-  useUpdateObligationEventMutation,
-} from "../../services/queries/obligations";
+import { useCreateObligationPaymentMutation, useObligationEventsQuery, useUpdateObligationEventMutation } from "../../services/queries/obligations";
 import { useMovementQuery } from "../../services/queries/movements";
 import { useObligationEventAttachmentsQuery } from "../../services/queries/attachments";
 import { obligationViewerActsAsCollector } from "../../lib/obligation-viewer-labels";
 import type { ObligationEventSummary, ObligationSummary, SharedObligationSummary } from "../../types/domain";
 import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { BottomSheet } from "../ui/BottomSheet";
-import { Button } from "../ui/Button";
+
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
-import {
-  coverPlan,
-  describeCoverage,
-  nextUncoveredPayment,
-  parsePaymentPlan,
-  type ActualPayment,
-} from "../../features/obligations/lib/payment-plan";
+import { coverPlan, describeCoverage, nextUncoveredPayment, parsePaymentPlan, type ActualPayment } from "../../features/obligations/lib/payment-plan";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
@@ -551,6 +541,12 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     return selectedAccount.currentBalance + accountDelta;
   }, [accountDelta, selectedAccount]);
 
+  const validationFields = {
+
+      amount: positiveAmountField(amount, "Ingresa el monto", obligation ? describeOverpayment({ amount: parseFloat(amount), pendingAmount: pendingAmount + (isEditMode && editEvent?.eventType === "payment" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: actsAsCollector ? "cobro" : "pago" }) : null),
+      accountId: { value: accountId, missing: createMovement && activeAccounts.length > 0 && accountId == null ? "Elige una cuenta" : null },
+  };
+
   return (
     <FormFeedbackProvider visible={visible} busy={createPaymentMutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
@@ -735,7 +731,6 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           placeholder="Referencia, número de operación..."
           placeholderTextColor={COLORS.storm}
           returnKeyType="done"
-          onSubmitEditing={handleSubmit}
         />
       </View>
 
@@ -776,7 +771,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
 
 
 
-      
+
     </BottomSheet>
   </>
     </FormFeedbackProvider>
@@ -963,11 +958,6 @@ function EditPaymentImpact({
     `${currency} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const diffColor = diff > 0 ? COLORS.danger : diff < 0 ? COLORS.income : COLORS.storm;
 
-  const validationFields = {
-
-      amount: positiveAmountField(amount, "Ingresa el monto", obligation ? describeOverpayment({ amount: parseFloat(amount), pendingAmount: pendingAmount + (isEditMode && editEvent?.eventType === "payment" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: actsAsCollector ? "cobro" : "pago" }) : null),
-      accountId: { value: accountId, missing: createMovement && activeAccounts.length > 0 && accountId == null ? "Elige una cuenta" : null },
-  };
 
   return (
     <View style={epStyles.container}>

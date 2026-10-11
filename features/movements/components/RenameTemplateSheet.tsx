@@ -1,5 +1,7 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { requiredField } from "../../../lib/form-field-rules";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity } from "react-native";
+import { StyleSheet } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
@@ -23,8 +25,10 @@ export function RenameTemplateSheet({ template, isPending, onClose, onConfirm }:
 
   const normalized = normalizeTemplateName(name);
   return (
-    <BottomSheet visible={Boolean(template)} onClose={onClose} title="Renombrar plantilla" snapHeight={0.32}>
-      <TextField
+    <FormFeedbackProvider visible={Boolean(template)} busy={isPending} fields={{ name: requiredField(name, "Escribe el nombre") }} onSubmit={() => onConfirm(normalized!)}>
+
+    <BottomSheet visible={Boolean(template)} onClose={onClose} title="Renombrar plantilla" snapHeight={0.32} footer={<FormSubmitBar onSubmit={() => onConfirm(normalized!)} loading={isPending} />}>
+      <TextField fieldId="name"
         style={styles.input}
         value={name}
         onChangeText={setName}
@@ -33,16 +37,9 @@ export function RenameTemplateSheet({ template, isPending, onClose, onConfirm }:
         autoFocus
         maxLength={80}
       />
-      <TouchableOpacity
-        style={[styles.saveButton, (!normalized || isPending) && styles.saveButtonDisabled]}
-        disabled={!normalized || isPending}
-        onPress={() => normalized && onConfirm(normalized)}
-        accessibilityRole="button"
-        accessibilityLabel="Guardar nombre de plantilla"
-      >
-        <Text style={styles.saveLabel}>{isPending ? "Guardando…" : "Guardar"}</Text>
-      </TouchableOpacity>
+
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

@@ -20,29 +20,14 @@ import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { ExchangeRateFilterSheet } from "../features/exchange-rates/components/ExchangeRateFilterSheet";
 import { ExchangeRateSwipeRow } from "../features/exchange-rates/components/ExchangeRateSwipeRow";
 import { ExchangeRatesSummaryBar } from "../features/exchange-rates/components/ExchangeRatesSummaryBar";
-import {
-  buildExchangeRateSections,
-  exchangeRateAdvancedFilterLabel,
-  filterExchangeRates,
-  getExchangeRatePairCount,
-  getExchangeRateCurrencyOptions,
-  isExchangeRateSameLocalDay,
-  type ExchangeRateAdvancedFilter,
-  type ExchangeRateListSection,
-} from "../features/exchange-rates/lib/exchangeRateFilters";
+import { buildExchangeRateSections, exchangeRateAdvancedFilterLabel, filterExchangeRates, getExchangeRatePairCount, getExchangeRateCurrencyOptions, isExchangeRateSameLocalDay, type ExchangeRateAdvancedFilter, type ExchangeRateListSection } from "../features/exchange-rates/lib/exchangeRateFilters";
 import { buildExchangeRatesContextNote } from "../features/exchange-rates/lib/buildExchangeRatesContextNote";
 import { getUsdReferenceRate } from "../features/exchange-rates/lib/usdReferenceRate";
 import { buildExchangeRatesCsv } from "../lib/exchange-rates-csv";
 import { shareCsvAsFile } from "../lib/share-csv-file";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
-import {
-  useCreateExchangeRateMutation,
-  useDeleteExchangeRateMutation,
-  useExchangeRatesQuery,
-  useSyncExchangeRatePairMutation,
-  type ExchangeRateRecord,
-} from "../services/queries/exchange-rates";
+import { useCreateExchangeRateMutation, useDeleteExchangeRateMutation, useExchangeRatesQuery, useSyncExchangeRatePairMutation, type ExchangeRateRecord } from "../services/queries/exchange-rates";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ExchangeRateForm } from "../components/forms/ExchangeRateForm";
 import { useToast } from "../hooks/useToast";
@@ -264,9 +249,9 @@ function ExchangeRatesScreen() {
       showToast("Tipo de cambio creado", "success");
       closeForm();
     } catch (error: unknown) {
-      showErrorToast("No se pudo guardar el tipo de cambio", error);
+      throw error;
     }
-  }, [createRate, showToast, showErrorToast]);
+  }, [createRate, showToast]);
 
   const handleRefreshRates = useCallback(async (silent = false) => {
     if (activeRates.length === 0) {
@@ -467,7 +452,7 @@ function ExchangeRatesScreen() {
             <ExchangeRateForm
               key="new"
               currencyOptions={currencyOptions}
-              onSave={(from, to, rate, notes) => void handleSave(from, to, rate, notes)}
+              onSave={handleSave}
               onCancel={closeForm}
               loading={createRate.isPending}
             />

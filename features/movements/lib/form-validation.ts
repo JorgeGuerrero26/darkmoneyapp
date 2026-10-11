@@ -124,9 +124,10 @@ export function validateMovementForm(
     }
   }
 
-  // --- Fecha futura: warning, no error ---
+  // Posted expenses must describe a payment that already happened.
   if (snapshot.occurredAt && isAfter(snapshot.occurredAt, context.todayYmd)) {
-    warnings.occurredAt = "La fecha del movimiento es futura";
+    if (isExpense && snapshot.status === "posted") errors.occurredAt = "Un gasto no puede tener fecha futura";
+    else warnings.occurredAt = "La fecha del movimiento es futura";
   }
 
   // --- Overdraft: warning ---

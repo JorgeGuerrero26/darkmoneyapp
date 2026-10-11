@@ -1,13 +1,9 @@
-import {
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-  type TextStyle,
-} from "react-native";
+import { FormFeedbackProvider, FormSubmitBar } from "../../../../components/ui/FormFeedback";
+import { requiredField } from "../../../../lib/form-field-rules";
+import { Text, View, type StyleProp, type ViewStyle, type TextStyle } from "react-native";
 
 import { BottomSheet } from "../../../../components/ui/BottomSheet";
-import { Button } from "../../../../components/ui/Button";
+
 import { Input } from "../../../../components/ui/Input";
 
 export type ShareInviteBottomSheetStyles = {
@@ -35,30 +31,30 @@ export function ShareInviteBottomSheet({
   onClose,
 }: Props) {
   return (
+    <FormFeedbackProvider visible={visible} busy={isSubmitting} fields={{ shareEmail: requiredField(shareEmail, "Escribe el correo", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shareEmail.trim()) ? null : "Escribe un correo válido") }} onSubmit={onSubmit}>
+
     <BottomSheet
       visible={visible}
       onClose={onClose}
       title="Compartir obligación"
       snapHeight={0.42}
+      footer={<FormSubmitBar label="Enviar invitación" onSubmit={onSubmit} loading={isSubmitting} />}
     >
       <View style={styles.shareSheet}>
         <Text style={styles.shareSheetSub}>
           La otra parte podra ver el estado y registrar pagos
         </Text>
-        <Input
-          label="Email del destinatario *"
+        <Input fieldId="shareEmail"
+          label="Correo del destinatario"
           value={shareEmail}
           onChangeText={onChangeEmail}
           keyboardType="email-address"
           autoCapitalize="none"
           placeholder="correo@ejemplo.com"
         />
-        <Button
-          label="Enviar invitacion"
-          onPress={onSubmit}
-          loading={isSubmitting}
-        />
+
       </View>
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }

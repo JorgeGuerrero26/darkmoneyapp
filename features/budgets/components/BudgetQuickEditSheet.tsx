@@ -1,8 +1,11 @@
+import { humanizeError } from "../../../lib/errors";
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { positiveAmountField } from "../../../lib/form-field-rules";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
-import { Button } from "../../../components/ui/Button";
+
 import { CurrencyInput } from "../../../components/ui/CurrencyInput";
 import { useToast } from "../../../hooks/useToast";
 import { useWorkspace } from "../../../lib/workspace-context";
@@ -26,7 +29,7 @@ type Props = {
 
 export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Props) {
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
   const updateMutation = useUpdateBudgetMutation(activeWorkspaceId);
 
   const [limitAmount, setLimitAmount] = useState("");
@@ -41,10 +44,11 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
   }, [visible, budget]);
 
   async function handleSave() {
+    if (updateMutation.isPending) return;
+    setError("");
     if (!budget) return;
     const parsed = Number(limitAmount.replace(/,/g, "."));
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError("Ingresa un monto válido mayor a cero.");
       return;
     }
     try {
@@ -56,14 +60,16 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
-      showErrorToast("No se pudo guardar el presupuesto", err);
+      setError(humanizeError(err));
     }
   }
 
   if (!budget) return null;
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Ajuste rápido" snapHeight={0.5}>
+    <FormFeedbackProvider visible={visible} busy={updateMutation.isPending} fields={{ limitAmount: positiveAmountField(limitAmount) }} onSubmit={handleSave}>
+
+    <BottomSheet visible={visible} onClose={onClose} title="Ajuste rápido" snapHeight={0.5} footer={<FormSubmitBar onSubmit={handleSave} loading={updateMutation.isPending} error={error} />}>
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={1}>
           {budget.name}
@@ -72,13 +78,13 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
 
         <CurrencyInput
           label="Monto límite"
+          fieldId="limitAmount"
           value={limitAmount}
           onChangeText={(t) => {
             setLimitAmount(t);
             setError("");
           }}
           currencyCode={budget.currencyCode}
-          error={error}
         />
 
         <View>
@@ -105,14 +111,10 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
           </View>
         </View>
 
-        <Button
-          label="Guardar"
-          onPress={handleSave}
-          loading={updateMutation.isPending}
-          disabled={updateMutation.isPending}
-        />
+
       </View>
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

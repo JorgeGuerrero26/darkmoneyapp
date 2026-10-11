@@ -1,21 +1,17 @@
 import { humanizeError } from "../../lib/errors";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { requiredField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, View } from "react-native";
 
 import { BottomSheet } from "../ui/BottomSheet";
-import { Button } from "../ui/Button";
+
 import { TextField } from "../ui/TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
-import {
-  useCreateSpendTypeMutation,
-  useUpdateSpendTypeMutation,
-  type SpendType,
-} from "../../services/queries/spend-types";
+import { useCreateSpendTypeMutation, useUpdateSpendTypeMutation, type SpendType } from "../../services/queries/spend-types";
 
 /** Los colores de la maestra. Los mismos tokens de la app: nada de hex sueltos. */
 const COLOR_CHOICES = [COLORS.fog, COLORS.income, COLORS.gold, COLORS.expense, COLORS.secondary, COLORS.pro];
@@ -36,7 +32,7 @@ type Props = {
 export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
   const createMutation = useCreateSpendTypeMutation(activeWorkspaceId, profile?.id);
   const updateMutation = useUpdateSpendTypeMutation(activeWorkspaceId);
 

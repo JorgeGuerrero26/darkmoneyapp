@@ -1,37 +1,18 @@
 import { memo, useRef, useState, type RefObject } from "react";
 import { StyleSheet, Text, View, type ScrollView, type TextInput } from "react-native";
-import { AlertCircle } from "lucide-react-native";
+
 
 import { AttachmentPicker, type Attachment } from "../../../../../components/domain/AttachmentPicker";
-import { Button } from "../../../../../components/ui/Button";
+
 import { dateTimeLabel } from "../../../../../lib/calendar";
 import { todayPeru } from "../../../../../lib/date";
 import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
 import { Input } from "../../../../../components/ui/Input";
 import { TextField } from "../../../../../components/ui/TextField";
 import { SmartSuggestion } from "../../../../../components/ui/SmartSuggestion";
-import {
-  COLORS,
-  FONT_FAMILY,
-  FONT_SIZE,
-  RADIUS,
-  SPACING,
-  SURFACE,
-} from "../../../../../constants/theme";
-import type {
-  AccountSummary,
-  CategorySummary,
-  CounterpartySummary,
-} from "../../../../../types/domain";
-import {
-  BudgetImpactBlock,
-  CategoryAiBlock,
-  CounterpartyAiBlock,
-  DescriptionCleanupBlock,
-  RecurringAiBlock,
-  RiskWarningBlock,
-  type CategorySuggestionState,
-} from "../MovementFormBlocks";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../../constants/theme";
+import type { AccountSummary, CategorySummary, CounterpartySummary } from "../../../../../types/domain";
+import { BudgetImpactBlock, CategoryAiBlock, CounterpartyAiBlock, DescriptionCleanupBlock, RecurringAiBlock, RiskWarningBlock, type CategorySuggestionState } from "../MovementFormBlocks";
 import type { SplitLine } from "../../../lib/split-movement";
 import type { MovementRiskExplanation } from "../../../../../lib/movement-risk-analysis";
 import type { MovementBudgetImpact } from "../../../../../lib/movement-budget-impact";
@@ -296,6 +277,7 @@ export const StepDetails = memo(function StepDetails({
         />
         <FormOptionRow
           grouped
+          fieldId="occurredAt"
           label="Fecha y hora"
           value={dateTimeRowLabel}
           onPress={onOpenDateTime}
@@ -308,6 +290,7 @@ export const StepDetails = memo(function StepDetails({
             grouped
             last
             label="Dividir en categorías"
+            fieldId="split"
             value={splitLines ? `${splitLines.length} categorías` : "Elegir"}
             onPress={() => {
               if (!splitLines) {
@@ -376,16 +359,6 @@ export const StepDetails = memo(function StepDetails({
         isHydratingExisting={isEditing && isHydratingExistingAttachments}
       />
 
-      {submitError ? (
-        <View
-          style={styles.submitErrorBanner}
-          accessibilityLiveRegion="polite"
-          accessibilityRole="alert"
-        >
-          <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.submitErrorText}>{submitError}</Text>
-        </View>
-      ) : null}
 
       {/* Los botones viven en la barra anclada del formulario: aquí solo aparecían al llegar
           al final del desplazamiento. */}

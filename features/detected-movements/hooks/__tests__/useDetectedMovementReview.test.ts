@@ -262,7 +262,8 @@ it("dos pulsaciones de Omitir resuelven una vez y Deshacer conserva needs_review
 it("Guardar permanece disponible y explica qué falta en una transferencia", async () => {
   await act(async () => { current.switchMovementType("transfer"); });
   await act(async () => { await current.submit(); });
-  expect(current.saveError).toBe("Elige el destino");
+  expect(current.saveError).toBeNull();
+  expect(current.fieldErrors.destinationAccountId).toBe("Elige el destino");
   expect(mockCreate).not.toHaveBeenCalled();
   expect(current.busy).toBe(false);
 });
@@ -270,7 +271,8 @@ it("Guardar permanece disponible y explica qué falta en una transferencia", asy
 it("cerrar la revisión limpia el error del intento y conserva el borrador en el dashboard", async () => {
   await act(async () => { current.setAccountId(null); current.setDescription("ANTHROPIC*"); });
   await act(async () => { await current.submit(); });
-  expect(current.saveError).toBe("Elige una cuenta");
+  expect(current.saveError).toBeNull();
+  expect(current.fieldErrors.accountId).toBe("Elige una cuenta");
   expect(mockCreate).not.toHaveBeenCalled();
   const editedDraft = current.draft;
   await act(async () => renderer.update(React.createElement(Harness, { visible: false, previewEnabled: true })));

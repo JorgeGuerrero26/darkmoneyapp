@@ -1,15 +1,8 @@
 import { humanizeError } from "../../lib/errors";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { positiveAmountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useSpendTypesQuery } from "../../services/queries/spend-types";
@@ -17,38 +10,22 @@ import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { formatCurrency } from "../../lib/format-currency";
 import { useHaptics } from "../../hooks/useHaptics";
-import {
-  useCreateBudgetMutation,
-  useUpdateBudgetMutation,
-  useWorkspaceSnapshotQuery,
-  type BudgetFormInput,
-} from "../../services/queries/workspace-data";
+import { useCreateBudgetMutation, useUpdateBudgetMutation, useWorkspaceSnapshotQuery, type BudgetFormInput } from "../../services/queries/workspace-data";
 import type { BudgetOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
-import {
-  budgetRecurrenceLabel,
-  budgetRecurrenceSentence,
-  firstBudgetPeriod,
-  inferRecurrence,
-  BUDGET_RECURRENCE_OPTIONS,
-  type BudgetRecurrence,
-} from "../../features/budgets/lib/budgetRecurrence";
+import { budgetRecurrenceLabel, budgetRecurrenceSentence, firstBudgetPeriod, inferRecurrence, BUDGET_RECURRENCE_OPTIONS, type BudgetRecurrence } from "../../features/budgets/lib/budgetRecurrence";
 import { todayPeru } from "../../lib/date";
 import { Check } from "lucide-react-native";
 import { InlineFormSheet } from "../ui/InlineFormSheet";
-import {
-  budgetScopeHint,
-  budgetScopeSummary,
-  BUDGET_SCOPE_PLACEHOLDER,
-} from "../../features/budgets/lib/budgetScopeSummary";
+import { budgetScopeHint, budgetScopeSummary, BUDGET_SCOPE_PLACEHOLDER } from "../../features/budgets/lib/budgetScopeSummary";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
-import { DatePickerInput } from "../ui/DatePickerInput";
+
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
@@ -74,7 +51,7 @@ type Props = {
 export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateBudget }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateBudgetMutation(activeWorkspaceId);
   const updateMutation = useUpdateBudgetMutation(activeWorkspaceId);
@@ -279,11 +256,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     (account) => account.currencyCode !== defaultCurrency,
   );
   /* El botón dice qué falta en vez de quedarse apagado sin explicar por qué. */
-  const missingLabel = !limitAmount.trim()
-    ? "Falta cuánto"
-    : !scopeTouched && categoryId === null && spendTypeId === null
-      ? "Falta qué limitas"
-      : "";
+
 
   const validationFields = {
 
@@ -569,7 +542,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       {recurrence === "none" ? (
         <View style={styles.group}>
           <FormDateRow label="Desde" value={periodStart} onChange={setPeriodStart} grouped />
-          <FormDateRow label="Hasta" value={periodEnd} onChange={setPeriodEnd} grouped last />
+          <FormDateRow fieldId="periodEnd" label="Hasta" value={periodEnd} onChange={setPeriodEnd} grouped last />
         </View>
       ) : (
         <Text style={styles.hint}>{budgetRecurrenceSentence(recurrence, todayYmd)}</Text>

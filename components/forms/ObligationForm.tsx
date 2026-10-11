@@ -1,20 +1,13 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { requiredField, positiveAmountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { parseDisplayDate } from "../../lib/date";
+
+
 import { formatCurrency } from "../ui/AmountDisplay";
-import { Share2, Eye, AlertCircle } from "lucide-react-native";
+import { Share2, Eye } from "lucide-react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -23,14 +16,7 @@ import { newClientDedupeKey } from "../../lib/idempotency";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
-import {
-  useCreateObligationMutation,
-  useUpdateObligationMutation,
-  useCreateObligationShareInviteMutation,
-  useUnlinkObligationShareMutation,
-  useObligationActiveShareQuery,
-  type ObligationFormInput,
-} from "../../services/queries/obligations";
+import { useCreateObligationMutation, useUpdateObligationMutation, useCreateObligationShareInviteMutation, useUnlinkObligationShareMutation, useObligationActiveShareQuery, type ObligationFormInput } from "../../services/queries/obligations";
 import { shouldResendShareInvite } from "../../lib/obligation-share";
 import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
@@ -41,13 +27,7 @@ import { FormOptionRow } from "../ui/FormOptionRow";
 import { ObligationCreatedSheet } from "../../features/obligations/components/ObligationCreatedSheet";
 import { ObligationDetailsSheet } from "../../features/obligations/components/ObligationDetailsSheet";
 import { PaymentPlanSheet } from "../../features/obligations/components/PaymentPlanSheet";
-import {
-  describePlan,
-  expandPaymentPlan,
-  normalizePaymentPlan,
-  parsePaymentPlan,
-  type PaymentPlan,
-} from "../../features/obligations/lib/payment-plan";
+import { describePlan, expandPaymentPlan, normalizePaymentPlan, parsePaymentPlan, type PaymentPlan } from "../../features/obligations/lib/payment-plan";
 import { currencyPluralTitle } from "../../constants/currencies";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
@@ -55,7 +35,7 @@ import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Input } from "../ui/Input";
 import { CurrencyInput } from "../ui/CurrencyInput";
-import { BusinessDateNotice } from "../ui/BusinessDateNotice";
+
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
 
@@ -150,7 +130,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const router = useRouter();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateObligationMutation(activeWorkspaceId);
   const updateMutation = useUpdateObligationMutation(activeWorkspaceId);
@@ -635,13 +615,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
    * Lo que falta para poder guardar, en palabras. Reemplaza a los asteriscos, que aparecían en
    * tres campos sin explicarse en ninguna parte.
    */
-  const missingLabel = (() => {
-    if (isEditing) return null;
-    if (!title.trim()) return "Falta el título";
-    if (principalNumber <= 0) return "Falta el monto";
-    if (counterpartyId == null) return "Falta el contacto";
-    return null;
-  })();
+
 
   const validationFields = {
 
@@ -696,7 +670,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                   onSuccess?.();
                   onClose();
                 } catch (err: unknown) {
-                  showErrorToast("No se pudo compartir la obligación", err);
+                  throw err;
                 }
               }}
               onDismiss={() => {

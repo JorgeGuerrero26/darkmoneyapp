@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
@@ -5,7 +7,7 @@ import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
-import { Button } from "../../../components/ui/Button";
+
 import { CurrencyInput } from "../../../components/ui/CurrencyInput";
 import { FormDateRow } from "../../../components/ui/FormDateRow";
 import { FormOptionRow } from "../../../components/ui/FormOptionRow";
@@ -101,10 +103,12 @@ export function MarkSubscriptionPaidSheet({
       setError("Escribe cuánto pagaste.");
       return;
     }
-    onConfirm({ paidDate, amount: parsed, accountId });
+    return onConfirm({ paidDate, amount: parsed, accountId });
   }
 
   return (
+    <FormFeedbackProvider visible={visible} busy={isPending} fields={{ amount: positiveAmountField(amount), accountId: requiredField(accountId, "Elige una cuenta", accountId != null && !selectedAccount ? "Esta cuenta no está disponible" : null, () => setAccountOpen(true)), paidDate: requiredField(paidDate, "Elige la fecha") }} onSubmit={handleConfirm}>
+
     <BottomSheet
       visible={visible}
       onClose={onClose}
@@ -129,13 +133,7 @@ export function MarkSubscriptionPaidSheet({
               Se anota un gasto de {money(amountForCopy)} en {selectedAccount.name}.
             </Text>
           ) : null}
-          <Button
-            label={accountId == null ? "Elige la cuenta" : "Confirmar pago"}
-            onPress={handleConfirm}
-            loading={isPending}
-            size="lg"
-            disabled={isPending || eligibleAccounts.length === 0}
-          />
+          <FormSubmitBar label="Confirmar pago" onSubmit={handleConfirm} loading={isPending} />
         </View>
       }
     >
@@ -144,6 +142,7 @@ export function MarkSubscriptionPaidSheet({
           lo esperado — un aumento de precio, un mes prorrateado. */}
       <Text style={styles.fieldLabel}>Cuánto pagaste</Text>
       <CurrencyInput
+        fieldId="amount"
         value={amount}
         onChangeText={(text) => { setAmount(text); setError(""); }}
         currencyCode={subscription.currencyCode}
@@ -156,12 +155,13 @@ export function MarkSubscriptionPaidSheet({
       <View style={styles.group}>
         <FormOptionRow
           grouped
+          fieldId="accountId"
           label="Se pagó con"
           value={selectedAccount?.name ?? null}
           placeholder="Elegir cuenta"
           onPress={() => setAccountOpen(true)}
         />
-        <FormDateRow grouped last label="Cuándo" value={paidDate} onChange={setPaidDate} />
+        <FormDateRow fieldId="paidDate" grouped last label="Cuándo" value={paidDate} onChange={setPaidDate} />
       </View>
 
       <View style={styles.context}>
@@ -184,8 +184,9 @@ export function MarkSubscriptionPaidSheet({
           No tienes cuentas activas. Crea una en Cuentas antes de registrar el pago.
         </Text>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

@@ -1,13 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from "react";
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  type TextInputProps,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { StyleSheet, Text, TextInput, View, type TextInputProps, type StyleProp, type ViewStyle } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "./TextField";
 import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
@@ -40,8 +32,9 @@ export const Input = forwardRef<TextInput, Props>(function Input(
 ) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const fieldRef = useRef<View>(null);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
-  const feedback = useFormField(fieldId, () => inputRef.current?.focus());
+  const feedback = useFormField(fieldId, () => inputRef.current?.focus(), fieldRef);
 
   // El placeholder lo pinta `TextField` como `Text`: iOS aprieta el kerning del nativo hasta
   // que la frase entre, y deja de parecerse a la tipografía del resto de la app.
@@ -49,7 +42,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
   const resolvedAccessibilityHint = accessibilityHint ?? (error ? `${hint ? `${hint}. ` : ""}Error: ${error}` : hint);
 
   return (
-    <View style={[styles.container, containerStyle]}>
+    <View ref={fieldRef} collapsable={false} style={[styles.container, containerStyle]}>
       {label ? <Text style={[styles.label, feedback?.kind === "invalid" && { color: COLORS.dangerStrong }]}>{label}</Text> : null}
       <View style={[styles.inputWrap, focused && styles.inputWrapFocused, error ? styles.inputWrapError : null, feedback?.kind === "invalid" && { backgroundColor: COLORS.dangerStrong + "12", borderColor: COLORS.dangerStrong }]}>
         <TextField

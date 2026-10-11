@@ -30,12 +30,7 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import { useSubscriptionOccurrencesQuery } from "../../services/queries/subscription-occurrences";
-import {
-  useDeleteSubscriptionMutation,
-  useMarkSubscriptionPaidMutation,
-  useToggleSubscriptionPinMutation,
-  useUpdateSubscriptionMutation,
-} from "../../services/queries/subscriptions-recurring-income";
+import { useDeleteSubscriptionMutation, useMarkSubscriptionPaidMutation, useToggleSubscriptionPinMutation, useUpdateSubscriptionMutation } from "../../services/queries/subscriptions-recurring-income";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 import type { SubscriptionSummary } from "../../types/domain";
@@ -194,7 +189,7 @@ function SubscriptionDetailScreen() {
         setMarkPaidVisible(false);
         showToast("Pago registrado", "success", `${subscription.name} · próximo cobro ${formatSubscriptionYmd(nextDueDate)}`);
       } catch (err: unknown) {
-        showErrorToast("No se pudo registrar el pago", err);
+        throw err;
       }
     },
     [markPaidMutation, showToast, subscription],
@@ -380,7 +375,7 @@ function SubscriptionDetailScreen() {
             accounts={snapshot?.accounts ?? []}
             isPending={markPaidMutation.isPending}
             onClose={() => setMarkPaidVisible(false)}
-            onConfirm={(args) => void handleMarkPaid(args)}
+            onConfirm={handleMarkPaid}
           />
         </>
       }

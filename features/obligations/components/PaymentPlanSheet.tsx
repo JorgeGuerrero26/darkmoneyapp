@@ -1,26 +1,19 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { integerField, positiveAmountField } from "../../../lib/form-field-rules";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Plus, Trash2 } from "lucide-react-native";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Button } from "../../../components/ui/Button";
+
 import { InlineFormSheet } from "../../../components/ui/InlineFormSheet";
 import { PaymentMonthSheet, shortMonthLabel } from "./PaymentMonthSheet";
 import { SegmentedControl } from "../../../components/ui/SegmentedControl";
 import { TextField } from "../../../components/ui/TextField";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
-import {
-  addMonthsIso,
-  defaultFirstDueDate,
-  expandPaymentPlan,
-  isPlanComplete,
-  monthKey,
-  planDifference,
-  planTotal,
-  type PaymentPlan,
-} from "../lib/payment-plan";
+import { addMonthsIso, defaultFirstDueDate, expandPaymentPlan, isPlanComplete, monthKey, planDifference, planTotal, type PaymentPlan } from "../lib/payment-plan";
 
 type Props = {
   visible: boolean;
@@ -208,9 +201,15 @@ export function PaymentPlanSheet({
     };
   })();
 
+  const validationFields = mode === "equal" ? { count: integerField(count, 1, 999) } : Object.fromEntries([
+    ...agreed.map((draft) => [`amount-${draft.key}`, positiveAmountField(draft.amount)] as const),
+    ["tail", { ...positiveAmountField(tail), missing: !complete && !tail.trim() ? "Ingresa la cuota que se repite" : null, invalid: !complete && tail.trim() ? "Ajusta las cuotas para cubrir el saldo" : null }],
+  ]);
+  const savePlan = () => { onSave(draftPlan); onClose(); };
   return (
+    <FormFeedbackProvider visible={visible} fields={validationFields} onSubmit={savePlan}>
     <>
-    <InlineFormSheet visible={visible} title="Plan de pagos" onBack={onClose}>
+    <InlineFormSheet visible={visible} title="Plan de pagos" onBack={onClose} footer={<FormSubmitBar label="Guardar plan" onSubmit={savePlan} />}>
       <SegmentedControl
         options={[
           { value: "equal", label: "Cuotas iguales" },
@@ -225,6 +224,7 @@ export function PaymentPlanSheet({
           <View style={styles.equalRow}>
             <Text style={styles.equalLabel}>Número de cuotas</Text>
             <TextField
+              fieldId="count"
               value={count}
               onChangeText={setCount}
               keyboardType="number-pad"
@@ -272,7 +272,7 @@ export function PaymentPlanSheet({
                   </Text>
                 </TouchableOpacity>
                 <TextField
-                  value={draft.amount}
+                  fieldId={`amount-${draft.key}`} value={draft.amount}
                   onChangeText={(value) => setAgreed((current) => current.map(
                     (item) => (item.key === draft.key ? { ...item, amount: value } : item),
                   ))}
@@ -315,7 +315,7 @@ export function PaymentPlanSheet({
                 <Text style={styles.tailSubtitle}>Hasta terminar el saldo</Text>
               </View>
               <TextField
-                value={tail}
+                fieldId="tail" value={tail}
                 onChangeText={setTail}
                 keyboardType="decimal-pad"
                 placeholder="0.00"
@@ -355,19 +355,7 @@ export function PaymentPlanSheet({
             {money(planTotal(payments))} <Text style={styles.footerOf}>de {money(principal)}</Text>
           </Text>
         </View>
-        {!complete ? (
-          <Text style={styles.footerMissing}>
-            {difference > 0
-              ? `Faltan ${money(difference)} por programar`
-              : `Sobran ${money(Math.abs(difference))}`}
-          </Text>
-        ) : null}
-        <Button
-          label="Guardar plan"
-          size="lg"
-          disabled={!complete}
-          onPress={() => { onSave(draftPlan); onClose(); }}
-        />
+
       </View>
     </InlineFormSheet>
 
@@ -387,6 +375,7 @@ export function PaymentPlanSheet({
       />
     ) : null}
     </>
+    </FormFeedbackProvider>
   );
 }
 

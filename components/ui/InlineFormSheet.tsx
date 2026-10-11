@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { FormFieldScrollScope } from "./FormFeedback";
 import { Animated, Dimensions, Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronLeft } from "lucide-react-native";
@@ -59,6 +60,8 @@ export function InlineFormSheet({
   entranceAnimation = "none",
 }: Props) {
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
   /* Sin esto, el pie quedaba pegado al borde del teléfono y el teclado tapaba el campo en vez
      de empujar la hoja: la capa es `position: absolute` y el padding del padre no la mueve. */
   const keyboardHeight = useKeyboardHeight();
@@ -125,12 +128,15 @@ export function InlineFormSheet({
         </View>
 
         <ScrollView
+          ref={scrollRef}
+          onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={16}
           style={styles.scroll}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {children}
+          <FormFieldScrollScope scroll={scrollRef} offset={scrollOffset}>{children}</FormFieldScrollScope>
         </ScrollView>
 
         {footer}

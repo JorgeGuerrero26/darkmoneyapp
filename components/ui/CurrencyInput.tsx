@@ -1,13 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import { TextField } from "./TextField";
 import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 import { formatCurrencyParts, groupAmountDigits } from "../../lib/format-currency";
@@ -50,7 +42,8 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
 }, ref) {
   const compact = size === "compact";
   const inputRef = useRef<TextInput>(null);
-  const feedback = useFormField(fieldId, () => inputRef.current?.focus());
+  const fieldRef = useRef<View>(null);
+  const feedback = useFormField(fieldId, () => inputRef.current?.focus(), fieldRef);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
   /**
    * El separador de miles solo mientras nadie escribe.
@@ -88,7 +81,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
   }
 
   return (
-    <TouchableOpacity
+    <TouchableOpacity ref={fieldRef}
       style={[styles.container, error ? styles.containerError : null, style, feedback?.kind === "invalid" && { borderColor: COLORS.dangerStrong, backgroundColor: COLORS.dangerStrong + "12" }]}
       onPress={() => inputRef.current?.focus()}
       activeOpacity={1}

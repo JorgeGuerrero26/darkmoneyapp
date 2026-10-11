@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 
@@ -63,11 +63,12 @@ export function FormOptionRow({
   last = false,
   muted = false,
 }: Props) {
-  const feedback = useFormField(fieldId, onPress);
+  const fieldRef = useRef<View>(null);
+  const feedback = useFormField(fieldId, onPress, fieldRef, true);
   const invalid = feedback?.kind === "invalid";
   const missing = feedback?.kind === "missing";
   return (
-    <TouchableOpacity
+    <TouchableOpacity ref={fieldRef}
       style={[
         styles.row,
         invalid && { backgroundColor: COLORS.dangerStrong + "12" },

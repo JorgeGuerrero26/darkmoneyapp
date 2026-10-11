@@ -1,6 +1,6 @@
-import { useState } from "react";
+
 import { StyleSheet, View } from "react-native";
-import { Button } from "../../../components/ui/Button";
+
 import { TextField } from "../../../components/ui/TextField";
 import { FormOptionRow } from "../../../components/ui/FormOptionRow";
 import { CategorySuggestionBlock } from "../../../components/domain/QuickDetectedMovementSuggestionBlock";
@@ -11,10 +11,8 @@ import type { DetectedMovementReview } from "../hooks/useDetectedMovementReview"
 
 /** Opciones existentes de registro, accesibles sin recargar la revisión principal. */
 export function DetectedMovementExtras({ review: r }: { review: DetectedMovementReview }) {
-  const [expanded, setExpanded] = useState(false);
   return <View style={styles.content}>
-    <Button label={expanded ? "Menos opciones" : "Más opciones"} variant="ghost" disabled={r.busy} onPress={() => setExpanded((value) => !value)} />
-    {expanded ? <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>
+    <View pointerEvents={r.busy ? "none" : "auto"} style={styles.content}>
       <AiQuotaWarningBanner usage={r.aiUsage} />
       {r.movementType !== "transfer" ? <>
         <FormOptionRow label="Dividir en categorías" value={r.splitLines ? `${r.splitLines.length} categorías` : "Elegir"} onPress={() => {
@@ -29,7 +27,7 @@ export function DetectedMovementExtras({ review: r }: { review: DetectedMovement
         <BudgetBlock impact={r.budgetImpact} />
       </> : null}
       <TextField value={r.notes} onChangeText={r.setNotes} multiline editable={!r.busy} placeholder="Notas (opcional)" accessibilityLabel="Notas del movimiento" />
-    </View> : null}
+    </View>
   </View>;
 }
 const styles = StyleSheet.create({ content: { gap: SPACING.md } });

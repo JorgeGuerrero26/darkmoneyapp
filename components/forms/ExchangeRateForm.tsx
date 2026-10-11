@@ -1,12 +1,16 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../components/ui/FormFeedback";
+import { requiredField, positiveAmountField } from "../../lib/form-field-rules";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ArrowRight, ChevronDown } from "lucide-react-native";
 
+import { FieldFeedbackMessage, useFormField } from "../ui/FormFeedback";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
 
 type CurrencyPickerProps = {
   label: string;
+  fieldId: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
@@ -24,25 +28,27 @@ type CurrencyPickerProps = {
  * `children` del sheet, no por su ranura `overlay`, así que una capa absoluta la recortaría el
  * ScrollView.
  */
-function CurrencyPicker({ label, value, onChange, options, exclude }: CurrencyPickerProps) {
+function CurrencyPicker({ fieldId, label, value, onChange, options, exclude }: CurrencyPickerProps) {
   const visible = options.filter((option) => option !== exclude);
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(() => (visible.includes(value) ? "" : value));
 
+  const feedback = useFormField(fieldId, () => setOpen(true));
   return (
     <View style={styles.pickerWrap}>
       <Text style={styles.inputLabel}>{label}</Text>
       <TouchableOpacity
-        style={styles.selectTrigger}
+        style={[styles.selectTrigger, feedback?.kind === "invalid" && { borderColor: COLORS.dangerStrong }]}
         onPress={() => setOpen((prev) => !prev)}
         activeOpacity={0.78}
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${value || "elegir"}`}
       >
-        <Text style={[styles.selectValue, !value && styles.selectPlaceholder]}>{value || "Elegir"}</Text>
+        <Text style={[styles.selectValue, !value && styles.selectPlaceholder, feedback?.kind === "missing" && { color: COLORS.warning }]}>{feedback?.kind === "missing" ? feedback.message : value || "Elegir"}</Text>
         <ChevronDown size={16} color={COLORS.storm} />
       </TouchableOpacity>
 
+      <FieldFeedbackMessage feedback={feedback?.kind === "invalid" ? feedback : null} />
       {open ? (
         <View style={styles.selectList}>
           <ScrollView style={styles.selectScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
@@ -99,14 +105,14 @@ export function ExchangeRateForm({
   initialNotes = "",
   currencyOptions,
   onSave,
-  onCancel,
+  onCancel: _onCancel,
   loading,
 }: Props) {
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
   const [rate, setRate] = useState(initialRate);
   const [notes, setNotes] = useState(initialNotes);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
 
   function handleSave() {
     const fromTrim = from.trim().toUpperCase();
@@ -129,10 +135,12 @@ export function ExchangeRateForm({
       return;
     }
     setError(null);
-    onSave(fromTrim, toTrim, rateNum, notes.trim());
+    return onSave(fromTrim, toTrim, rateNum, notes.trim());
   }
 
   return (
+    <FormFeedbackProvider visible={true} busy={loading} fields={{ from: requiredField(from, "Elige la moneda origen", from.trim().length !== 3 ? "Elige una moneda válida" : null), to: requiredField(to, "Elige la moneda destino", to === from ? "Las monedas deben ser diferentes" : to.trim().length !== 3 ? "Elige una moneda válida" : null), rate: positiveAmountField(rate, "Ingresa el tipo de cambio") }} onSubmit={handleSave}>
+
     <View style={styles.body}>
       {/* Antes decía literalmente «1 [origen] = tasa [destino]»: una plantilla que nadie
           rellenó. Ahora se lee con las monedas elegidas, y mientras falten lo explica. */}
@@ -144,13 +152,13 @@ export function ExchangeRateForm({
 
       <View style={styles.pairRow}>
         <View style={styles.pairInputWrap}>
-          <CurrencyPicker label="Moneda origen" value={from} onChange={setFrom} options={currencyOptions} exclude={to} />
+          <CurrencyPicker fieldId="from" label="Moneda origen" value={from} onChange={setFrom} options={currencyOptions} exclude={to} />
         </View>
         <View style={styles.arrowWrap}>
           <ArrowRight size={18} color={COLORS.storm} />
         </View>
         <View style={styles.pairInputWrap}>
-          <CurrencyPicker label="Moneda destino" value={to} onChange={setTo} options={currencyOptions} exclude={from} />
+          <CurrencyPicker fieldId="to" label="Moneda destino" value={to} onChange={setTo} options={currencyOptions} exclude={from} />
         </View>
       </View>
 
@@ -159,6 +167,7 @@ export function ExchangeRateForm({
         style={styles.input}
         placeholder="3.72"
         placeholderTextColor={COLORS.storm}
+        fieldId="rate"
         value={rate}
         onChangeText={setRate}
         keyboardType="decimal-pad"
@@ -173,25 +182,10 @@ export function ExchangeRateForm({
         onChangeText={setNotes}
       />
 
-      {error ? (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : null}
 
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-          <Text style={styles.cancelText}>Cancelar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.saveBtn, loading && styles.disabled]}
-          onPress={handleSave}
-          disabled={loading}
-        >
-          <Text style={styles.saveText}>{loading ? "Guardando..." : "Guardar"}</Text>
-        </TouchableOpacity>
-      </View>
+      <FormSubmitBar onSubmit={handleSave} loading={loading} />
     </View>
+    </FormFeedbackProvider>
   );
 }
 

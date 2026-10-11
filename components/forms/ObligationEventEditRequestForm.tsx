@@ -1,8 +1,8 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { positiveAmountField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { AlertCircle, Info } from "lucide-react-native";
+import { Info } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
@@ -11,7 +11,7 @@ import { useHaptics } from "../../hooks/useHaptics";
 import { useCreateObligationEventEditRequestMutation } from "../../services/queries/obligations";
 import type { ObligationEventSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
-import { Button } from "../ui/Button";
+
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
@@ -207,7 +207,7 @@ export function ObligationEventEditRequestForm({
         </View>
       </View>
 
-      
+
     </BottomSheet>
     </FormFeedbackProvider>
   );

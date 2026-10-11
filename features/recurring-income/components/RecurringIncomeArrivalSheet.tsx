@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
@@ -5,7 +7,7 @@ import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
-import { Button } from "../../../components/ui/Button";
+
 import { CurrencyInput } from "../../../components/ui/CurrencyInput";
 import { FormDateRow } from "../../../components/ui/FormDateRow";
 import { FormOptionRow } from "../../../components/ui/FormOptionRow";
@@ -13,11 +15,7 @@ import { InlineFormSheet } from "../../../components/ui/InlineFormSheet";
 import { SearchableSelectSheet } from "../../../components/ui/SearchableSelectSheet";
 import { TextField } from "../../../components/ui/TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
-import {
-  arrivalConfirmLabel,
-  arrivalConfirmSentence,
-  arrivalDiffSentence,
-} from "../lib/arrivalCopy";
+import { arrivalConfirmLabel, arrivalConfirmSentence, arrivalDiffSentence } from "../lib/arrivalCopy";
 import { parseMoneyInput, type RecurringIncomeBaseChangeMode } from "../lib/arrival-validation";
 import type { AccountSummary, RecurringIncomeSummary } from "../../../types/domain";
 
@@ -96,50 +94,32 @@ export function RecurringIncomeArrivalSheet({
   const money = (value: number) => formatCurrency(value, item.currencyCode);
   const parsedAmount = parseMoneyInput(amount);
   const accountName =
-    accounts.find((account) => account.id === accountId)?.name ?? item.accountName ?? null;
+    accounts.find((account) => account.id === accountId)?.name ?? null;
   const diff = parsedAmount != null ? arrivalDiffSentence(parsedAmount, item.amount, money) : "";
   const changed = diff !== "";
 
   return (
+    <FormFeedbackProvider visible={visible} busy={Boolean(loading)} fields={{ amount: { ...positiveAmountField(amount), reveal: () => setDifferentOpen(true) }, date: { ...requiredField(date, "Elige la fecha"), autoContinue: true, reveal: () => setDifferentOpen(true) }, accountId: requiredField(accountId, "Elige una cuenta", null, () => setAccountPickerOpen(true)) }} onSubmit={onSubmit}>
+
     <BottomSheet
       visible={visible}
       onClose={onClose}
       title="Confirmar llegada"
       snapHeight={0.86}
-      footer={
-        <View style={styles.footer}>
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {/* "Cancelar" se retira: la hoja ya tiene su ×, y dos salidas compiten entre sí. El
-              botón gana el ancho completo y deja de partirse en dos líneas. */}
-          <Button
-            label={arrivalConfirmLabel(parsedAmount, item.amount, money)}
-            onPress={onSubmit}
-            loading={loading}
-            size="lg"
-          />
-        </View>
-      }
+      footer={<FormSubmitBar label={arrivalConfirmLabel(parsedAmount, item.amount, money)} onSubmit={onSubmit} loading={loading} error={error} onMore={() => setDifferentOpen(true)} />}
       overlay={
         <>
           <InlineFormSheet
             visible={differentOpen}
             title="Llegó distinto"
             onBack={() => setDifferentOpen(false)}
-            footer={
-              <View style={styles.footer}>
-                <Button
-                  label={arrivalConfirmLabel(parsedAmount, item.amount, money)}
-                  onPress={() => { setDifferentOpen(false); onSubmit(); }}
-                  loading={loading}
-                  size="lg"
-                />
-              </View>
-            }
+            footer={<FormSubmitBar label={arrivalConfirmLabel(parsedAmount, item.amount, money)} onSubmit={onSubmit} loading={loading} error={error} />}
           >
             <View style={styles.differentContent}>
               <View style={styles.field}>
                 <Text style={styles.fieldLabel}>Cuánto llegó</Text>
                 <CurrencyInput
+                  fieldId="amount"
                   value={amount}
                   onChangeText={onAmountChange}
                   currencyCode={item.currencyCode}
@@ -157,8 +137,9 @@ export function RecurringIncomeArrivalSheet({
               </View>
 
               <View style={styles.group}>
-                <FormDateRow label="Cuándo llegó" value={date} onChange={onDateChange} grouped />
+                <FormDateRow fieldId="date" label="Cuándo llegó" value={date} onChange={onDateChange} grouped />
                 <FormOptionRow
+                  fieldId="accountId"
                   label="Entró a"
                   value={accountName}
                   placeholder="Elige la cuenta"
@@ -249,6 +230,7 @@ export function RecurringIncomeArrivalSheet({
         </Text>
 
         <View style={styles.group}>
+          {accountId == null ? <FormOptionRow fieldId="accountId" label="Entró a" onPress={() => setAccountPickerOpen(true)} grouped /> : null}
           <FormOptionRow
             label="Llegó distinto"
             support="Otro monto, otra fecha u otra cuenta"
@@ -273,6 +255,7 @@ export function RecurringIncomeArrivalSheet({
         </Text>
       </View>
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

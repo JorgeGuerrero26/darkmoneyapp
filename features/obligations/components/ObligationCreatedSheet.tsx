@@ -1,6 +1,8 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { requiredField } from "../../../lib/form-field-rules";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { Button } from "../../../components/ui/Button";
+
 import { TextField } from "../../../components/ui/TextField";
 import { SafeBlurView } from "../../../components/ui/SafeBlurView";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
@@ -59,6 +61,8 @@ export function ObligationCreatedSheet({
   if (!visible) return null;
 
   return (
+    <FormFeedbackProvider visible={visible} busy={sending} fields={{ email: requiredField(email, "Escribe el correo", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? null : "Escribe un correo válido") }} onSubmit={onSend}>
+
     <View style={styles.root}>
       <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
       <View style={styles.card}>
@@ -78,6 +82,7 @@ export function ObligationCreatedSheet({
 
         <TextField
           style={styles.input}
+          fieldId="email"
           value={email}
           onChangeText={onChangeEmail}
           placeholder="correo@ejemplo.com"
@@ -102,13 +107,7 @@ export function ObligationCreatedSheet({
           Nada se envía hasta que toques Enviar invitación. La obligación ya está guardada.
         </Text>
 
-        <Button
-          label="Enviar invitación"
-          size="lg"
-          onPress={onSend}
-          loading={sending}
-          disabled={!email.trim()}
-        />
+        <FormSubmitBar label="Enviar invitación" onSubmit={onSend} loading={sending} />
         <TouchableOpacity
           style={styles.dismiss}
           onPress={onDismiss}
@@ -119,6 +118,7 @@ export function ObligationCreatedSheet({
         </TouchableOpacity>
       </View>
     </View>
+    </FormFeedbackProvider>
   );
 }
 

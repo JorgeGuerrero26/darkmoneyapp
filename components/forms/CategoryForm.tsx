@@ -1,6 +1,6 @@
 import { humanizeError } from "../../lib/errors";
-import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { FormFeedbackProvider } from "../ui/FormFeedback";
+import { requiredField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, View } from "react-native";
 
@@ -8,28 +8,17 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import {
-  useCreateCategoryMutation,
-  useUpdateCategoryMutation,
-  useWorkspaceSnapshotQuery,
-  type CategoryFormInput,
-} from "../../services/queries/workspace-data";
+import { useCreateCategoryMutation, useUpdateCategoryMutation, useWorkspaceSnapshotQuery, type CategoryFormInput } from "../../services/queries/workspace-data";
 import type { CategoryOverview } from "../../types/domain";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { FormSheetScaffold } from "../ui/FormSheetScaffold";
 import { SearchableSelectSheet, type SelectOption } from "../ui/SearchableSelectSheet";
 import { SegmentedControl } from "../ui/SegmentedControl";
-import { AppearancePickerOverlay, CATEGORY_COLOR_CHOICES } from "./AppearancePickerOverlay";
+import { AppearancePickerOverlay } from "./AppearancePickerOverlay";
 import { sortByName } from "../../lib/sort-locale";
 import { useSpendTypesQuery } from "../../services/queries/spend-types";
-import {
-  CATEGORY_ICON_PICKER_KEYS,
-  DEFAULT_CATEGORY_ICON_KEY,
-  getLucideIconForCategory,
-  iconKeyForFormState,
-  normalizeIconLookupKey,
-} from "../../lib/category-icons";
+import { CATEGORY_ICON_PICKER_KEYS, DEFAULT_CATEGORY_ICON_KEY, getLucideIconForCategory, iconKeyForFormState, normalizeIconLookupKey } from "../../lib/category-icons";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
 
@@ -58,7 +47,7 @@ type Props = {
 export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast, showErrorToast } = useToast();
+  const { showToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateCategoryMutation(activeWorkspaceId);
   const updateMutation = useUpdateCategoryMutation(activeWorkspaceId);
@@ -236,6 +225,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
   const validationFields = {
 
       name: requiredField(name, "Escribe el nombre", name.trim().length > 80 ? "Usa como máximo 80 caracteres" : null),
+      parentId: { value: parentId, invalid: isEditing && parentId === editCategory?.id ? "Una categoría no puede estar dentro de sí misma" : null },
   };
 
   return (
@@ -334,7 +324,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
 
       {parentOptions.length > 0 ? (
         <FormOptionRow
-          label="Dentro de"
+          fieldId="parentId" label="Dentro de"
           support="Agrupa esta categoría bajo otra"
           value={parentName}
           placeholder="Ninguna"

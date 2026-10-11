@@ -94,7 +94,7 @@ describe("validateMovementForm", () => {
     expect(result.errors.destinationAmount).toBe("No se pudo resolver el tipo de cambio");
   });
 
-  test("fecha futura es warning, no error", () => {
+  test("un gasto registrado con fecha futura tiene error en la fecha", () => {
     const result = validateMovementForm(
       {
         movementType: "expense",
@@ -107,8 +107,9 @@ describe("validateMovementForm", () => {
       },
       baseContext,
     );
-    expect(result.valid).toBe(true);
-    expect(result.warnings.occurredAt).toBeTruthy();
+    expect(result.valid).toBe(false);
+    expect(result.errors.occurredAt).toBe("Un gasto no puede tener fecha futura");
+    expect(result.warnings.occurredAt).toBeUndefined();
   });
 
   test("monto sobre el saldo es warning de sobregiro, no error", () => {
