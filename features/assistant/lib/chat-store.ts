@@ -11,6 +11,8 @@ export type StoredMessage = { id: string; role: "user" | "assistant"; content: s
 export type StoredChat = {
   id: string;
   title: string;
+  /** El nombre que le puso la persona. Si existe, manda sobre el que sale de la primera pregunta. */
+  customTitle?: string;
   updatedAt: number;
   items: StoredMessage[];
 };
@@ -34,6 +36,14 @@ export function chatTitle(items: readonly StoredMessage[]): string {
   const first = items.find((item) => item.role === "user")?.content.replace(/\s+/g, " ").trim();
   if (!first) return EMPTY_CHAT_TITLE;
   return first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX - 1).trimEnd()}…` : first;
+}
+
+const CUSTOM_TITLE_MAX = 60;
+
+function cleanCustomTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.replace(/\s+/g, " ").trim().slice(0, CUSTOM_TITLE_MAX);
+  return trimmed || undefined;
 }
 
 function isMessage(value: unknown): value is StoredMessage {
@@ -67,9 +77,11 @@ export function parseChatStore(raw: string | null): ChatStore {
       const e = entry as Record<string, unknown>;
       const items = cleanItems(e.items);
       if (typeof e.id !== "string" || items.length === 0) continue;
+      const customTitle = cleanCustomTitle(e.customTitle);
       chats.push({
         id: e.id,
-        title: chatTitle(items),
+        title: customTitle ?? chatTitle(items),
+        ...(customTitle ? { customTitle } : {}),
         updatedAt: typeof e.updatedAt === "number" ? e.updatedAt : 0,
         items,
       });
@@ -115,10 +127,43 @@ export function upsertChat(
   const previous = chats.find((chat) => chat.id === id);
   const kept = items.slice(-MAX_STORED_ITEMS);
   const updatedAt = previous && sameItems(previous.items, kept) ? previous.updatedAt : now;
-  const next: StoredChat = { id, title: chatTitle(kept), updatedAt, items: [...kept] };
+  const customTitle = previous?.customTitle;
+  const next: StoredChat = {
+    id,
+    title: customTitle ?? chatTitle(kept),
+    ...(customTitle ? { customTitle } : {}),
+    updatedAt,
+    items: [...kept],
+  };
   return [...others, next].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CHATS);
 }
 
 export function removeChat(chats: readonly StoredChat[], id: string): StoredChat[] {
   return chats.filter((chat) => chat.id !== id);
+}
+
+/**
+ * Le pone nombre a una conversación. Un nombre vacío devuelve al automático (tu primera pregunta).
+ * No cambia `updatedAt`: renombrar no es hablar, y no debe mandar el chat al principio de la lista.
+ */
+export function renameChat(chats: readonly StoredChat[], id: string, title: string): StoredChat[] {
+  const customTitle = cleanCustomTitle(title);
+  return chats.map((chat) => {
+    if (chat.id !== id) return chat;
+    const { customTitle: _previous, ...rest } = chat;
+    return { ...rest, title: customTitle ?? chatTitle(chat.items), ...(customTitle ? { customTitle } : {}) };
+  });
+}
+
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/** Las conversaciones cuyo nombre o cuyos mensajes contienen lo buscado (sin importar tildes). */
+export function searchChats(chats: readonly StoredChat[], query: string): StoredChat[] {
+  const needle = fold(query).trim();
+  if (!needle) return [...chats];
+  return chats.filter(
+    (chat) => fold(chat.title).includes(needle) || chat.items.some((item) => fold(item.content).includes(needle)),
+  );
 }

@@ -30,6 +30,7 @@ import {
   newChatId,
   parseChatStore,
   removeChat,
+  renameChat,
   upsertChat,
   type StoredChat,
 } from "../features/assistant/lib/chat-store";
@@ -1010,6 +1011,7 @@ function AssistantScreen() {
         pendingDelete={chats.find((chat) => chat.id === pendingDeleteId) ?? null}
         onSelect={selectChat}
         onNew={startNewChat}
+        onRename={(id, title) => setChats((current) => renameChat(current, id, title))}
         onAskDelete={setPendingDeleteId}
         onCancelDelete={() => setPendingDeleteId(null)}
         onConfirmDelete={confirmDeleteChat}

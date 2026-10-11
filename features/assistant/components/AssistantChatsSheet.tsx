@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Trash2 } from "lucide-react-native";
+import { Check, Pencil, Trash2 } from "lucide-react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
+import { TextField } from "../../../components/ui/TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
-import type { StoredChat } from "../lib/chat-store";
+import { searchChats, type StoredChat } from "../lib/chat-store";
 
 type Props = {
   visible: boolean;
@@ -16,6 +18,7 @@ type Props = {
   pendingDelete: StoredChat | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onRename: (id: string, title: string) => void;
   onAskDelete: (id: string) => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
@@ -38,11 +41,27 @@ export function AssistantChatsSheet({
   pendingDelete,
   onSelect,
   onNew,
+  onRename,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
   onClose,
 }: Props) {
+  const [query, setQuery] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const visibleChats = searchChats(chats, query);
+
+  function startRename(chat: StoredChat) {
+    setRenamingId(chat.id);
+    setDraftTitle(chat.title);
+  }
+
+  function commitRename() {
+    if (renamingId) onRename(renamingId, draftTitle);
+    setRenamingId(null);
+  }
+
   return (
     <BottomSheet
       visible={visible}
@@ -72,14 +91,58 @@ export function AssistantChatsSheet({
         </Text>
       ) : null}
 
+      {chats.length > 3 ? (
+        <TextField
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Buscar en tus conversaciones…"
+          placeholderTextColor={COLORS.storm}
+          returnKeyType="search"
+          accessibilityLabel="Buscar en tus conversaciones"
+        />
+      ) : null}
+
       {chats.length === 0 ? (
         <Text style={styles.hint} maxFontSizeMultiplier={1.4}>
           Aún no hay conversaciones guardadas. Se guardan solas en cuanto haces la primera pregunta.
         </Text>
       ) : (
         <View style={styles.list}>
-          {chats.map((chat) => {
+          {visibleChats.length === 0 ? (
+            <Text style={styles.hint} maxFontSizeMultiplier={1.4}>
+              Ninguna conversación menciona "{query.trim()}".
+            </Text>
+          ) : null}
+          {visibleChats.map((chat) => {
             const selected = chat.id === activeId;
+            if (renamingId === chat.id) {
+              return (
+                <View key={chat.id} style={[styles.row, styles.rowSelected]}>
+                  <View style={styles.rowMain}>
+                    <TextField
+                      value={draftTitle}
+                      onChangeText={setDraftTitle}
+                      autoFocus
+                      maxLength={60}
+                      placeholder="Nombre de la conversación"
+                      placeholderTextColor={COLORS.storm}
+                      onSubmitEditing={commitRename}
+                      returnKeyType="done"
+                      accessibilityLabel="Nombre de la conversación"
+                    />
+                  </View>
+                  <Pressable
+                    style={styles.delete}
+                    onPress={commitRename}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Guardar el nombre"
+                  >
+                    <Check size={18} color={COLORS.pro} />
+                  </Pressable>
+                </View>
+              );
+            }
             return (
               <View key={chat.id} style={[styles.row, selected && styles.rowSelected]}>
                 <Pressable
@@ -96,6 +159,15 @@ export function AssistantChatsSheet({
                   <Text style={styles.meta} maxFontSizeMultiplier={1.3}>
                     {dayLabel(chat.updatedAt)} · {chat.items.length} mensajes{selected ? " · abierta" : ""}
                   </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.rename}
+                  onPress={() => startRename(chat)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Renombrar conversación: ${chat.title}`}
+                >
+                  <Pencil size={15} color={COLORS.storm} />
                 </Pressable>
                 <Pressable
                   style={styles.delete}
@@ -130,6 +202,7 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.md, gap: 2 },
   title: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
   meta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  rename: { paddingVertical: SPACING.md, paddingLeft: SPACING.sm },
   delete: { padding: SPACING.md },
   hint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
 });

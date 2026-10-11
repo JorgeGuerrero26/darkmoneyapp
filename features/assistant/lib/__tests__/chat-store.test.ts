@@ -4,6 +4,8 @@ import {
   chatTitle,
   parseChatStore,
   removeChat,
+  renameChat,
+  searchChats,
   upsertChat,
   type StoredMessage,
 } from "../chat-store";
@@ -96,5 +98,52 @@ describe("chatFromLegacy", () => {
     expect(chatFromLegacy(null)).toBeNull();
     expect(chatFromLegacy("[]")).toBeNull();
     expect(chatFromLegacy("roto")).toBeNull();
+  });
+});
+
+describe("renameChat", () => {
+  const base = upsertChat([], "a", [msg("1", "user", "¿cuánto gasté?")], 10);
+
+  it("el nombre propio manda y sobrevive a seguir conversando", () => {
+    let chats = renameChat(base, "a", "Gastos de octubre");
+    expect(chats[0].title).toBe("Gastos de octubre");
+    chats = upsertChat(chats, "a", [msg("1", "user", "¿cuánto gasté?"), msg("2", "assistant", "300")], 20);
+    expect(chats[0].title).toBe("Gastos de octubre");
+  });
+
+  it("un nombre vacío vuelve al automático", () => {
+    const named = renameChat(base, "a", "Otro");
+    expect(renameChat(named, "a", "   ")[0].title).toBe("¿cuánto gasté?");
+  });
+
+  it("renombrar no mueve la conversación en la lista", () => {
+    let chats = upsertChat(base, "b", [msg("2", "user", "dos")], 20);
+    chats = renameChat(chats, "a", "Vieja");
+    expect(chats.map((c) => c.id)).toEqual(["b", "a"]);
+    expect(chats[1].updatedAt).toBe(10);
+  });
+
+  it("el nombre propio sobrevive a guardar y leer", () => {
+    const stored = JSON.stringify({ activeId: "a", chats: renameChat(base, "a", "Mi chat") });
+    expect(parseChatStore(stored).chats[0].title).toBe("Mi chat");
+  });
+});
+
+describe("searchChats", () => {
+  const chats = upsertChat(
+    upsertChat([], "a", [msg("1", "user", "¿Cuánto debo a Kevin?")], 1),
+    "b",
+    [msg("2", "user", "proyección"), msg("3", "assistant", "En diciembre tendrás 5.000")],
+    2,
+  );
+
+  it("busca en el nombre y en los mensajes, sin importar tildes ni mayúsculas", () => {
+    expect(searchChats(chats, "KEVIN").map((c) => c.id)).toEqual(["a"]);
+    expect(searchChats(chats, "proyeccion").map((c) => c.id)).toEqual(["b"]);
+    expect(searchChats(chats, "diciembre").map((c) => c.id)).toEqual(["b"]);
+  });
+
+  it("sin texto devuelve todas", () => {
+    expect(searchChats(chats, "  ")).toHaveLength(2);
   });
 });
