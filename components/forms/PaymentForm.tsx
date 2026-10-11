@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { ArrowRight, Info, AlertCircle } from "lucide-react-native";
@@ -550,6 +552,8 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
   }, [accountDelta, selectedAccount]);
 
   return (
+    <FormFeedbackProvider visible={visible} busy={createPaymentMutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
       <BottomSheet
         visible={visible}
@@ -581,19 +585,18 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           />
           </>
         }
-      >
+       footer={<FormSubmitBar label={isEditMode ? "Guardar cambios" : actionTitle} onSubmit={handleSubmit} loading={createPaymentMutation.isPending || updateEventMutation.isPending} error={submitError} />}>
       {/* Obligation summary + balance preview — solo en modo crear */}
       {/* El número de cuota se retira: venía precargado con un 8 en una cuenta que registra seis
           pagos, y numerar cuotas exige que existan cuotas — acá se paga 330, 580, 30, 350, 450 y
           690. Si hace falta una referencia, es texto libre, y ya lo hay más abajo. */}
       <View style={styles.field}>
         <Text style={styles.sectionLabel}>{amountQuestion}</Text>
-        <CurrencyInput
+        <CurrencyInput fieldId="amount"
           ref={amountRef}
           value={amount}
           onChangeText={(t) => { setAmount(t); setAmountError(""); }}
           currencyCode={currencyCode}
-          error={amountError}
         />
       </View>
 
@@ -664,7 +667,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           {createMovement && activeAccounts.length > 0 ? (
             <View onLayout={(event) => { accountSectionYRef.current = event.nativeEvent.layout.y; }}>
               <View style={[styles.group, accountError ? styles.pillWrapError : null]}>
-                <FormOptionRow
+                <FormOptionRow fieldId="accountId"
                   grouped
                   last
                   label={accountLabel}
@@ -673,7 +676,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
                   onPress={() => setAccountPickerOpen(true)}
                 />
               </View>
-              {accountError ? <Text style={styles.fieldError}>{accountError}</Text> : null}
+
               {selectedAccount && projectedAccountBalance != null ? (
                 <View style={styles.accountProjectionCard}>
                   <Text style={styles.accountProjectionTitle}>Así quedará {selectedAccount.name}</Text>
@@ -712,7 +715,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       {/* Description */}
       <View>
         <Text style={styles.label}>Descripción (opcional)</Text>
-        <TextField
+        <TextField fieldId="description"
           style={styles.textInput}
           value={description}
           onChangeText={setDescription}
@@ -725,7 +728,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       {/* Notes */}
       <View>
         <Text style={styles.label}>Notas (opcional)</Text>
-        <TextField
+        <TextField fieldId="notes"
           style={styles.textInput}
           value={notes}
           onChangeText={setNotes}
@@ -771,21 +774,12 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         />
       ) : null}
 
-      {submitError ? (
-        <View style={styles.submitErrorBanner}>
-          <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.submitErrorText}>{submitError}</Text>
-        </View>
-      ) : null}
 
-      <Button
-        label={isEditMode ? "Guardar cambios" : actionTitle}
-        onPress={handleSubmit}
-        loading={createPaymentMutation.isPending || updateEventMutation.isPending}
-        style={styles.submitBtn}
-      />
+
+      
     </BottomSheet>
   </>
+    </FormFeedbackProvider>
   );
 }
 
@@ -968,6 +962,12 @@ function EditPaymentImpact({
   const fmt = (n: number) =>
     `${currency} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const diffColor = diff > 0 ? COLORS.danger : diff < 0 ? COLORS.income : COLORS.storm;
+
+  const validationFields = {
+
+      amount: positiveAmountField(amount, "Ingresa el monto", obligation ? describeOverpayment({ amount: parseFloat(amount), pendingAmount: pendingAmount + (isEditMode && editEvent?.eventType === "payment" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: actsAsCollector ? "cobro" : "pago" }) : null),
+      accountId: { value: accountId, missing: createMovement && activeAccounts.length > 0 && accountId == null ? "Elige una cuenta" : null },
+  };
 
   return (
     <View style={epStyles.container}>

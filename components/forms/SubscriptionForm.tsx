@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { AlertCircle, HelpCircle } from "lucide-react-native";
@@ -437,7 +439,24 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     setAccSuggestionId(suggestAccountFromCounterparty(vendorPartyId, patternMaps));
   }, [vendorPartyId, accountId, patternMaps]);
 
+  const validationFields = {
+
+      name: requiredField(name, "Escribe el nombre"),
+      amount: positiveAmountField(amount),
+      nextDueDate: requiredField(nextDueDate, "Elige el próximo cobro", nextDueDate < startDate ? "El próximo cobro debe ser igual o posterior al inicio" : null),
+      accountId: { value: accountId, missing: autoCreateMovement && accountId == null ? "Elige una cuenta" : null, open: () => setAccountOpen(true) },
+      startDate: requiredField(startDate, "Elige el inicio", null, () => setOptionalsOpen(true)),
+      endDate: { value: endDate, invalid: endDate && endDate < startDate ? "La fecha de fin no puede ser anterior al inicio" : null, open: () => setOptionalsOpen(true) },
+      intervalCount: integerField(intervalCount, 1, 9999),
+      dayOfMonth: integerField(dayOfMonth, 1, 31, true),
+      dayOfWeek: { value: dayOfWeek, invalid: frequency === "weekly" && dayOfWeek != null && (dayOfWeek < 0 || dayOfWeek > 6) ? "Elige un día de la semana" : null },
+      remindDaysBefore: { value: remindDaysBefore, invalid: !Number.isFinite(remindDaysBefore) || remindDaysBefore < 0 ? "Elige un recordatorio válido" : null, open: () => setRemindOpen(true) },
+      currencyCode: requiredField(currencyCode, "Elige una moneda", null, () => setOptionalsOpen(true)),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
       <BottomSheet
         visible={visible}
@@ -456,19 +475,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           </TouchableOpacity>
         }
         footer={
-          <View style={styles.submitBar}>
-            {missingLabel ? (
-              <Text style={styles.submitNote}>{missingLabel}</Text>
-            ) : summaryLine ? (
-              <Text style={styles.submitNote}>{summaryLine}</Text>
-            ) : null}
-            <Button
-              label={isEditing ? "Guardar cambios" : "Crear suscripción"}
-              onPress={handleSubmit}
-              loading={isLoading}
-              size="lg"
-            />
-          </View>
+          <FormSubmitBar label={isEditing ? "Guardar cambios" : "Crear suscripción"} onSubmit={handleSubmit} loading={isLoading} error={submitError} onMore={() => setOptionalsOpen(true)} />
         }
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
@@ -629,7 +636,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           asterisco que hay que interpretar. Lo obligatorio son los dos primeros campos y son los
           dos primeros: el orden ya lo dice, y el pie del botón nombra lo que falte. */}
       <View>
-        <TextField
+        <TextField fieldId="name"
           ref={nameRef}
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
@@ -639,14 +646,13 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           returnKeyType="next"
           accessibilityLabel="Nombre de la suscripción"
         />
-        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+
       </View>
 
-      <CurrencyInput
+      <CurrencyInput fieldId="amount"
         value={amount}
         onChangeText={(t) => { setAmount(t); setAmountError(""); }}
         currencyCode={currencyCode}
-        error={amountError}
       />
 
       {/* Cada cuánto y desde cuándo, en una tarjeta. Antes eran tres controles para la primera
@@ -658,7 +664,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           value={recurrenceLabel}
           onPress={() => setFrequencyOpen(true)}
         />
-        <FormDateRow
+        <FormDateRow fieldId="nextDueDate"
           grouped
           label="Próximo cobro"
           support="Desde esta fecha se cuenta el ciclo"
@@ -687,7 +693,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       {frequency === "custom" ? (
         <View>
           <Text style={styles.label}>Cada cuántos días</Text>
-          <TextField
+          <TextField fieldId="intervalCount"
             style={styles.textInput}
             value={intervalCount}
             onChangeText={setIntervalCount}
@@ -719,7 +725,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           puede pedir algo que solo se responde saliendo del formulario. */}
       {autoCreateMovement && activeAccounts.length > 0 ? (
         <View style={[styles.group, !accountId ? styles.groupError : null]}>
-          <FormOptionRow
+          <FormOptionRow fieldId="accountId"
             grouped
             last
             label="Se paga con"
@@ -732,22 +738,12 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
       {/* Ocho campos marcados "(opcional)" sumaban 700 px que la mayoría pasa de largo, y
           desplegarlos aquí dejaba el botón de crear fuera de vista. */}
-      <FormOptionRow
-        label="Opcionales"
-        support="Proveedor, cuenta, categoría, fechas y notas"
-        value=""
-        placeholder=""
-        onPress={() => setOptionalsOpen(true)}
-      />
 
-      {submitError ? (
-        <View style={styles.submitErrorBanner}>
-          <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.submitErrorText}>{submitError}</Text>
-        </View>
-      ) : null}
+
+
     </BottomSheet>
   </>
+    </FormFeedbackProvider>
   );
 }
 

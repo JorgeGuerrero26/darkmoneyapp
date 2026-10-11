@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { AlertCircle, Info } from "lucide-react-native";
@@ -117,19 +119,21 @@ export function ObligationEventEditRequestForm({
   const ownerName = obligation.share.ownerDisplayName?.trim() || "el propietario";
   const isPayment = event?.eventType === "payment";
 
+  const validationFields = {
+
+      amount: positiveAmountField(amount),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={createRequest.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
     <BottomSheet
       visible={visible}
       onClose={handleClose}
       title="Solicitar edicion"
       scrollRef={scrollRef}
-    >
-      {submitError ? (
-        <View style={styles.errorBanner}>
-          <AlertCircle size={15} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.errorText}>{submitError}</Text>
-        </View>
-      ) : null}
+     footer={<FormSubmitBar label="Guardar" onSubmit={handleSubmit} loading={createRequest.isPending} error={submitError} />}>
+
 
       <View style={styles.infoBox}>
         <View style={styles.infoHeader}>
@@ -142,7 +146,7 @@ export function ObligationEventEditRequestForm({
         </Text>
       </View>
 
-      <CurrencyInput
+      <CurrencyInput fieldId="amount"
         ref={amountRef}
         label="Monto propuesto *"
         value={amount}
@@ -151,7 +155,6 @@ export function ObligationEventEditRequestForm({
           setAmountError("");
         }}
         currencyCode={obligation.currencyCode}
-        error={amountError}
       />
 
       <DatePickerInput
@@ -164,7 +167,7 @@ export function ObligationEventEditRequestForm({
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Cuota propuesta</Text>
           <View style={styles.inputWrap}>
-            <TextField
+            <TextField fieldId="installmentNo"
               style={styles.input}
               value={installmentNo}
               onChangeText={setInstallmentNo}
@@ -179,7 +182,7 @@ export function ObligationEventEditRequestForm({
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripcion propuesta</Text>
         <View style={styles.inputWrap}>
-          <TextField
+          <TextField fieldId="description"
             style={styles.input}
             value={description}
             onChangeText={setDescription}
@@ -192,7 +195,7 @@ export function ObligationEventEditRequestForm({
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Notas propuestas</Text>
         <View style={[styles.inputWrap, styles.textAreaWrap]}>
-          <TextField
+          <TextField fieldId="notes"
             style={[styles.input, styles.textArea]}
             value={notes}
             onChangeText={setNotes}
@@ -204,12 +207,9 @@ export function ObligationEventEditRequestForm({
         </View>
       </View>
 
-      <Button
-        label="Enviar solicitud"
-        onPress={handleSubmit}
-        loading={createRequest.isPending}
-      />
+      
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

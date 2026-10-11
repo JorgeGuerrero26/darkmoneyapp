@@ -7,6 +7,7 @@ import { todayPeru } from "../../lib/date";
 
 type Props = {
   label: string;
+  fieldId?: string;
   /** Frase corta bajo la etiqueta, para lo que el nombre del campo no dice. */
   support?: string;
   /** `yyyy-MM-dd`, o "" si todavía no hay fecha. */
@@ -32,6 +33,7 @@ type Props = {
  */
 export function FormDateRow({
   label,
+  fieldId,
   support,
   value,
   onChange,
@@ -48,6 +50,7 @@ export function FormDateRow({
     <>
       <FormOptionRow
         label={label}
+        fieldId={fieldId}
         support={support}
         value={value?.trim() ? relativeDateLabel(value, todayPeru()) : null}
         placeholder={placeholder}

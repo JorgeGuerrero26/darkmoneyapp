@@ -2,10 +2,12 @@ import type { ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 
+import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = {
   label: string;
+  fieldId?: string;
   /** Lo elegido ahora mismo. Si falta, la fila dice qué pasa cuando no eliges. */
   value?: string | null;
   placeholder?: string;
@@ -49,6 +51,7 @@ type Props = {
  */
 export function FormOptionRow({
   label,
+  fieldId,
   value,
   placeholder = "Elegir",
   support,
@@ -60,10 +63,14 @@ export function FormOptionRow({
   last = false,
   muted = false,
 }: Props) {
+  const feedback = useFormField(fieldId, onPress);
+  const invalid = feedback?.kind === "invalid";
+  const missing = feedback?.kind === "missing";
   return (
     <TouchableOpacity
       style={[
         styles.row,
+        invalid && { backgroundColor: COLORS.dangerStrong + "12" },
         grouped ? styles.rowGrouped : styles.rowStandalone,
         grouped && !last && styles.rowDivided,
         disabled && styles.rowDisabled,
@@ -76,15 +83,17 @@ export function FormOptionRow({
     >
       {leading ? <View style={styles.leading}>{leading}</View> : null}
       <View style={styles.copy}>
-        <Text style={[styles.label, muted && styles.labelMuted]}>{label}</Text>
-        {support ? <Text style={styles.support}>{support}</Text> : null}
+        <Text style={[styles.label, muted && styles.labelMuted, invalid && { color: COLORS.dangerStrong }]}>{label}</Text>
+        {support && !feedback ? <Text style={styles.support}>{support}</Text> : null}
+        {invalid ? <FieldFeedbackMessage feedback={feedback} /> : null}
       </View>
+      {missing ? <View style={{ width: 7, height: 7, borderRadius: RADIUS.full, backgroundColor: COLORS.warning }} /> : null}
       {trailing ?? (
-        <Text style={[styles.value, !value && styles.valuePlaceholder]} numberOfLines={1}>
-          {value || placeholder}
+        <Text style={[styles.value, !value && styles.valuePlaceholder, missing && { color: COLORS.warning }]} numberOfLines={1}>
+          {missing ? feedback.message : value || placeholder}
         </Text>
       )}
-      <ChevronRight size={16} color={COLORS.storm} />
+      <ChevronRight size={16} color={missing ? COLORS.warning : COLORS.storm} />
     </TouchableOpacity>
   );
 }

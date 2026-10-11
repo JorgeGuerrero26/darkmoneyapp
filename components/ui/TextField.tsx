@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from "react-native";
 
+import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 import { COLORS, FONT_FAMILY, FONT_SIZE } from "../../constants/theme";
 
 /*
@@ -29,6 +30,7 @@ type Props = TextInputProps & {
    * queda dentro y el contenedor es el que tiene que estirarse en la fila.
    */
   containerStyle?: StyleProp<ViewStyle>;
+  fieldId?: string;
 };
 
 /**
@@ -48,9 +50,12 @@ type Props = TextInputProps & {
  * empezará a escribirse.
  */
 export const TextField = forwardRef<TextInput, Props>(function TextField(
-  { style, containerStyle, placeholder, placeholderTextColor, accessibilityLabel, ...rest },
+  { style, containerStyle, fieldId, placeholder, placeholderTextColor, accessibilityLabel, ...rest },
   ref,
 ) {
+  const inputRef = useRef<TextInput>(null);
+  useImperativeHandle(ref, () => inputRef.current as TextInput, []);
+  const feedback = useFormField(fieldId, () => inputRef.current?.focus());
   const flat = StyleSheet.flatten(style) ?? {};
   const { flex, ...inputStyle } = flat;
 
@@ -63,9 +68,10 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
 
   return (
     <View style={[flex === undefined ? null : { flex }, containerStyle]}>
+      <View>
       <TextInput
-        ref={ref}
-        style={inputStyle}
+        ref={inputRef}
+        style={[inputStyle, feedback?.kind === "invalid" && { borderColor: COLORS.dangerStrong, backgroundColor: COLORS.dangerStrong + "12" }]}
         accessibilityLabel={accessibilityLabel ?? placeholder}
         {...rest}
       />
@@ -96,6 +102,8 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
           </Text>
         </View>
       ) : null}
+      </View>
+      <FieldFeedbackMessage feedback={feedback} />
     </View>
   );
 });

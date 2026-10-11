@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { AlertCircle } from "lucide-react-native";
@@ -269,7 +271,15 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
 
   const selectedAccountName = activeAccounts.find((acc) => acc.id === accountId)?.name ?? null;
 
+  const validationFields = {
+
+      amount: positiveAmountField(amount, "Ingresa el monto", !isIncrease && obligation ? describeOverpayment({ amount: parseFloat(amount), pendingAmount: currentPrincipal + (isEditMode && editEvent?.eventType === "principal_decrease" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: "descuento" }) : null),
+      accountId: { value: accountId, missing: !isEditMode && createMovement && activeAccounts.length > 0 && accountId == null ? "Elige una cuenta" : null },
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={mutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
       <BottomSheet
         visible={visible}
@@ -279,13 +289,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
         scrollRef={scrollRef}
         footer={
           <View style={styles.submitBar}>
-            <Button
-              label="Guardar ajuste"
-              size="lg"
-              onPress={handleSubmit}
-              loading={mutation.isPending || updateEventMutation.isPending}
-              disabled={!reason.trim() || !amount.trim()}
-            />
+            <FormSubmitBar label="Guardar" onSubmit={handleSubmit} loading={mutation.isPending || updateEventMutation.isPending} error={submitError} />
             {!reason.trim() ? (
               <Text style={styles.submitNote}>Falta decir por qué</Text>
             ) : !amount.trim() ? (
@@ -327,7 +331,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
             "Motivo (opcional)" y por eso la fila del 11 de abril salió sin explicación. */}
         <View style={styles.field}>
           <Text style={styles.sectionLabel}>Por qué</Text>
-          <TextField
+          <TextField fieldId="reason"
             style={[styles.textInput, reasonError ? styles.inputError : null]}
             value={reason}
             onChangeText={(value) => { setReason(value); setReasonError(""); }}
@@ -344,12 +348,11 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
 
         <View style={styles.field}>
           <Text style={styles.sectionLabel}>Cuánto</Text>
-          <CurrencyInput
+          <CurrencyInput fieldId="amount"
             ref={amountRef}
             value={amount}
             onChangeText={(t) => { setAmount(t); setAmountError(""); }}
             currencyCode={currencyCode}
-            error={amountError}
           />
         </View>
 
@@ -395,7 +398,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
             {createMovement && activeAccounts.length > 0 ? (
               <View onLayout={(event) => { accountSectionYRef.current = event.nativeEvent.layout.y; }}>
                 <View style={[styles.group, accountError ? styles.inputError : null]}>
-                  <FormOptionRow
+                  <FormOptionRow fieldId="accountId"
                     grouped
                     last
                     label={moneyLeftAccount ? "Sale de" : "Entra a"}
@@ -404,7 +407,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
                     onPress={() => setAccountPickerOpen(true)}
                   />
                 </View>
-                {accountError ? <Text style={styles.fieldError}>{accountError}</Text> : null}
+
                 {selectedAccount && projectedAccountBalance != null ? (
                   <View style={styles.projectionWrap}>
                     <BalanceImpactPreview
@@ -420,14 +423,10 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
           </>
         ) : null}
 
-        {submitError ? (
-          <View style={styles.submitErrorBanner}>
-            <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-            <Text style={styles.submitErrorText}>{submitError}</Text>
-          </View>
-        ) : null}
+
       </BottomSheet>
     </>
+    </FormFeedbackProvider>
   );
 }
 

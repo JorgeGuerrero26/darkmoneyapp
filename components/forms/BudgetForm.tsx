@@ -1,3 +1,6 @@
+import { humanizeError } from "../../lib/errors";
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
@@ -174,9 +177,12 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     }
   }
 
+  const [saveFailure, setSaveFailure] = useState("");
+  useEffect(() => { setSaveFailure(""); }, [visible]);
   const submittingRef = useRef(false);
 
   async function handleSubmit() {
+    setSaveFailure("");
     if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setAmountError("");
     let valid = true;
@@ -245,7 +251,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showErrorToast(isEditing ? "No se pudo actualizar el presupuesto" : "No se pudo crear el presupuesto", err);
+      setSaveFailure(humanizeError(err));
     } finally {
       submittingRef.current = false;
     }
@@ -279,7 +285,16 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       ? "Falta qué limitas"
       : "";
 
+  const validationFields = {
+
+      scopeId: { value: `${scopeTouched}:${categoryId}:${spendTypeId}:${accountId}`, missing: !scopeTouched && categoryId == null && spendTypeId == null && accountId == null ? "Elige qué limitas" : null, open: () => setScopeOpen(true) },
+      limitAmount: positiveAmountField(limitAmount),
+      periodEnd: { value: periodEnd, invalid: periodEnd < periodStart ? "La fecha final no puede ser anterior a la inicial" : null },
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
     <BottomSheet
       visible={visible}
@@ -287,15 +302,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       title={isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
       snapHeight={0.92}
       footer={
-        <View style={styles.footer}>
-          {missingLabel ? <Text style={styles.submitNote}>{missingLabel}</Text> : null}
-          <Button
-            label={isEditing ? "Guardar cambios" : "Crear presupuesto"}
-            onPress={handleSubmit}
-            loading={createMutation.isPending || updateMutation.isPending}
-            size="lg"
-          />
-        </View>
+        <FormSubmitBar label={isEditing ? "Guardar cambios" : "Crear presupuesto"} onSubmit={handleSubmit} loading={createMutation.isPending || updateMutation.isPending} error={saveFailure} onMore={() => setOptionalsOpen(true)} />
       }
       // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
       overlay={
@@ -366,7 +373,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
           >
             <View style={styles.amountField}>
               <Text style={styles.label}>Nombre</Text>
-              <TextField
+              <TextField fieldId="name"
                 style={styles.textInput}
                 value={name}
                 onChangeText={setName}
@@ -391,7 +398,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
             <View style={styles.amountField}>
               <Text style={styles.label}>Notas</Text>
-              <TextField
+              <TextField fieldId="notes"
                 style={[styles.textInput, styles.textArea]}
                 value={notes}
                 onChangeText={setNotes}
@@ -420,7 +427,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             }
           >
             <View style={styles.group}>
-              <FormOptionRow
+              <FormOptionRow fieldId="scopeId"
                 label="Categoría"
                 value={scopeCategoryName}
                 placeholder="Todo el gasto"
@@ -519,7 +526,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
           en el puesto seis, así que un presupuesto llamado "Alimentación mensual" contaba también
           gasolina y alquiler — el nombre decía una cosa y la regla hacía otra, sin que nada
           avisara. Va primera y sin valor puesto; "Todas" sigue elegible, pero como elección. */}
-      <FormOptionRow
+      <FormOptionRow fieldId="scopeId"
         label="Qué limitas"
         value={
           scopeTouched
@@ -535,7 +542,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
           valía cero. La etiqueta dice además que el límite se renueva. */}
       <View style={styles.amountField}>
         <Text style={styles.label}>Cuánto por período</Text>
-        <CurrencyInput
+        <CurrencyInput fieldId="limitAmount"
           value={limitAmount}
           onChangeText={(t) => { setLimitAmount(t); setAmountError(""); }}
           currencyCode={currencyCode}
@@ -584,16 +591,11 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
         />
       </View>
 
-      <FormOptionRow
-        label="Opcionales"
-        support={multiCurrency ? "Nombre, moneda, notas" : "Nombre, notas"}
-        value={null}
-        placeholder=""
-        onPress={() => setOptionalsOpen(true)}
-      />
+
 
     </BottomSheet>
     </>
+    </FormFeedbackProvider>
   );
 }
 

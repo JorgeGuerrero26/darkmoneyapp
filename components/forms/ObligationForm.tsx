@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import {
@@ -641,7 +643,18 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
     return null;
   })();
 
+  const validationFields = {
+
+      title: requiredField(title, "Escribe el título"),
+      principalAmount: isEditing ? { value: principalAmount } : positiveAmountField(principalAmount),
+      counterpartyId: requiredField(counterpartyId, "Elige un contacto", null, () => setCounterpartyOpen(true)),
+      currencyCode: isEditing ? { value: currencyCode } : requiredField(currencyCode, "Elige una moneda", null, () => setCurrencyOpen(true)),
+      startDate: isEditing ? { value: startDate } : requiredField(startDate, "Elige la fecha"),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
       <BottomSheet
         visible={visible}
@@ -650,29 +663,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         snapHeight={0.95}
         scrollRef={scrollRef}
         footer={
-          <View style={styles.submitBar}>
-            <Button
-              label={
-                sharedViewer
-                  ? "Solo lectura"
-                  : isEditing
-                    ? "Guardar cambios"
-                    : "Crear obligación"
-              }
-              size="lg"
-              onPress={handleSubmit}
-              loading={isLoading || shareMutation.isPending || unlinkShareMutation.isPending}
-              disabled={Boolean(sharedViewer) || Boolean(missingLabel)}
-            />
-            {missingLabel ? (
-              <Text style={styles.submitNote}>{missingLabel}</Text>
-            ) : !isEditing && counterpartyName ? (
-              /* Invitar es una acción sobre algo que ya existe. Mientras tanto, se dice. */
-              <Text style={styles.submitNote}>
-                Podrás invitar a {counterpartyName.split(" ")[0]} cuando esté creada
-              </Text>
-            ) : null}
-          </View>
+          <FormSubmitBar label="Guardar" onSubmit={handleSubmit} loading={isLoading || shareMutation.isPending || unlinkShareMutation.isPending} disabled={Boolean(sharedViewer)} error={submitError} onMore={() => setDetailsOpen(true)} />
         }
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
         overlay={
@@ -831,12 +822,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           </>
         }
       >
-      {submitError ? (
-        <View style={styles.submitErrorBanner}>
-          <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.submitErrorText}>{submitError}</Text>
-        </View>
-      ) : null}
+
 
       {sharedViewer ? (
         <View style={styles.viewerBanner}>
@@ -856,7 +842,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           asterisco — lo que falta lo nombra el botón. */}
       <View style={styles.field}>
         <Text style={styles.sectionLabel}>Título</Text>
-        <TextField
+        <TextField fieldId="title"
           ref={titleRef}
           style={[styles.textInput, titleError ? styles.inputError : null]}
           value={title}
@@ -866,7 +852,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           returnKeyType="next"
           accessibilityLabel="Título de la obligación"
         />
-        {titleError ? <Text style={styles.fieldError}>{titleError}</Text> : null}
+
       </View>
 
       {/* "Por cobrar" y "Por pagar" son términos de contabilidad y describen la deuda, no la
@@ -878,6 +864,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             const isSelected = direction === opt.value;
             const Icon = opt.value === "receivable" ? ArrowUp : ArrowDown;
             return (
+
               <TouchableOpacity
                 key={opt.value}
                 style={[styles.directionBtn, isSelected && styles.directionBtnSelected]}
@@ -901,12 +888,11 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {!isEditing ? (
         <View style={styles.field}>
           <Text style={styles.sectionLabel}>Monto</Text>
-          <CurrencyInput
+          <CurrencyInput fieldId="principalAmount"
             ref={principalAmountRef}
             value={principalAmount}
             onChangeText={(t) => { setPrincipalAmount(t); setAmountError(""); }}
             currencyCode={currencyCode}
-            error={amountError}
           />
         </View>
       ) : null}
@@ -915,7 +901,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       <View onLayout={(event) => { counterpartySectionYRef.current = event.nativeEvent.layout.y; }}>
         {counterpartiesSorted.length > 0 ? (
           <View style={[styles.group, counterpartyError ? styles.sectionErrorWrap : null]}>
-            <FormOptionRow
+            <FormOptionRow fieldId="counterpartyId"
               grouped
               label="Contacto"
               value={counterpartyName}
@@ -962,7 +948,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             />
           </View>
         )}
-        {counterpartyError ? <Text style={styles.fieldError}>{counterpartyError}</Text> : null}
+
       </View>
 
       {/* La consecuencia de lo elegido, en una línea. El formulario preguntaba dos veces lo
@@ -985,7 +971,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
       {!isEditing ? (
         <View style={styles.group} onLayout={(event) => { startDateSectionYRef.current = event.nativeEvent.layout.y; }}>
-          <FormDateRow
+          <FormDateRow fieldId="startDate"
             grouped
             last
             label="Desde"
@@ -994,18 +980,12 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           />
         </View>
       ) : null}
-      {startDateError ? <Text style={styles.fieldError}>{startDateError}</Text> : null}
+
 
       {/* La puerta a lo opcional va suelta y al final de los campos, no dentro de la tarjeta de
           "Desde": agrupada se leía como un campo más de esa tarjeta, cuando es la entrada a otra
           pantalla. Misma posición que en los otros seis formularios. */}
-      <FormOptionRow
-        label="Más detalles"
-        support="Cuotas, tasa, vencimiento, notas"
-        value=""
-        placeholder=""
-        onPress={() => setDetailsOpen(true)}
-      />
+
 
 
       {/* Invitar por correo salía del formulario de creación: convertía el botón de guardar en
@@ -1191,6 +1171,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       ) : null}
     </BottomSheet>
   </>
+    </FormFeedbackProvider>
   );
 }
 

@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { AlertCircle } from "lucide-react-native";
@@ -418,7 +420,20 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
     }
   }
 
+  const validationFields = {
+
+      name: requiredField(name, "Escribe el nombre"),
+      amount: positiveAmountField(amount),
+      nextExpectedDate: requiredField(nextExpectedDate, "Elige la próxima llegada", nextExpectedDate < startDate ? "La próxima llegada no puede ser anterior al inicio" : null),
+      accountId: requiredField(accountId, "Elige una cuenta", null, () => setAccountOpen(true)),
+      intervalCount: integerField(intervalCount, 1, 9999),
+      dayOfMonth: integerField(dayOfMonth, 1, 31, true),
+      dayOfWeek: { value: dayOfWeek, invalid: frequency === "weekly" && dayOfWeek != null && (dayOfWeek < 0 || dayOfWeek > 6) ? "Elige un día de la semana" : null },
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
       <BottomSheet
         visible={visible}
@@ -429,15 +444,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
            no se veían hasta llegar al fondo. Y "Cancelar" se retira — la hoja ya tiene la X del
            encabezado, y dos maneras de abandonar compiten entre sí. */
         footer={
-          <View style={styles.submitBar}>
-            {missingLabel ? <Text style={styles.submitNote}>{missingLabel}</Text> : null}
-            <Button
-              label={isEditing ? "Guardar cambios" : "Crear ingreso"}
-              onPress={handleSubmit}
-              loading={isLoading}
-              size="lg"
-            />
-          </View>
+          <FormSubmitBar label={isEditing ? "Guardar cambios" : "Crear ingreso"} onSubmit={handleSubmit} loading={isLoading} error={submitError} onMore={() => setOptionalsOpen(true)} />
         }
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
@@ -570,7 +577,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       >
         <View style={styles.section}>
           {/* Sin rótulo: el ejemplo va de placeholder, como en los otros seis formularios. */}
-          <TextField
+          <TextField fieldId="name"
             ref={nameRef}
             style={[styles.input, nameError ? styles.inputError : null]}
             value={name}
@@ -579,16 +586,15 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             placeholderTextColor={COLORS.storm}
             accessibilityLabel="Nombre del ingreso fijo"
           />
-          {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+
 
           {/* "S/ 0.00" gris sobre caja gris se leía como un dato ya puesto, no como el campo
               donde va la cifra más importante del formulario. */}
           <Text style={styles.fieldLabel}>Llega a tu cuenta</Text>
-          <CurrencyInput
+          <CurrencyInput fieldId="amount"
             value={amount}
             onChangeText={(value) => { setAmount(value); setAmountError(""); }}
             currencyCode={currencyCode}
-            error={amountError}
             style={styles.amountField}
           />
 
@@ -619,7 +625,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               value={recurrenceLabel}
               onPress={() => setFrequencyOpen(true)}
             />
-            <FormDateRow
+            <FormDateRow fieldId="nextExpectedDate"
               grouped
               label="Próxima llegada"
               value={nextExpectedDate}
@@ -634,7 +640,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               }}
               placeholder="Elegir fecha"
             />
-            <FormOptionRow
+            <FormOptionRow fieldId="accountId"
               grouped
               label="Entra a"
               value={activeAccounts.find((account) => account.id === accountId)?.name ?? null}
@@ -655,7 +661,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           {frequency === "custom" ? (
             <View>
               <Text style={styles.label}>Cada cuántos días</Text>
-              <TextField
+              <TextField fieldId="intervalCount"
                 style={styles.input}
                 value={intervalCount}
                 onChangeText={setIntervalCount}
@@ -677,23 +683,13 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             ) : null;
           })() : null}
 
-          <FormOptionRow
-            label="Opcionales"
-            support="Pagador, categoría, desde, hasta, notas"
-            value=""
-            placeholder=""
-            onPress={() => setOptionalsOpen(true)}
-          />
 
-          {submitError ? (
-            <View style={styles.errorBanner}>
-              <AlertCircle size={16} color={COLORS.danger} />
-              <Text style={styles.errorBannerText}>{submitError}</Text>
-            </View>
-          ) : null}
+
+
         </View>
       </BottomSheet>
     </>
+    </FormFeedbackProvider>
   );
 }
 

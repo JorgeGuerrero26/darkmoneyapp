@@ -9,10 +9,12 @@ import {
   type ViewStyle,
 } from "react-native";
 import { TextField } from "./TextField";
+import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 import { formatCurrencyParts, groupAmountDigits } from "../../lib/format-currency";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
+  fieldId?: string;
   value: string;
   onChangeText: (text: string) => void;
   currencyCode: string;
@@ -34,6 +36,7 @@ type Props = {
 };
 
 export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput({
+  fieldId,
   value,
   onChangeText,
   currencyCode,
@@ -47,6 +50,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
 }, ref) {
   const compact = size === "compact";
   const inputRef = useRef<TextInput>(null);
+  const feedback = useFormField(fieldId, () => inputRef.current?.focus());
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
   /**
    * El separador de miles solo mientras nadie escribe.
@@ -85,7 +89,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
 
   return (
     <TouchableOpacity
-      style={[styles.container, error ? styles.containerError : null, style]}
+      style={[styles.container, error ? styles.containerError : null, style, feedback?.kind === "invalid" && { borderColor: COLORS.dangerStrong, backgroundColor: COLORS.dangerStrong + "12" }]}
       onPress={() => inputRef.current?.focus()}
       activeOpacity={1}
     >
@@ -107,7 +111,8 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
           accessibilityHint={error ? `Error: ${error}` : undefined}
         />
       </View>
-      {error ? (
+      <FieldFeedbackMessage feedback={feedback} />
+      {!fieldId && error ? (
         <Text
           style={styles.error}
           accessibilityLiveRegion="polite"

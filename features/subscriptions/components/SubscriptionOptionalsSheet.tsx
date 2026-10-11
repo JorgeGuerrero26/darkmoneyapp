@@ -125,7 +125,7 @@ export function SubscriptionOptionalsSheet({
             onPress={onOpenCategory}
           />
         ) : null}
-        <FormOptionRow grouped last label="Moneda" value={currencyLabel} onPress={onOpenCurrency} />
+        <FormOptionRow fieldId="currencyCode" grouped last label="Moneda" value={currencyLabel} onPress={onOpenCurrency} />
       </View>
 
       {accountSuggestion}
@@ -133,7 +133,7 @@ export function SubscriptionOptionalsSheet({
 
       <Text style={styles.sectionLabel}>Vigencia</Text>
       <View style={styles.group}>
-        <FormDateRow
+        <FormDateRow fieldId="startDate"
           grouped
           label="Empezó"
           support="Solo referencia, no afecta los cobros"
@@ -141,7 +141,7 @@ export function SubscriptionOptionalsSheet({
           onChange={onChangeStartDate}
           placeholder="Sin fecha"
         />
-        <FormDateRow
+        <FormDateRow fieldId="endDate"
           grouped
           last
           label="Se da de baja"

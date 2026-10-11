@@ -103,7 +103,7 @@ export function RecurringIncomeOptionalsSheet({
           />
         ) : null}
         {showCurrency ? (
-          <FormOptionRow grouped last label="Moneda" value={currencyLabel} onPress={onOpenCurrency} />
+          <FormOptionRow fieldId="currencyCode" grouped last label="Moneda" value={currencyLabel} onPress={onOpenCurrency} />
         ) : null}
       </View>
 
@@ -111,7 +111,7 @@ export function RecurringIncomeOptionalsSheet({
 
       <Text style={styles.sectionLabel}>Vigencia</Text>
       <View style={styles.group}>
-        <FormDateRow
+        <FormDateRow fieldId="startDate"
           grouped
           label="Desde"
           value={startDate}
@@ -119,7 +119,7 @@ export function RecurringIncomeOptionalsSheet({
           placeholder="La primera llegada"
           optional
         />
-        <FormDateRow
+        <FormDateRow fieldId="endDate"
           grouped
           last
           label="Hasta"

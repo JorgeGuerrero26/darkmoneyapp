@@ -1,3 +1,5 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { AlertCircle, Clock, Info } from "lucide-react-native";
@@ -144,14 +146,16 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
     }
   }
 
+  const validationFields = {
+
+      amount: positiveAmountField(amount, "Ingresa el monto", describeOverpayment({ amount: parseFloat(amount.replace(",", ".")), pendingAmount: obligation.pendingAmount, formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: verb })),
+  };
+
   return (
-    <BottomSheet visible={visible} onClose={handleClose} title={title} scrollRef={scrollRef}>
-      {submitError ? (
-        <View style={styles.errorBanner}>
-          <AlertCircle size={15} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.errorText}>{submitError}</Text>
-        </View>
-      ) : null}
+    <FormFeedbackProvider visible={visible} busy={createRequest.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
+    <BottomSheet visible={visible} onClose={handleClose} title={title} scrollRef={scrollRef} footer={<FormSubmitBar label={`Enviar solicitud de registro de ${verb}`} onSubmit={handleSubmit} loading={createRequest.isPending} error={submitError} />}>
+
 
       {/* Info box — explica el flujo */}
       <View style={styles.infoBox}>
@@ -187,13 +191,12 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
         </View>
       </View>
 
-      <CurrencyInput
+      <CurrencyInput fieldId="amount"
         ref={amountRef}
         label={`Monto del ${verb} *`}
         value={amount}
         onChangeText={(v) => { setAmount(v); setAmountError(""); }}
         currencyCode={obligation.currencyCode}
-        error={amountError}
       />
 
       <DatePickerInput
@@ -219,6 +222,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
             {viewerAccounts.map((acc) => {
               const selected = selectedAccountId === acc.id;
               return (
+
                 <TouchableOpacity
                   key={acc.id}
                   style={[styles.accountRow, selected && styles.accountRowSelected]}
@@ -246,7 +250,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripción (opcional)</Text>
         <View style={styles.textAreaWrap}>
-          <TextField
+          <TextField fieldId="description"
             style={styles.textArea}
             value={description}
             onChangeText={setDescription}
@@ -258,12 +262,9 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
         </View>
       </View>
 
-      <Button
-        label={`Enviar solicitud de registro de ${verb}`}
-        onPress={handleSubmit}
-        loading={createRequest.isPending}
-      />
+      
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

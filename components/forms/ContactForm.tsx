@@ -1,3 +1,6 @@
+import { humanizeError } from "../../lib/errors";
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -97,9 +100,12 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
     }
   }
 
+  const [saveFailure, setSaveFailure] = useState("");
+  useEffect(() => { setSaveFailure(""); }, [visible]);
   const submittingRef = useRef(false);
 
   async function handleSubmit() {
+    setSaveFailure("");
     if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     if (!name.trim()) { haptics.error(); setNameError("El nombre es obligatorio"); return; }
@@ -129,7 +135,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showErrorToast(isEditing ? "No se pudo guardar el contacto" : "No se pudo crear el contacto", err);
+      setSaveFailure(humanizeError(err));
     } finally {
       submittingRef.current = false;
     }
@@ -137,7 +143,14 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
+  const validationFields = {
+
+      name: requiredField(name, "Escribe el nombre"),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+
     <>
     <BottomSheet
       visible={visible}
@@ -169,21 +182,21 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
         />
         </>
       }
-    >
+     footer={<FormSubmitBar label={isEditing ? "Guardar cambios" : "Crear contacto"} onSubmit={handleSubmit} loading={isLoading} error={saveFailure} />}>
 
       {/* Los seis tipos eran cápsulas con emoji que se cortaban por el borde. El emoji sale:
           no distingue nada que la palabra no diga, y con seis seguidos tampoco decora. */}
       {/* Name */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
-        <TextField
+        <TextField fieldId="name"
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
           placeholder="Nombre completo o razón social"
           placeholderTextColor={COLORS.textDisabled}
         />
-        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+
       </View>
 
       <FormOptionRow
@@ -194,7 +207,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Phone */}
       <View>
         <Text style={styles.label}>Teléfono (opcional)</Text>
-        <TextField
+        <TextField fieldId="phone"
           style={styles.textInput}
           value={phone}
           onChangeText={setPhone}
@@ -207,7 +220,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Email */}
       <View>
         <Text style={styles.label}>Email (opcional)</Text>
-        <TextField
+        <TextField fieldId="email"
           style={styles.textInput}
           value={email}
           onChangeText={setEmail}
@@ -221,7 +234,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Document */}
       <View>
         <Text style={styles.label}>DNI / RUC (opcional)</Text>
-        <TextField
+        <TextField fieldId="documentNumber"
           style={styles.textInput}
           value={documentNumber}
           onChangeText={setDocumentNumber}
@@ -234,7 +247,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Notes */}
       <View>
         <Text style={styles.label}>Notas (opcional)</Text>
-        <TextField
+        <TextField fieldId="notes"
           style={[styles.textInput, styles.textArea]}
           value={notes}
           onChangeText={setNotes}
@@ -246,14 +259,10 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
         />
       </View>
 
-      <Button
-        label={isEditing ? "Guardar cambios" : "Crear contacto"}
-        onPress={handleSubmit}
-        loading={isLoading}
-        style={styles.submitBtn}
-      />
+      
     </BottomSheet>
     </>
+    </FormFeedbackProvider>
   );
 }
 

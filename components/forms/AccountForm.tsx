@@ -1,3 +1,6 @@
+import { humanizeError } from "../../lib/errors";
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { Clock, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -227,9 +230,12 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     }
   }
 
+  const [saveFailure, setSaveFailure] = useState("");
+  useEffect(() => { setSaveFailure(""); }, [visible]);
   const submittingRef = useRef(false);
 
   async function handleSubmit() {
+    setSaveFailure("");
     if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     if (!name.trim()) {
@@ -289,7 +295,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showErrorToast(editAccount ? "No se pudo guardar la cuenta" : "No se pudo crear la cuenta", err);
+      setSaveFailure(humanizeError(err));
     } finally {
       submittingRef.current = false;
     }
@@ -304,7 +310,14 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
 
   const institutionLabel = findInstitution(institutionCode)?.label ?? null;
 
+  const validationFields = {
+
+      name: requiredField(name, "Escribe el nombre"),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
     <FormSheetScaffold
       visible={visible}
       onClose={handleClose}
@@ -313,10 +326,9 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       submitLabel={editAccount ? "Guardar cambios" : "Crear cuenta"}
       onSubmit={handleSubmit}
       submitLoading={createMutation.isPending || updateMutation.isPending}
+      submitError={saveFailure}
       // Mientras falte el nombre el botón está apagado y dice qué falta. Reemplaza al asterisco
       // de "NOMBRE *", que no se explica en ninguna parte de la app.
-      submitDisabled={!name.trim()}
-      missingLabel={name.trim() ? null : "Falta el nombre"}
       // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
       // Conviven porque en modo inline el que no está visible no pinta nada.
       overlay={
@@ -427,7 +439,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           escribe, fila con el valor a la derecha para lo que se elige. Había cuatro. */}
       <View style={styles.field}>
         <Text style={styles.sectionLabel}>Nombre</Text>
-        <TextField
+        <TextField fieldId="name"
           style={[styles.textInput, nameError ? styles.textInputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
@@ -512,7 +524,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           </Text>
 
           <Text style={styles.sectionLabel}>Línea de crédito</Text>
-          <CurrencyInput
+          <CurrencyInput fieldId="creditLimit"
             value={creditLimit}
             onChangeText={setCreditLimit}
             currencyCode={resolvedCurrency}
@@ -527,7 +539,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
 
       <View style={styles.field}>
         <Text style={styles.sectionLabel}>{editAccount ? "Saldo inicial (base)" : "Saldo inicial"}</Text>
-        <CurrencyInput
+        <CurrencyInput fieldId="openingBalance"
           value={openingBalance}
           onChangeText={setOpeningBalance}
           currencyCode={resolvedCurrency}
@@ -554,6 +566,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         />
       </View>
     </FormSheetScaffold>
+    </FormFeedbackProvider>
   );
 }
 

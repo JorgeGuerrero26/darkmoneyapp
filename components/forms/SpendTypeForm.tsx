@@ -1,3 +1,6 @@
+import { humanizeError } from "../../lib/errors";
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, View } from "react-native";
 
@@ -41,6 +44,8 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
   const [color, setColor] = useState<string>(COLOR_CHOICES[0]);
   const [oneOff, setOneOff] = useState(false);
   const isEditing = Boolean(editSpendType);
+  const [saveFailure, setSaveFailure] = useState("");
+  useEffect(() => { setSaveFailure(""); }, [visible]);
   const submittingRef = useRef(false);
 
   useEffect(() => {
@@ -51,6 +56,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
   }, [visible, editSpendType]);
 
   async function handleSubmit() {
+    setSaveFailure("");
     const trimmed = name.trim();
     if (!trimmed) return;
     /* Anti-doble-tap: el botón deshabilitado por `loading` no alcanza, porque el estado de React
@@ -68,13 +74,20 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
       }
       onClose();
     } catch (error) {
-      showErrorToast(isEditing ? "No se pudo guardar el tipo de gasto" : "No se pudo crear el tipo de gasto", error);
+      setSaveFailure(humanizeError(error));
     } finally {
       submittingRef.current = false;
     }
   }
 
+  const validationFields = {
+
+      name: requiredField(name, "Escribe el nombre"),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+
     <BottomSheet
       visible={visible}
       onClose={onClose}
@@ -82,19 +95,11 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
       snapHeight={0.5}
       entranceAnimation="springFade"
       footer={
-        <View style={styles.footer}>
-          {!name.trim() ? <Text style={styles.note}>Falta el nombre</Text> : null}
-          <Button
-            label={isEditing ? "Guardar cambios" : "Crear tipo"}
-            size="lg"
-            onPress={handleSubmit}
-            loading={createMutation.isPending || updateMutation.isPending}
-          />
-        </View>
+        <FormSubmitBar label={isEditing ? "Guardar cambios" : "Crear tipo"} onSubmit={handleSubmit} loading={createMutation.isPending || updateMutation.isPending} error={saveFailure} />
       }
     >
       <View style={styles.content}>
-        <TextField
+        <TextField fieldId="name"
           style={styles.input}
           value={name}
           onChangeText={setName}
@@ -144,6 +149,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
         </Text>
       </View>
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }
 

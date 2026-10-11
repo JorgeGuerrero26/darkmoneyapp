@@ -1,3 +1,6 @@
+import { humanizeError } from "../../lib/errors";
+import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
+import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, View } from "react-native";
 
@@ -129,9 +132,12 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     else onClose();
   }
 
+  const [saveFailure, setSaveFailure] = useState("");
+  useEffect(() => { setSaveFailure(""); }, [visible]);
   const submittingRef = useRef(false);
 
   async function handleSubmit() {
+    setSaveFailure("");
     if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     const trimmed = name.trim();
@@ -190,7 +196,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showErrorToast(isEditing ? "No se pudo actualizar la categoría" : "No se pudo crear la categoría", err);
+      setSaveFailure(humanizeError(err));
     } finally {
       submittingRef.current = false;
     }
@@ -227,7 +233,14 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     ...parentOptions.map((option) => ({ value: option.id as number | null, label: option.name })),
   ];
 
+  const validationFields = {
+
+      name: requiredField(name, "Escribe el nombre", name.trim().length > 80 ? "Usa como máximo 80 caracteres" : null),
+  };
+
   return (
+    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+
     <FormSheetScaffold
       visible={visible}
       onClose={handleClose}
@@ -235,7 +248,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       submitLabel={isEditing ? "Guardar cambios" : "Crear categoría"}
       onSubmit={handleSubmit}
       submitLoading={isLoading}
-      missingLabel={name.trim() ? null : "Falta el nombre"}
+      submitError={saveFailure}
       snapHeight={0.92}
       overlay={
         <>
@@ -289,7 +302,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       {/* Lo obligatorio primero: antes esto vivía tras 400 px de íconos y colores. */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
-        <TextField
+        <TextField fieldId="name"
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
@@ -297,7 +310,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
           placeholderTextColor={COLORS.textDisabled}
           maxLength={80}
         />
-        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+
       </View>
 
       <SegmentedControl
@@ -357,6 +370,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
         </View>
       ) : null}
     </FormSheetScaffold>
+    </FormFeedbackProvider>
   );
 }
 

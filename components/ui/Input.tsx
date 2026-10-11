@@ -1,4 +1,4 @@
-import { forwardRef, useState, type ReactNode } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,8 +10,10 @@ import {
 } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "./TextField";
+import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 
 type Props = TextInputProps & {
+  fieldId?: string;
   label?: string;
   error?: string;
   hint?: string;
@@ -21,6 +23,7 @@ type Props = TextInputProps & {
 
 export const Input = forwardRef<TextInput, Props>(function Input(
   {
+    fieldId,
     label,
     error,
     hint,
@@ -36,6 +39,9 @@ export const Input = forwardRef<TextInput, Props>(function Input(
   ref,
 ) {
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+  useImperativeHandle(ref, () => inputRef.current as TextInput, []);
+  const feedback = useFormField(fieldId, () => inputRef.current?.focus());
 
   // El placeholder lo pinta `TextField` como `Text`: iOS aprieta el kerning del nativo hasta
   // que la frase entre, y deja de parecerse a la tipografía del resto de la app.
@@ -44,10 +50,10 @@ export const Input = forwardRef<TextInput, Props>(function Input(
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={[styles.inputWrap, focused && styles.inputWrapFocused, error ? styles.inputWrapError : null]}>
+      {label ? <Text style={[styles.label, feedback?.kind === "invalid" && { color: COLORS.dangerStrong }]}>{label}</Text> : null}
+      <View style={[styles.inputWrap, focused && styles.inputWrapFocused, error ? styles.inputWrapError : null, feedback?.kind === "invalid" && { backgroundColor: COLORS.dangerStrong + "12", borderColor: COLORS.dangerStrong }]}>
         <TextField
-          ref={ref}
+          ref={inputRef}
           style={[styles.input, style]}
           placeholderTextColor={COLORS.storm}
           onFocus={(e) => { setFocused(true); onFocus?.(e); }}
@@ -58,7 +64,8 @@ export const Input = forwardRef<TextInput, Props>(function Input(
         />
         {rightElement ? <View style={styles.rightSlot}>{rightElement}</View> : null}
       </View>
-      {error ? (
+      <FieldFeedbackMessage feedback={feedback} />
+      {!fieldId && error ? (
         <Text
           style={styles.error}
           accessibilityLiveRegion="polite"
@@ -67,7 +74,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           {error}
         </Text>
       ) : null}
-      {!error && hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      {!feedback && !error && hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
 });

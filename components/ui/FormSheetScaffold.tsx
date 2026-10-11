@@ -4,7 +4,7 @@ import { AlertCircle } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { BottomSheet } from "./BottomSheet";
-import { Button } from "./Button";
+import { FormSubmitBar } from "./FormFeedback";
 
 type Props = {
   visible: boolean;
@@ -62,26 +62,11 @@ export function FormSheetScaffold({
       overlay={overlay}
       // Fuera del ScrollView: es lo único que no debe desplazarse.
       footer={
-        <View style={styles.submitBar}>
-          <Button
-            label={submitLabel}
-            onPress={onSubmit}
-            loading={submitLoading}
-            disabled={submitDisabled}
-            size="lg"
-          />
-          {missingLabel ? <Text style={styles.missing}>{missingLabel}</Text> : null}
-        </View>
+        <FormSubmitBar label={submitLabel} onSubmit={onSubmit} loading={submitLoading} disabled={submitDisabled} error={submitError} />
       }
     >
       <View style={[styles.root, contentStyle]}>
         {headerAction}
-        {submitError ? (
-          <View style={styles.errorBanner}>
-            <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-            <Text style={styles.errorText}>{submitError}</Text>
-          </View>
-        ) : null}
         {children}
         {footer}
       </View>
