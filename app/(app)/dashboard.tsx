@@ -206,7 +206,6 @@ import {
   ExplanationVisualSummary,
 } from "../../features/dashboard/components/advanced/ExplanationCard";
 
-import { ProCommandCenter } from "../../features/dashboard/components/advanced/ProCommandCenter";
 
 import {
   CategoryBreakdown,

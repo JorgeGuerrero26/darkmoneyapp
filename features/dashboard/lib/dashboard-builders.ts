@@ -204,6 +204,12 @@ export function convertDashboardCurrency(
   return convertAmt(amount, fromCurrency, displayCurrency, exchangeRateMap, baseCurrency);
 }
 
+/**
+ * @deprecated Lectura anterior de las ventanas de 7/15/30 días: mira solo las fechas finales de
+ * cada deuda, así que no ve las cuotas (ni las atrasadas). Ninguna pantalla la usa ya; las
+ * pantallas arman las ventanas desde las líneas del motor con `windowsFromFlowItems`. Sigue aquí
+ * solo porque la leen las pruebas de humo de `tests/dashboard` y `tests/parity`.
+ */
 export function buildFutureFlowWindows(
   obligations: Array<{
     direction: string;
