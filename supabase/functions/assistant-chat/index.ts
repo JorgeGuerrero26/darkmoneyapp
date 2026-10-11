@@ -13,6 +13,7 @@ import {
   liquidBalance,
   monthlyDiscretionarySpend,
   movementActsAsExpense,
+  plannedCashEffect,
   movementDisplayAccountId,
   movementDisplayAmount,
   typicalMonthlySpend,
@@ -738,7 +739,11 @@ async function runProjectCashflow(
     .limit(4000);
 
   const currencyByAccount = new Map<number, string>();
-  for (const account of accounts.data ?? []) currencyByAccount.set(Number(account.id), String(account.currency_code));
+  const typeByAccount = new Map<number, string>();
+  for (const account of accounts.data ?? []) {
+    currencyByAccount.set(Number(account.id), String(account.currency_code));
+    typeByAccount.set(Number(account.id), String(account.type ?? ""));
+  }
 
   const historyMovements = (historyRows ?? []).map((row) => ({
     movementType: String(row.movement_type ?? ""),
@@ -867,14 +872,16 @@ async function runProjectCashflow(
     creditCards,
     plannedMovements: historyMovements
       .filter((movement) => movement.status === "planned" && new Date(movement.occurredAt) > today)
-      .map((movement) => {
-        const accountId = movementDisplayAccountId(movement);
-        return {
+      .flatMap((movement) => {
+        // Una transferencia a inversión sale de la caja; entre cuentas líquidas no cambia nada.
+        const effect = plannedCashEffect(movement, typeByAccount);
+        if (!effect) return [];
+        return [{
           description: "Movimiento planificado",
-          signedAmount: movementDisplayAmount(movement) * (movementActsAsExpense(movement) ? -1 : 1),
-          currencyCode: (accountId != null ? currencyByAccount.get(accountId) : undefined) ?? base,
+          signedAmount: effect.signedAmount,
+          currencyCode: (effect.accountId != null ? currencyByAccount.get(effect.accountId) : undefined) ?? base,
           occurredAt: movement.occurredAt,
-        };
+        }];
       }),
   });
 

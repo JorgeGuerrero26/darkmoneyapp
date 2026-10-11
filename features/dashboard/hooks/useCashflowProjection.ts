@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 
-import { movementActsAsIncome, movementDisplayAccountId, movementDisplayAmount } from "../../../lib/movement-amounts";
+import { movementDisplayAccountId } from "../../../lib/movement-amounts";
 import { DASHBOARD_MOVEMENTS_WINDOW_DAYS, PROJECTION_HISTORY_MONTHS } from "../../../services/queries/workspace-data";
 import { buildCashflowCalendar, typicalMonthlySpend } from "../../projection/lib/cashflow-calendar";
 import { monthlyDiscretionarySpend } from "../../projection/lib/discretionary-history";
+import { plannedCashEffect } from "../../projection/lib/planned-cash-effect";
 import { liquidBalance } from "../../projection/lib/liquid-balance";
 import { convertAmt, expenseAmt, isExpense } from "../lib/aggregations";
 import type { DashboardMovementRow } from "../lib/dashboard-row";
@@ -190,23 +191,30 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
     });
   }, [cardAccounts, historySource, coveredFrom, conversionCtx, baseCurrency]);
 
+  const accountTypeById = useMemo(
+    () => new Map(accounts.filter((a) => a.id != null).map((a) => [Number(a.id), a.type] as const)),
+    [accounts],
+  );
+
   /** Lo anotado con fecha futura: la maestría de abril entra en abril. */
   const plannedMovements = useMemo(() => {
     const now = new Date();
     return movements
       .filter((movement) => movement.status === "planned" && new Date(movement.occurredAt) > now)
-      .map((movement) => {
-        const income = movementActsAsIncome(movement);
-        const accountId = movementDisplayAccountId(movement);
-        return {
+      .flatMap((movement) => {
+        // Una transferencia a inversión sale de la caja; entre cuentas líquidas no cambia nada.
+        const effect = plannedCashEffect(movement, accountTypeById);
+        if (!effect) return [];
+        const income = effect.signedAmount > 0;
+        return [{
           id: movement.id,
           description: movement.description || (income ? "Ingreso planificado" : "Gasto planificado"),
-          signedAmount: movementDisplayAmount(movement) * (income ? 1 : -1),
-          currencyCode: (accountId ? accountCurrencyMap.get(accountId) : undefined) ?? baseCurrency,
+          signedAmount: effect.signedAmount,
+          currencyCode: (effect.accountId ? accountCurrencyMap.get(effect.accountId) : undefined) ?? baseCurrency,
           occurredAt: movement.occurredAt,
-        };
+        }];
       });
-  }, [movements, accountCurrencyMap, baseCurrency]);
+  }, [movements, accountCurrencyMap, accountTypeById, baseCurrency]);
 
   const projectionObligations = useMemo(
     () =>

@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Las transferencias que dejas programadas ahora cuentan bien en la proyección: pasar plata a una cuenta de inversión sale de tu plata disponible, rescatarla vuelve, y moverla entre tus cuentas de banco o efectivo no cambia nada. Antes la app las restaba como si fueran un gasto y el asistente las sumaba como si fueran un ingreso.",
       "Si tu sueldo va a subir (o bajar) desde una fecha, ahora puedes anotarlo: en Ingresos fijos, al editar, abre \"Cambios de monto\" y pon desde cuándo y cuánto te llegará. La proyección usa el monto nuevo a partir de ese día. Para la gratificación de julio y diciembre, créala como dos ingresos fijos anuales; el asistente te lo propone.",
       "El asistente ahora guarda varias conversaciones. Con el botón Chats empiezas una nueva o vuelves a una anterior, y también puedes borrarlas. Cada una conserva lo que hablaron y el asistente solo recuerda la que tienes abierta. Se guardan en tu teléfono; tu conversación de antes pasa a ser la primera de la lista.",
       "En el detalle de Ingresos fijos, las llegadas pendientes y anotadas ahora están en la pestaña Actividad. La pestaña Detalles queda para las características y el desglose del ingreso.",

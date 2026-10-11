@@ -255,6 +255,46 @@ export function movementDisplayAccountId(movement: MovementAmountLike): number |
 }
 
 /**
+ * Espejo de `features/projection/lib/planned-cash-effect.ts`: que le hace a la caja un movimiento
+ * planificado. Una transferencia a una cuenta de inversion sale de la caja; entre cuentas
+ * liquidas no cambia nada; hacia una tarjeta no se cuenta (el ciclo de la tarjeta ya la paga).
+ */
+export type PlannedCashEffect = { signedAmount: number; accountId: number | null };
+
+export function plannedCashEffect(
+  movement: MovementAmountLike,
+  accountTypeById: ReadonlyMap<number, string | null | undefined>,
+): PlannedCashEffect | null {
+  if (!movementIsTransfer(movement)) {
+    const income = movementActsAsIncome(movement);
+    return {
+      signedAmount: movementDisplayAmount(movement) * (income ? 1 : -1),
+      accountId: movementDisplayAccountId(movement),
+    };
+  }
+
+  const sourceId = movement.sourceAccountId ?? null;
+  const destinationId = movement.destinationAccountId ?? null;
+  if (sourceId == null || destinationId == null) return null;
+  const sourceType = accountTypeById.get(sourceId);
+  const destinationType = accountTypeById.get(destinationId);
+  if (sourceType == null || destinationType == null) return null;
+  if (sourceType === "credit_card" || destinationType === "credit_card") return null;
+
+  const sourceLiquid = isLiquidAccount(sourceType);
+  const destinationLiquid = isLiquidAccount(destinationType);
+  if (sourceLiquid && !destinationLiquid) {
+    const amount = Math.abs(Number(movement.sourceAmount ?? movement.destinationAmount ?? 0));
+    return { signedAmount: -amount, accountId: sourceId };
+  }
+  if (!sourceLiquid && destinationLiquid) {
+    const amount = Math.abs(Number(movement.destinationAmount ?? movement.sourceAmount ?? 0));
+    return { signedAmount: amount, accountId: destinationId };
+  }
+  return null;
+}
+
+/**
  * Espejo de `features/projection/lib/discretionary-history.ts`. Mismo contrato y mismos dos
  * filtros: fuera lo que el calendario ya proyecta con su propia línea, y solo meses terminados.
  */
