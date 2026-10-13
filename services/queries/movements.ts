@@ -2,6 +2,8 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { useOfflineLocalReady } from "../../lib/offline/react";
 import { filterDateFrom, filterDateTo } from "../../lib/date";
 import { MOVEMENTS_PAGE_SIZE, SUPABASE_STORAGE_BUCKET } from "../../constants/config";
 import type { MovementRecord } from "../../types/domain";
@@ -94,10 +96,16 @@ async function fetchMovementsPage(
   };
 }
 
-export function useMovementQuery(movementId?: number | null) {
+export function useMovementQuery(movementId?: number | null, workspaceId?: number | null) {
+  const localReady = useOfflineLocalReady(workspaceId);
   return useQuery({
     queryKey: ["movement", movementId],
+    networkMode: localReady ? "always" : "online",
     queryFn: async () => {
+      if (localReady && offlineRuntime.canReadLocal(workspaceId)) {
+        const local = await offlineRuntime.getMovement(movementId!);
+        if (local) return local;
+      }
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { data, error } = await supabase
         .from("movements")
@@ -286,10 +294,16 @@ export function usePaginatedMovements(
   /** Exigido para no consultar ni reutilizar caché antes de resolver al usuario actual. */
   userScopeKey: string | null | undefined,
 ) {
+  const localReady = useOfflineLocalReady(workspaceId);
   return useInfiniteQuery({
     queryKey: ["movements", userScopeKey ?? null, workspaceId, filters],
+    // Con la base local lista (modo sin conexión, beta) la lista sale del teléfono: es instantánea,
+    // incluye lo que aún no se envió y no se pausa sin red.
+    networkMode: localReady ? "always" : "online",
     queryFn: ({ pageParam = 0 }) =>
-      fetchMovementsPage(workspaceId!, pageParam as number, filters),
+      localReady && offlineRuntime.canReadLocal(workspaceId)
+        ? offlineRuntime.listMovements(workspaceId!, filters, pageParam as number, MOVEMENTS_PAGE_SIZE)
+        : fetchMovementsPage(workspaceId!, pageParam as number, filters),
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.nextPage : undefined,

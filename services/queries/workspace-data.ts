@@ -23,6 +23,9 @@ import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { displayCategoryName } from "../../lib/category-display-name";
 import { notificationDetection } from "../../lib/notification-detection-native";
 import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { withLocalBalanceRows } from "../../lib/offline/local-balances";
+import { useOfflineLocalReady } from "../../lib/offline/react";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -1029,7 +1032,7 @@ export async function fetchWorkspaceSnapshot(
 
   const accounts: AccountSummary[] = buildAccountSummaries(
     (accountsResult.data ?? []) as any[],
-    (accountBalancesResult.data ?? []) as AccountBalanceRow[],
+    await withLocalBalanceRows(activeWorkspaceId, (accountBalancesResult.data ?? []) as AccountBalanceRow[]),
   );
 
   const accountMap = new Map<number, string>();
@@ -1562,7 +1565,7 @@ export async function refreshSnapshotDomains(
       if (balancesRes.error) throw balancesRes.error;
       const accounts = buildAccountSummaries(
         (accountsRes.data ?? []) as any[],
-        (balancesRes.data ?? []) as AccountBalanceRow[],
+        await withLocalBalanceRows(workspaceId, (balancesRes.data ?? []) as AccountBalanceRow[]),
       );
       applyBaseCurrencyToAccounts(accounts, baseCurrency, current.exchangeRates);
       patch.accounts = accounts;
@@ -2739,17 +2742,34 @@ export function recordManualMovementFingerprint(
   void notificationDetection.recordManualMovementRegistered(`${prefix} ${amount.toFixed(2)}`);
 }
 
+/** Movimientos creados por el motor local: no hace falta empujar la sincronización, ya está agendada. */
+const locallyCreated = new WeakSet<object>();
+
 export function useCreateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const localReady = useOfflineLocalReady(workspaceId);
   return useMutation({
+    // Con la base local lista guardar no espera a la red; sin esto React Query pausa la mutación
+    // cuando no hay conexión y el guardado local nunca llegaría a ejecutarse.
+    networkMode: localReady ? "always" : "online",
     // Key global: permite a la lista de movimientos mostrar "Guardando movimiento…"
     // (useIsMutating) mientras un create sigue en vuelo, incluso si el usuario ya
     // cerró el formulario — antes no había señal y lo registraba de nuevo a mano.
     mutationKey: ["create-movement"],
     // Techo de punta a punta: sin él, una espera de turno dentro de supabase-js deja el botón
     // girando para siempre. Ver SAVE_CEILING_MS.
-    mutationFn: (input: MovementFormInput) =>
-      withTimeout(
+    mutationFn: async (input: MovementFormInput) => {
+      // Motor offline (beta): se guarda en el teléfono al instante y se sincroniza solo. Si no está
+      // listo, o se agotó el bloque de IDs reservados, sigue el camino de siempre.
+      if (workspaceId) {
+        const local = await offlineRuntime.createMovement(workspaceId, input);
+        if (local) {
+          locallyCreated.add(local);
+          recordManualMovementFingerprint(workspaceId, input);
+          return local;
+        }
+      }
+      return withTimeout(
         /* Guardar en el primer minuto tras abrir la app caia por RLS con el token a medio
            renovar, y el formulario le pedia al usuario que volviera a tocar Guardar. Se repite
            solo, una vez, y SOLO con clave de dedupe: si el rechazo llegara con la fila ya
@@ -2763,8 +2783,11 @@ export function useCreateMovementMutation(workspaceId: number | null) {
           : createMovement(workspaceId!, input),
         SAVE_CEILING_MS,
         "guardar movimiento",
-      ),
+      );
+    },
     onSuccess: (_data) => {
+      // Creado por la vía de siempre con el motor encendido: la base local aún no lo tiene.
+      if (!locallyCreated.has(_data)) void offlineRuntime.requestSync("write");
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
       if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);
@@ -2830,12 +2853,16 @@ export type { MovementUpdateInput };
 
 export function useUpdateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const localReady = useOfflineLocalReady(workspaceId);
   return useMutation({
     mutationKey: ["update-movement"],
+    networkMode: localReady ? "always" : "online",
     // Mismo techo que al crear: ver SAVE_CEILING_MS.
     /* Editar manda el registro entero, así que repetirlo deja lo mismo que hacerlo una vez:
        el rechazo por sesión a medio renovar se reintenta sin necesidad de clave. */
-    mutationFn: ({ id, input }: { id: number; input: MovementUpdateInput }) => withTimeout(
+    mutationFn: async ({ id, input }: { id: number; input: MovementUpdateInput }) => {
+      if (workspaceId && (await offlineRuntime.updateMovement(workspaceId, id, input))) return;
+      return withTimeout(
       retryOnceIfSessionStale(async () => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -2867,7 +2894,8 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
     ),
       SAVE_CEILING_MS,
       "actualizar movimiento",
-    ),
+    );
+    },
     onMutate: async ({ id, input }) => {
       await queryClient.cancelQueries({ queryKey: ["movement", id] });
       const previous = queryClient.getQueryData(["movement", id]);
@@ -2925,9 +2953,12 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
 
 export function useVoidMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const localReady = useOfflineLocalReady(workspaceId);
   return useMutation({
     mutationKey: ["void-movement"],
+    networkMode: localReady ? "always" : "online",
     mutationFn: async (id: number) => {
+      if (workspaceId && (await offlineRuntime.voidMovement(workspaceId, id))) return;
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
         .from("movements")
@@ -2963,9 +2994,12 @@ export function useVoidMovementMutation(workspaceId: number | null) {
 
 export function useDeleteMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const localReady = useOfflineLocalReady(workspaceId);
   return useMutation({
     mutationKey: ["delete-movement"],
+    networkMode: localReady ? "always" : "online",
     mutationFn: async (id: number) => {
+      if (workspaceId && (await offlineRuntime.deleteMovement(workspaceId, id))) return;
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
         .from("movements")

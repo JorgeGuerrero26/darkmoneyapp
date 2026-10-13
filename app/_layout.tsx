@@ -73,6 +73,7 @@ import {
 } from "../hooks/usePushNotifications";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
 import { useForegroundDataRefresh } from "../hooks/useForegroundDataRefresh";
+import { useOfflineBridge } from "../hooks/useOfflineBridge";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
@@ -284,6 +285,8 @@ function NotificationSetup() {
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
   // Sin Realtime: los datos se ponen al día al volver a la app y al llegar un push.
   useForegroundDataRefresh(profile?.id ?? null, activeWorkspaceId);
+  // Modo sin conexión (beta): apagado por defecto; con el interruptor apagado no hace nada.
+  useOfflineBridge(profile?.id ?? null, activeWorkspaceId);
 
   const resolvedActiveWorkspace =
     activeWorkspace ??

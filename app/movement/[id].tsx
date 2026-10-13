@@ -96,7 +96,7 @@ function MovementDetailScreen() {
   const [attachmentsSheetOpen, setAttachmentsSheetOpen] = useState(false);
   const autoOpenedEditMovementIdRef = useRef<number | null>(null);
 
-  const { data: movement, isLoading, error } = useMovementQuery(id ? parseInt(id) : null);
+  const { data: movement, isLoading, error } = useMovementQuery(id ? parseInt(id) : null, activeWorkspaceId);
   const createTemplate = useCreateMovementTemplateMutation(activeWorkspaceId, profile?.id);
   const canTemplate =
     movement?.movementType === "expense" ||

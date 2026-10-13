@@ -6,6 +6,7 @@ import type { PropsWithChildren } from "react";
 import { AppState } from "react-native";
 
 import { supabase, supabaseUrl, isSupabaseConfigured } from "./supabase";
+import { offlineRuntime } from "./offline/instance";
 import { clearSessionScopedClientState } from "./session-data-reset";
 import { uploadAvatar, deleteAvatarFile } from "./avatar-utils";
 import { logInfo, logWarn } from "./error-logger";
@@ -459,6 +460,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function signOut() {
     signingOutRef.current = true;
+    // Modo sin conexión (beta): un último intento de enviar lo pendiente mientras la sesión sigue
+    // viva y, si no queda nada, borrar la base local de este usuario. Con tiempo límite: cerrar
+    // sesión nunca debe quedarse esperando a la red.
+    await withTimeout(offlineRuntime.signOutCleanup(), 8_000).catch(() => undefined);
     if (!supabase) {
       // Even without Supabase, clear local state so NavigationGuard can react
       setSession(null);
