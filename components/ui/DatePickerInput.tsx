@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { CalendarDays, ChevronRight, X } from "lucide-react-native";
 
@@ -6,8 +6,10 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 import { DatePickerModal } from "./DatePickerModal";
 import { relativeDateLabel } from "../../lib/calendar";
 import { todayPeru } from "../../lib/date";
+import { FieldFeedbackMessage, useFormField } from "./FormFeedback";
 
 type Props = {
+  fieldId?: string;
   label: string;
   value: string; // "YYYY-MM-DD" or ""
   onChange: (value: string) => void; // emits "YYYY-MM-DD" o ""
@@ -30,6 +32,7 @@ type Props = {
  * tipografía de las filas hermanas y sin ícono propio.
  */
 export function DatePickerInput({
+  fieldId,
   label,
   value,
   onChange,
@@ -42,6 +45,9 @@ export function DatePickerInput({
   variant = "default",
 }: Props) {
   const [open, setOpen] = useState(false);
+  const view = useRef<View>(null);
+  const feedback = useFormField(fieldId, () => setOpen(true), view, true);
+  const feedbackColor = feedback?.kind === "invalid" ? COLORS.dangerStrong : COLORS.warning;
 
   /* Formato corto. "1 de septiembre 2…" no cabía en medio ancho con un icono de 44px delante:
      el formato largo existe para ser legible y terminaba truncado. */
@@ -49,12 +55,12 @@ export function DatePickerInput({
   const showClear = optional && showInlineClear && Boolean(value?.trim());
 
   return (
-    <View style={styles.container}>
+    <View ref={view} collapsable={false} style={styles.container}>
       {hideLabel ? null : <Text style={styles.label}>{label}</Text>}
 
       <View style={styles.triggerRow}>
         <TouchableOpacity
-          style={[styles.trigger, variant === "formRow" && styles.triggerFormRow, styles.triggerFlex]}
+          style={[styles.trigger, variant === "formRow" && styles.triggerFormRow, styles.triggerFlex, feedback && { borderColor: feedbackColor }]}
           onPress={() => setOpen(true)}
           activeOpacity={0.75}
           accessibilityRole="button"
@@ -64,8 +70,8 @@ export function DatePickerInput({
           <View style={styles.triggerIconWrap}>
             <CalendarDays size={18} color={value ? COLORS.fog : COLORS.storm} strokeWidth={2} />
           </View>
-          <Text style={[styles.triggerText, !value && styles.triggerPlaceholder]} numberOfLines={1}>
-            {displayText || placeholder}
+          <Text style={[styles.triggerText, !value && styles.triggerPlaceholder, feedback?.kind === "missing" && { color: feedbackColor }]} numberOfLines={1}>
+            {feedback?.kind === "missing" ? feedback.message : displayText || placeholder}
           </Text>
           <ChevronRight size={18} color={COLORS.storm} strokeWidth={2} />
         </TouchableOpacity>
@@ -81,6 +87,7 @@ export function DatePickerInput({
           </TouchableOpacity>
         ) : null}
       </View>
+      <FieldFeedbackMessage feedback={feedback?.kind === "invalid" ? feedback : null} />
 
       <DatePickerModal
         visible={open}

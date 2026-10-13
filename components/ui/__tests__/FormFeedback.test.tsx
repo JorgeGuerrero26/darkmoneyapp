@@ -4,6 +4,8 @@ import { Text } from "react-native";
 import { FormFeedbackProvider, FormSubmitBar, useFormField, FieldFeedbackMessage, FormActionButton } from "../FormFeedback";
 import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
 import { FormFieldError } from "../../../lib/form-errors";
+import { Input } from "../Input";
+import { TextField } from "../TextField";
 
 function Field({ id }: { id: string }) { return <FieldFeedbackMessage feedback={useFormField(id)} />; }
 describe("shared form feedback", () => {
@@ -99,6 +101,31 @@ describe("shared form feedback", () => {
     expect(reject).toHaveBeenCalledTimes(1);
     await act(async () => tree.root.findAll((n: any) => n.props.accessibilityLabel === "Reintentar" && n.props.onPress)[0].props.onPress());
     expect(reject).toHaveBeenCalledTimes(2);
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("shows parent validation in a nested optional form and lets that form save independently", () => {
+    const details = jest.fn();
+    act(() => { tree = create(<FormFeedbackProvider onSubmit={save} fields={{ interest: { value: "-1", invalid: "Interés inválido" } }}>
+      <FormSubmitBar label="Guardar principal" onSubmit={save} />
+      <FormFeedbackProvider onSubmit={details} fields={{ interest: { value: "-1", invalid: "Interés inválido" } }}>
+        <Field id="interest" /><FormSubmitBar label="Guardar detalles" onSubmit={details} />
+      </FormFeedbackProvider>
+    </FormFeedbackProvider>); });
+    act(() => tree.root.findAll((n: any) => n.props.accessibilityLabel === "Guardar principal" && n.props.onPress)[0].props.onPress());
+    expect(save).not.toHaveBeenCalled();
+    expect(tree.root.findAllByType(Text).filter((n: any) => n.props.children === "Interés inválido")).toHaveLength(1);
+    act(() => tree.root.findAll((n: any) => n.props.accessibilityLabel === "Guardar detalles" && n.props.onPress)[0].props.onPress());
+    expect(details).not.toHaveBeenCalled();
+  });
+  it("keeps Next as focus navigation for both input controls", () => {
+    const next = jest.fn();
+    act(() => { tree = create(<FormFeedbackProvider onSubmit={save} fields={{ name: { value: "Adrian" } }}>
+      <Input fieldId="name" value="Adrian" returnKeyType="next" onSubmitEditing={next} />
+      <TextField fieldId="name" value="Adrian" returnKeyType="next" onSubmitEditing={next} />
+    </FormFeedbackProvider>); });
+    const { TextInput } = require("react-native");
+    act(() => tree.root.findAllByType(TextInput).forEach((input: any) => input.props.onSubmitEditing()));
+    expect(next).toHaveBeenCalledTimes(2);
     expect(save).not.toHaveBeenCalled();
   });
 });

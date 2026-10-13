@@ -55,7 +55,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           accessibilityLabel={resolvedAccessibilityLabel}
           accessibilityHint={resolvedAccessibilityHint}
           {...rest}
-          onSubmitEditing={fieldId && submit && rest.onSubmitEditing ? () => submit() : rest.onSubmitEditing}
+          onSubmitEditing={fieldId && submit && rest.onSubmitEditing && rest.returnKeyType !== "next" && rest.returnKeyType !== "search" ? () => submit() : rest.onSubmitEditing}
         />
         {rightElement ? <View style={styles.rightSlot}>{rightElement}</View> : null}
       </View>

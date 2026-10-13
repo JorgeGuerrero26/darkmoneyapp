@@ -47,6 +47,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
   fields: Record<string, FormFieldRule>; onSubmit: () => void | Promise<void>;
   visible?: boolean; busy?: boolean; resetKey?: string | number; children: ReactNode;
 }) {
+  const parent = useContext(Context);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -147,6 +148,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
       if (attempted && rule?.invalid) return { kind: "invalid", message: rule.invalid };
       const server = id ? serverErrors[id] : undefined;
       if (server && Object.is(server.value, rule?.value)) return { kind: "invalid", message: server.message };
+      if (rule) return parent?.feedback(id) ?? null;
       return null;
     },
     register: (id, open, reveal, autoContinue) => {
@@ -205,7 +207,7 @@ export function FormFieldGroup({ fieldId, label, children }: { fieldId: string; 
 /** Secondary decisions share busy/error handling, without validating the primary action's fields. */
 export function FormActionButton({ onAction, ...props }: Omit<ComponentProps<typeof Button>, "onPress"> & { onAction: () => void | Promise<void> }) {
   const context = useContext(Context);
-  return <Button {...props} disabled={props.disabled || context?.busy} onPress={() => {
+  return <Button accessibilityRole="button" accessibilityLabel={props.label} {...props} disabled={props.disabled || context?.busy} onPress={() => {
     if (context) context.runAction(onAction); else void onAction();
   }} />;
 }

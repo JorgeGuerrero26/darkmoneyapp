@@ -68,7 +68,7 @@ export const TextField = forwardRef<TextInput, Props>(function TextField(
         style={[inputStyle, feedback?.kind === "invalid" && { borderColor: COLORS.dangerStrong, backgroundColor: COLORS.dangerStrong + "12" }]}
         accessibilityLabel={accessibilityLabel ?? placeholder}
         {...rest}
-        onSubmitEditing={fieldId && submit && rest.onSubmitEditing ? () => submit() : rest.onSubmitEditing}
+        onSubmitEditing={fieldId && submit && rest.onSubmitEditing && rest.returnKeyType !== "next" && rest.returnKeyType !== "search" ? () => submit() : rest.onSubmitEditing}
       />
       {showPlaceholder ? (
         <View
