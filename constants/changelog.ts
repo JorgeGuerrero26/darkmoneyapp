@@ -10,6 +10,14 @@ export type ChangelogEntry = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    title: "Registra sin internet (beta)",
+    changes: [
+      "Nuevo modo sin conexión, en versión de prueba: actívalo en Ajustes → Modo sin conexión. Con él, lo que registras, editas, anulas o borras en Movimientos se guarda al instante en tu teléfono —aunque no tengas internet— y se envía solo cuando vuelve la conexión. Ya no hace falta esperar a que cada movimiento se guarde para anotar el siguiente.",
+      "Si otra persona de tu espacio cambió el monto de un movimiento mientras tú estabas sin conexión, tu cambio se guarda igual y te avisamos para que revises que quedó como esperabas.",
+    ],
+  },
+  {
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
