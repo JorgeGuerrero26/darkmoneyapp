@@ -29,6 +29,7 @@ import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { OfflineSyncNotice } from "../../components/offline/OfflineSyncNotice";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
@@ -958,6 +959,7 @@ function MovementsScreen() {
         context={
           !selectMode ? (
             <View style={{ gap: SPACING.sm }}>
+              <OfflineSyncNotice />
               <MovementSavingNotice savingCount={savingMovementsCount} />
               <DetectionBackgroundSavesNotice
                 pendingSaves={pendingDetectionSaves}

@@ -94,6 +94,7 @@ const HIDDEN_ROUTES = [
   "settings",
   "profile",
   "about",
+  "offline",
   "notification-detection",
   "notification-onboarding",
 ] as const;

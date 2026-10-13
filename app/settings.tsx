@@ -38,6 +38,8 @@ import { CurrencySelector } from "../components/ui/CurrencySelector";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
+import { useOfflineFlag, useOfflineStatus } from "../lib/offline/react";
+import { describeOfflineSummary } from "../lib/offline/status-copy";
 import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../constants/floating-tab-bar";
 import { DEFAULT_EXCHANGE_CURRENCY, SUPPORTED_CURRENCIES, normalizeSupportedCurrencyCode } from "../constants/currencies";
@@ -134,6 +136,8 @@ function SettingsScreen() {
   const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
   const router = useRouter();
   const queryClient = useQueryClient();
+  const offlineStatus = useOfflineStatus();
+  const offlineFlag = useOfflineFlag();
   const { profile, saveProfile, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
@@ -835,6 +839,16 @@ function SettingsScreen() {
               label="Detectar pagos por correo"
               trailing={emailProAccess.isFetching ? <ActivityIndicator size="small" color={COLORS.storm} /> : <ProBadge />}
               support={emailProAccess.isError ? "No se pudo verificar tu plan · Reintentar" : emailProAccess.data === undefined ? "Consultando tu plan…" : !hasEmailPro ? "Disponible con DarkMoney PRO" : inboundAliasQuery.data ? "Dirección creada · Configurar reenvío" : inboundAliasQuery.isLoading ? "Cargando dirección…" : inboundAliasQuery.isError ? "No se pudo cargar la dirección" : "Sin dirección todavía"}
+              last
+            />
+          </SettingsGroup>
+
+          <SettingsGroup>
+            <SettingsRow
+              onPress={() => router.push("/(app)/offline?from=settings" as any)}
+              label="Modo sin conexión (beta)"
+              support="Registra movimientos sin internet y se envían solos"
+              value={describeOfflineSummary(offlineStatus, offlineFlag.enabled)}
               last
             />
           </SettingsGroup>
