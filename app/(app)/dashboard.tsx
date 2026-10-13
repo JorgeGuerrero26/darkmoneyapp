@@ -87,6 +87,7 @@ import { IOS_FLOATING_TAB_BAR_SPACE, TAB_BAR_CONTENT_HEIGHT } from "../../consta
 import { FAB } from "../../components/ui/FAB";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
+import { useDashboardDayMovementsQuery } from "../../services/queries/dashboard-day";
 import {
   movementActsAsExpense,
   movementActsAsIncome,
@@ -363,6 +364,9 @@ function DashboardScreen() {
     dayEnd: Date;
     mode: DaySheetMode;
   } | null>(null);
+  const dayMovementsQuery = useDashboardDayMovementsQuery(
+    activeWorkspaceId, profile?.id, daySheet ? format(daySheet.dayStart, "yyyy-MM-dd") : null,
+  );
   // Tap del "Resumen financiero del día": el resolver llega con daySheet=today +
   // token único. Se consume una vez por token (los params persisten en la pantalla).
   const digestParams = useLocalSearchParams<{ daySheet?: string | string[]; daySheetToken?: string | string[]; daySheetDate?: string | string[] }>();
@@ -992,8 +996,11 @@ function DashboardScreen() {
           dayStart={daySheet.dayStart}
           dayEnd={daySheet.dayEnd}
           mode={daySheet.mode}
-          movements={movements}
-          ctx={conversionCtx}
+          movements={dayMovementsQuery.data ?? []}
+          loading={dayMovementsQuery.isPending || dayMovementsQuery.isFetching}
+          error={dayMovementsQuery.isError ? "No se pudo cargar el día completo." : null}
+          onRetry={() => { void dayMovementsQuery.refetch(); }}
+          ctx={isAdvanced ? conversionCtx : simpleConversionCtx}
           categoryMap={categoryMap}
           accountMap={accountMap}
           workspaceId={activeWorkspaceId}

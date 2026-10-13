@@ -6,82 +6,16 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Paperclip, X } from "lucide-react-native";
 
-import type { DashboardMovementRow } from "../../services/queries/workspace-data";
+import type { DashboardDayMovement } from "../../services/queries/dashboard-day";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import {
-  movementActsAsExpense,
-  movementActsAsIncome,
-  movementDisplayAccountId,
-  movementDisplayAmount,
-} from "../../lib/movement-display";
+import { buildDayMovements, type DayMovementEntry } from "../../features/dashboard/lib/day-movements-model";
+import type { ConversionCtx } from "../../features/dashboard/lib/types";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 import { DAY_MOVEMENTS_LABELS as L } from "./DayMovementsSheet.labels";
 
-export type ConversionCtx = {
-  accountCurrencyMap: Map<number, string>;
-  exchangeRateMap: Map<string, number>;
-  displayCurrency: string;
-};
-
-function isIncome(m: DashboardMovementRow) {
-  if (m.status !== "posted") return false;
-  if (m.movementType === "obligation_opening") return false;
-  return movementActsAsIncome(m);
-}
-
-function isExpense(m: DashboardMovementRow) {
-  if (m.status !== "posted") return false;
-  if (m.movementType === "obligation_opening") return false;
-  return movementActsAsExpense(m);
-}
-
-function isTransfer(m: DashboardMovementRow) {
-  return m.status === "posted" && m.movementType === "transfer";
-}
-
-function inRange(m: DashboardMovementRow, start: Date, end: Date) {
-  const d = new Date(m.occurredAt);
-  return d >= start && d <= end;
-}
-
-function convertAmt(
-  amount: number,
-  fromCurrency: string | null | undefined,
-  toCurrency: string,
-  map: Map<string, number>,
-): number {
-  if (!fromCurrency) return amount;
-  if (fromCurrency.toUpperCase() === toCurrency.toUpperCase()) return amount;
-  const key = `${fromCurrency.toUpperCase()}:${toCurrency.toUpperCase()}`;
-  const direct = map.get(key);
-  if (direct) return amount * direct;
-  const inv = map.get(`${toCurrency.toUpperCase()}:${fromCurrency.toUpperCase()}`);
-  if (inv) return amount / inv;
-  return amount;
-}
-
-function incomeAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = movementDisplayAmount(m);
-  const accountId = movementDisplayAccountId(m);
-  const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
-  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
-}
-
-function expenseAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = movementDisplayAmount(m);
-  const accountId = movementDisplayAccountId(m);
-  const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
-  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
-}
-
-function transferAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = movementDisplayAmount(m);
-  const accountId = movementDisplayAccountId(m);
-  const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
-  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
-}
+export type { ConversionCtx } from "../../features/dashboard/lib/types";
 
 const TYPE_LABEL = L.movementType;
 
@@ -93,7 +27,10 @@ type Props = {
   dayStart: Date;
   dayEnd: Date;
   mode: DaySheetMode;
-  movements: DashboardMovementRow[];
+  movements: DashboardDayMovement[];
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   ctx: ConversionCtx;
   categoryMap: Map<number, string>;
   accountMap: Map<number, string>;
@@ -105,9 +42,11 @@ export function DayMovementsSheet({
   visible,
   onClose,
   dayStart,
-  dayEnd,
   mode,
   movements,
+  loading = false,
+  error,
+  onRetry,
   ctx,
   categoryMap,
   accountMap,
@@ -116,32 +55,30 @@ export function DayMovementsSheet({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
-  const inDay = useMemo(
-    () => movements.filter((m) => inRange(m, dayStart, dayEnd)).sort(
-      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
-    ),
-    [movements, dayStart, dayEnd],
+  const day = format(dayStart, "yyyy-MM-dd");
+  const model = useMemo(
+    () => buildDayMovements(movements.map((movement) => ({
+      ...movement,
+      sourceCurrencyCode: movement.sourceAccountId == null ? null : ctx.accountCurrencyMap.get(movement.sourceAccountId),
+      destinationCurrencyCode: movement.destinationAccountId == null ? null : ctx.accountCurrencyMap.get(movement.destinationAccountId),
+    })), day, ctx),
+    [movements, day, ctx],
   );
-
-  const inDayIds = useMemo(() => inDay.map((m) => m.id), [inDay]);
+  const inDayIds = useMemo(() => Object.values(model.groups).flatMap((rows) => rows.map((row) => row.movement.id)), [model]);
   const { data: attachmentCounts = {} } = useMovementAttachmentCountsQuery(workspaceId, inDayIds);
 
-  const incomes = inDay.filter(isIncome);
-  const expenses = inDay.filter(isExpense);
-  const transfers = inDay.filter(isTransfer);
-
-  const sumIn = incomes.reduce((s, m) => s + incomeAmt(m, ctx), 0);
-  const sumEx = expenses.reduce((s, m) => s + expenseAmt(m, ctx), 0);
-  const savings = sumIn - sumEx;
+  const { income: incomes, expense: expenses, transfer: transfers } = model.groups;
+  const { savings } = model;
 
   const title = format(dayStart, L.dateFormat, { locale: es });
 
-  function renderMovementRow(m: DashboardMovementRow, amount: number, amountColor: string) {
+  function renderMovementRow(entry: DayMovementEntry<DashboardDayMovement>, amountColor: string) {
+    const m = entry.movement;
     const cat = m.categoryId != null ? categoryMap.get(m.categoryId) : null;
     const accSrc = m.sourceAccountId != null ? accountMap.get(m.sourceAccountId) : null;
     const accDst = m.destinationAccountId != null ? accountMap.get(m.destinationAccountId) : null;
     const typeLabel = TYPE_LABEL[m.movementType] ?? m.movementType;
-    const timeStr = format(new Date(m.occurredAt), L.timeFormat, { locale: es });
+    const timeStr = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(m.occurredAt));
     const attCount = attachmentCounts[m.id] ?? 0;
     return (
       <TouchableOpacity
@@ -169,15 +106,18 @@ export function DayMovementsSheet({
             ) : null}
           </View>
         </View>
-        <Text style={[styles.movAmount, { color: amountColor }]}>{formatCurrency(amount, ctx.displayCurrency)}</Text>
+        <Text style={[styles.movAmount, { color: amountColor }]}>
+          {entry.amount == null || !entry.currencyCode ? "—" : formatCurrency(entry.amount, entry.currencyCode)}
+        </Text>
       </TouchableOpacity>
     );
   }
 
-  function section(titleText: string, children: ReactNode) {
+  function section(titleText: string, children: ReactNode, total: { amount: number; count: number; excludedCount: number }) {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{titleText}</Text>
+        {total.count > 0 ? <Text style={styles.summaryHint}>{total.excludedCount ? "Subtotal parcial · " : ""}{formatCurrency(total.amount, ctx.displayCurrency)}</Text> : null}
         {children}
       </View>
     );
@@ -203,35 +143,41 @@ export function DayMovementsSheet({
           <Text style={styles.sheetTitle}>{title}</Text>
           <Text style={styles.sheetSubtitle}>{L.subtitle[mode]}</Text>
 
-          {showAll ? (
+          {showAll && !loading && !error ? (
             <View style={styles.summaryCard}>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>{L.summary.incomes}</Text>
-                <Text style={[styles.summaryValue, { color: COLORS.income }]}>{formatCurrency(sumIn, ctx.displayCurrency)}</Text>
+                <Text style={[styles.summaryValue, { color: COLORS.income }]}>{formatCurrency(model.income.amount, ctx.displayCurrency)}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>{L.summary.expenses}</Text>
-                <Text style={[styles.summaryValue, { color: COLORS.expense }]}>{formatCurrency(sumEx, ctx.displayCurrency)}</Text>
+                <Text style={[styles.summaryValue, { color: COLORS.expense }]}>{formatCurrency(model.expense.amount, ctx.displayCurrency)}</Text>
               </View>
               <View style={[styles.summaryRow, styles.summaryRowLast]}>
-                <Text style={styles.summaryLabelStrong}>{L.summary.savings}</Text>
+                <Text style={styles.summaryLabelStrong}>{L.summary.savings}{model.excludedCount ? " (parcial)" : ""}</Text>
                 <Text style={[styles.summaryValueStrong, { color: savings >= 0 ? COLORS.primary : COLORS.expense }]}>
                   {formatCurrency(savings, ctx.displayCurrency)}
                 </Text>
               </View>
               <Text style={styles.summaryHint}>{L.summary.savingsHint}</Text>
+              <Text style={styles.summaryHint}>Resumen en {ctx.displayCurrency}. Cada movimiento conserva su moneda.</Text>
+              {model.excludedCount > 0 ? <Text style={styles.summaryHint}>{model.excludedCount} sin conversión o moneda conocida no suman. Totales parciales.</Text> : null}
             </View>
           ) : null}
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            {loading ? <Text style={styles.empty}>Cargando el día completo…</Text> : error ? (
+              <View><Text style={styles.empty}>{error}</Text><TouchableOpacity onPress={onRetry} style={styles.closeBtnInline}><Text style={styles.movTitle}>Reintentar</Text></TouchableOpacity></View>
+            ) : <>
             {listIncome &&
               section(
                 L.sections.incomes(incomes.length),
                 incomes.length === 0 ? (
                   <Text style={styles.empty}>{L.empty}</Text>
                 ) : (
-                  incomes.map((m) => renderMovementRow(m, incomeAmt(m, ctx), COLORS.income))
+                  incomes.map((entry) => renderMovementRow(entry, COLORS.income))
                 ),
+                model.income,
               )}
 
             {listExpense &&
@@ -240,8 +186,9 @@ export function DayMovementsSheet({
                 expenses.length === 0 ? (
                   <Text style={styles.empty}>{L.empty}</Text>
                 ) : (
-                  expenses.map((m) => renderMovementRow(m, expenseAmt(m, ctx), COLORS.expense))
+                  expenses.map((entry) => renderMovementRow(entry, COLORS.expense))
                 ),
+                model.expense,
               )}
 
             {listTransfer &&
@@ -250,11 +197,13 @@ export function DayMovementsSheet({
                 transfers.length === 0 ? (
                   <Text style={styles.empty}>{L.empty}</Text>
                 ) : (
-                  transfers.map((m) => renderMovementRow(m, transferAmt(m, ctx), COLORS.secondary))
+                  transfers.map((entry) => renderMovementRow(entry, COLORS.secondary))
                 ),
+                model.transfer,
               )}
 
             <Text style={styles.footerHint}>{L.footerHint}</Text>
+            </>}
           </ScrollView>
         </Animated.View>
       </Animated.View>
@@ -301,6 +250,7 @@ const styles = StyleSheet.create({
     top: -4,
     padding: SPACING.xs,
   },
+  closeBtnInline: { paddingVertical: SPACING.md },
   sheetTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.lg,
