@@ -367,7 +367,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         showErrorToast("Los comprobantes no se copiaron", result.attachmentSyncError);
       }
     } catch (err: unknown) {
-      showErrorToast("No se pudo asociar a tu cuenta", err);
+      throw err;
     }
   }
 
@@ -581,7 +581,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         viewerLinkDelta={viewerLinkDelta}
         linkIsPending={linkEventMutation.isPending}
         onSelectAccount={setLinkingAccountId}
-        onConfirm={() => { void handleLinkEvent(); }}
+        onConfirm={handleLinkEvent}
         onClose={() => { setLinkingEvent(null); setLinkingAccountId(null); }}
       />
 

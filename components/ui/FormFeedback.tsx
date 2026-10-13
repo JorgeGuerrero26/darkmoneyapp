@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type ComponentProps } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewProps } from "react-native";
 import type { RefObject } from "react";
 import { AlertCircle, Ellipsis, RotateCw } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { humanizeError } from "../../lib/errors";
 import { formErrorFields } from "../../lib/form-errors";
+import { Button } from "./Button";
 
 export type FieldFeedback = { kind: "missing" | "invalid"; message: string } | null;
 export type FormFieldRule = {
@@ -20,6 +21,7 @@ type ContextValue = {
   feedback: (id?: string) => FieldFeedback;
   register: (id: string, open: () => void, reveal: () => void, autoContinue: boolean) => () => void;
   submit: () => void;
+  runAction: (action: () => void | Promise<void>) => void;
   busy: boolean;
   failure: string | null;
 };
@@ -50,6 +52,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
   const [failure, setFailure] = useState<string | null>(null);
   const [serverErrors, setServerErrors] = useState<Record<string, { value: unknown; message: string }>>({});
   const savingRef = useRef(false);
+  const retryAction = useRef<(() => void | Promise<void>) | undefined>(undefined);
   const generation = useRef(0);
   const waiting = useRef<{ id: string; value: unknown } | null>(null);
   const focusPending = useRef<{ id: string; mode: "open" | "reveal" } | null>(null);
@@ -59,16 +62,17 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
   function openField(id: string, rule: FormFieldRule) {
     rule.reveal?.();
     if (rule.open) rule.open();
-    else if (targets.current.has(id)) targets.current.get(id)?.open();
+    else if (targets.current.has(id)) { targets.current.get(id)?.reveal(); targets.current.get(id)?.open(); }
     else focusPending.current = { id, mode: "open" };
   }
-  function submit() {
+  function submit(action?: () => void | Promise<void>) {
     const state = latest.current;
     if (savingRef.current || state.busy || !state.visible) return;
     setFailure(null);
+    retryAction.current = undefined;
     setServerErrors({});
     setAttempted(true);
-    const entries = Object.entries(state.fields);
+    const entries = action ? [] : Object.entries(state.fields);
     const missing = entries.find(([, rule]) => rule.missing);
     if (missing) {
       const [id, rule] = missing;
@@ -91,19 +95,19 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
     const submissionGeneration = generation.current;
     // Call synchronously so the form's own duplicate guard remains immediate.
     try {
-      const operation = state.onSubmit();
+      const operation = (action ?? state.onSubmit)();
       if (operation && typeof operation.then === "function") {
         operation.catch((error: unknown) => {
-          if (latest.current.visible && generation.current === submissionGeneration) reportFailure(error, state.fields);
+          if (latest.current.visible && generation.current === submissionGeneration) reportFailure(error, state.fields, action);
         }).finally(() => { savingRef.current = false; setSaving(false); });
       } else { savingRef.current = false; setSaving(false); }
     } catch (error) {
-      reportFailure(error, state.fields); savingRef.current = false; setSaving(false);
+      reportFailure(error, state.fields, action); savingRef.current = false; setSaving(false);
     }
   }
-  function reportFailure(error: unknown, submittedFields: Record<string, FormFieldRule>) {
+  function reportFailure(error: unknown, submittedFields: Record<string, FormFieldRule>, action?: () => void | Promise<void>) {
     const mapped = formErrorFields(error, submittedFields);
-    if (!Object.keys(mapped).length) { setFailure(humanizeError(error)); return; }
+    if (!Object.keys(mapped).length) { retryAction.current = action; setFailure(humanizeError(error)); return; }
     const entries = Object.entries(mapped).filter(([id]) => Object.is(submittedFields[id].value, latest.current.fields[id]?.value));
     if (!entries.length) return;
     setServerErrors(Object.fromEntries(entries.map(([id, message]) => [id, { value: latest.current.fields[id].value, message }])));
@@ -118,6 +122,7 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
     focusPending.current = null;
     setAttempted(false);
     setFailure(null);
+    retryAction.current = undefined;
     setServerErrors({});
   }, [visible, resetKey]);
   const submitRef = useRef(submit);
@@ -132,7 +137,8 @@ export function FormFeedbackProvider({ fields, onSubmit, visible = true, busy = 
     }
   }, [visible, busy, fields]);
   return <Context.Provider value={{
-    submit,
+    submit: () => submit(retryAction.current),
+    runAction: (action) => submit(action),
     busy: busy || saving,
     failure,
     feedback: (id) => {
@@ -185,6 +191,25 @@ export function FieldFeedbackMessage({ feedback }: { feedback: FieldFeedback }) 
     style={[styles.message, { color: feedback.kind === "missing" ? COLORS.warning : COLORS.dangerStrong }]}>{feedback.message}</Text> : null;
 }
 
+/** An inline collection of choices is also a field, with one local status. */
+export function FormFieldGroup({ fieldId, label, children }: { fieldId: string; label: string; children: ReactNode }) {
+  const view = useRef<View>(null);
+  const feedback = useFormField(fieldId, () => {}, view, true);
+  return <View ref={view} collapsable={false} style={feedback?.kind === "invalid" ? styles.invalidGroup : undefined}>
+    <Text style={[styles.message, { color: feedback?.kind === "invalid" ? COLORS.dangerStrong : COLORS.storm }]}>{label}</Text>
+    <FieldFeedbackMessage feedback={feedback} />
+    {children}
+  </View>;
+}
+
+/** Secondary decisions share busy/error handling, without validating the primary action's fields. */
+export function FormActionButton({ onAction, ...props }: Omit<ComponentProps<typeof Button>, "onPress"> & { onAction: () => void | Promise<void> }) {
+  const context = useContext(Context);
+  return <Button {...props} disabled={props.disabled || context?.busy} onPress={() => {
+    if (context) context.runAction(onAction); else void onAction();
+  }} />;
+}
+
 export function FormSaveFailure({ error, title = "No se pudo guardar" }: { error?: string | null; title?: string }) {
   if (!error) return null;
   return <View style={styles.failure} accessibilityRole="alert">
@@ -217,6 +242,7 @@ export function FormSubmitBar({ onSubmit, label = "Guardar", loading = false, lo
 }
 
 const styles = StyleSheet.create({
+  invalidGroup: { backgroundColor: SURFACE.dangerBg, borderRadius: RADIUS.md, padding: SPACING.sm },
   message: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, lineHeight: 20, paddingVertical: SPACING.xs },
   bar: { gap: SPACING.md, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: SURFACE.separator },
   actions: { flexDirection: "row", gap: SPACING.sm, alignItems: "center" },

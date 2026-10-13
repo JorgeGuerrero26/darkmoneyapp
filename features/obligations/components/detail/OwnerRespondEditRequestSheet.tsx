@@ -1,26 +1,16 @@
-import {
-  Modal,
-  Pressable,
-  Text,
-  TouchableOpacity,
-  View,
-  type StyleProp,
-  type ViewStyle,
-  type TextStyle,
-} from "react-native";
+import { BottomSheet } from "../../../../components/ui/BottomSheet";
+import { FormFeedbackProvider, FormSubmitBar, FormFieldGroup, FormActionButton } from "../../../../components/ui/FormFeedback";
+import { selectedAccountField } from "../../../../lib/form-field-rules";
+import { Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type TextStyle } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Button } from "../../../../components/ui/Button";
+
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
-import { SPACING } from "../../../../constants/theme";
+
 import { parseDisplayDate } from "../../../../lib/date";
 import type { PendingOwnerEditRequest } from "../../../../lib/obligation-event-payloads";
-import type {
-  AccountSummary,
-  ObligationSummary,
-  SharedObligationSummary,
-} from "../../../../types/domain";
+import type { AccountSummary, ObligationSummary, SharedObligationSummary } from "../../../../types/domain";
 
 export type OwnerRespondEditRequestSheetStyles = {
   overlay: StyleProp<ViewStyle>;
@@ -72,8 +62,8 @@ type Props = {
   acceptIsPending: boolean;
   rejectIsPending: boolean;
   onSelectAccount: (accountId: number) => void;
-  onAccept: (target: PendingOwnerEditRequest) => void;
-  onReject: (target: PendingOwnerEditRequest) => void;
+  onAccept: (target: PendingOwnerEditRequest) => void | Promise<void>;
+  onReject: (target: PendingOwnerEditRequest) => void | Promise<void>;
   onCancel: () => void;
 };
 
@@ -100,19 +90,11 @@ export function OwnerRespondEditRequestSheet({
   onReject,
   onCancel,
 }: Props) {
+  const submit = () => ownerEditRequestTarget ? onAccept(ownerEditRequestTarget) : undefined;
+  const validationFields = { accountId: selectedAccountField(ownerEditResponseAccountId, ownerAccounts, ownerAccounts.length === 0) };
   return (
-    <Modal
-      visible={Boolean(ownerEditRequestTarget)}
-      transparent
-      animationType="fade"
-      onRequestClose={onCancel}
-    >
-      <Pressable style={styles.overlay} onPress={onCancel}>
-        <View
-          style={[styles.rejectSheet, { paddingBottom: insetBottom + SPACING.lg }]}
-          onStartShouldSetResponder={() => true}
-        >
-          <Text style={styles.rejectTitle}>Responder edicion</Text>
+    <FormFeedbackProvider visible={Boolean(ownerEditRequestTarget)} resetKey={ownerEditRequestTarget?.notification.id} busy={acceptIsPending || rejectIsPending} onSubmit={submit} fields={validationFields}>
+    <BottomSheet entranceAnimation="springFade" visible={Boolean(ownerEditRequestTarget)} onClose={onCancel} title={"Responder edición"} snapHeight={0.9} footer={<FormSubmitBar label="Aprobar" onSubmit={submit} loading={acceptIsPending || rejectIsPending} disabled={!ownerEditRequestTarget?.event}><FormActionButton label="Rechazar" variant="secondary" style={{ flex: 1 }} onAction={() => ownerEditRequestTarget ? onReject(ownerEditRequestTarget) : undefined} /></FormSubmitBar>}>
           {ownerEditRequestTarget && obligation ? (
             <>
               <Text style={styles.rejectSub}>
@@ -177,7 +159,7 @@ export function OwnerRespondEditRequestSheet({
                     Elige la cuenta donde quedara reflejado este movimiento despues de aprobar la edicion
                   </Text>
                   <Text style={styles.ownerAccountLabel}>{ownerAccountLabel}</Text>
-                  {ownerAccounts.map((acc) => (
+                  <FormFieldGroup fieldId="accountId" label="Cuenta">{ownerAccounts.map((acc) => (
                     <TouchableOpacity
                       key={acc.id}
                       style={[
@@ -196,7 +178,7 @@ export function OwnerRespondEditRequestSheet({
                         <Text style={styles.linkAccountCheck}>OK</Text>
                       ) : null}
                     </TouchableOpacity>
-                  ))}
+                  ))}</FormFieldGroup>
                   {ownerEditPreviousAccount && ownerEditPreviousProjectedBalance != null ? (
                     <View style={styles.accountProjectionCard}>
                       <Text style={styles.accountProjectionTitle}>
@@ -287,30 +269,8 @@ export function OwnerRespondEditRequestSheet({
               ) : null}
             </>
           ) : null}
-          <Button
-            label="Aprobar"
-            onPress={() => {
-              if (ownerEditRequestTarget) onAccept(ownerEditRequestTarget);
-            }}
-            loading={acceptIsPending}
-            disabled={!ownerEditRequestTarget?.event || (ownerAccounts.length > 0 && ownerEditResponseAccountId == null)}
-          />
-          <Button
-            label="Rechazar"
-            variant="ghost"
-            onPress={() => {
-              if (ownerEditRequestTarget) onReject(ownerEditRequestTarget);
-            }}
-            loading={rejectIsPending}
-            style={styles.rejectConfirmBtn}
-          />
-          <Button
-            label="Cancelar"
-            variant="ghost"
-            onPress={onCancel}
-          />
-        </View>
-      </Pressable>
-    </Modal>
+
+    </BottomSheet>
+    </FormFeedbackProvider>
   );
 }

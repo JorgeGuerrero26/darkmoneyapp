@@ -1,14 +1,14 @@
-import { ActivityIndicator, Modal, Pressable, Text, TouchableOpacity, View } from "react-native";
+import { BottomSheet } from "../../ui/BottomSheet";
+import { FormFeedbackProvider, FormSubmitBar, FormFieldGroup } from "../../ui/FormFeedback";
+import { selectedAccountField } from "../../../lib/form-field-rules";
+import { Text, TouchableOpacity, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../ui/AmountDisplay";
-import { COLORS } from "../../../constants/theme";
+
 import { parseDisplayDate } from "../../../lib/date";
-import type {
-  AccountSummary,
-  ObligationEventSummary,
-} from "../../../types/domain";
+import type { AccountSummary, ObligationEventSummary } from "../../../types/domain";
 import { styles } from "../ObligationAnalyticsModal.styles";
 
 type Props = {
@@ -22,7 +22,7 @@ type Props = {
   viewerLinkDelta: number;
   linkIsPending: boolean;
   onSelectAccount: (accountId: number) => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -40,21 +40,12 @@ export function AnalyticsViewerLinkAccountSheet({
   onConfirm,
   onClose,
 }: Props) {
+  const submit = onConfirm;
+  const validationFields = { accountId: selectedAccountField(linkingAccountId, viewerAccounts) };
   return (
-    <Modal
-      visible={Boolean(linkingEvent)}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.approvalOverlay} onPress={onClose}>
-        <View
-          style={styles.approvalSheet}
-          onStartShouldSetResponder={() => true}
-        >
-          <Text style={styles.approvalTitle}>
-            {viewerLinkAlreadyExists ? "Cambiar cuenta asociada" : "Asociar a una cuenta"}
-          </Text>
+    <FormFeedbackProvider visible={Boolean(linkingEvent)} resetKey={linkingEvent?.id} busy={linkIsPending} onSubmit={submit} fields={validationFields}>
+    <BottomSheet entranceAnimation="springFade" visible={Boolean(linkingEvent)} onClose={onClose} title={viewerLinkAlreadyExists ? "Cambiar cuenta asociada" : "Asociar a una cuenta"} snapHeight={0.9} footer={<FormSubmitBar label="Confirmar asociación" onSubmit={submit} loading={linkIsPending}></FormSubmitBar>}>
+
           {linkingEvent ? (
             <>
               <Text style={styles.approvalSub}>
@@ -66,7 +57,7 @@ export function AnalyticsViewerLinkAccountSheet({
                   ? "Elige la nueva cuenta en la que se reflejara este movimiento"
                   : "Elige la cuenta en la que se refleja este movimiento"}
               </Text>
-              {viewerAccounts.map((acc) => (
+              <FormFieldGroup fieldId="accountId" label="Cuenta">{viewerAccounts.map((acc) => (
                 <TouchableOpacity
                   key={acc.id}
                   style={[
@@ -85,7 +76,7 @@ export function AnalyticsViewerLinkAccountSheet({
                     <Text style={styles.approvalAccountCheck}>OK</Text>
                   ) : null}
                 </TouchableOpacity>
-              ))}
+              ))}</FormFieldGroup>
               {viewerProjectedAccount && viewerProjectedBalance != null ? (
                 <View style={styles.approvalProjectionCard}>
                   <Text style={styles.approvalProjectionTitle}>Proyectado para {viewerProjectedAccount.name}</Text>
@@ -120,27 +111,8 @@ export function AnalyticsViewerLinkAccountSheet({
               ) : null}
             </>
           ) : null}
-          <View style={styles.approvalActions}>
-            <TouchableOpacity
-              style={[
-                styles.approvalAcceptBtn,
-                (!linkingAccountId || linkIsPending) && styles.viewerDisabledBtn,
-              ]}
-              onPress={onConfirm}
-              disabled={!linkingAccountId || linkIsPending}
-            >
-              {linkIsPending ? (
-                <ActivityIndicator size="small" color={COLORS.income} />
-              ) : (
-                <Text style={styles.approvalAcceptText}>Confirmar asociacion</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.approvalCancelText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Pressable>
-    </Modal>
+
+    </BottomSheet>
+    </FormFeedbackProvider>
   );
 }

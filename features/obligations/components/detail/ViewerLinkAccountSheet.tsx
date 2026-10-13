@@ -1,28 +1,17 @@
-import {
-  Modal,
-  Pressable,
-  Text,
-  TouchableOpacity,
-  View,
-  type StyleProp,
-  type ViewStyle,
-  type TextStyle,
-} from "react-native";
+import { BottomSheet } from "../../../../components/ui/BottomSheet";
+import { FormFeedbackProvider, FormSubmitBar, FormFieldGroup } from "../../../../components/ui/FormFeedback";
+import { selectedAccountField } from "../../../../lib/form-field-rules";
+import { Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type TextStyle } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Button } from "../../../../components/ui/Button";
+
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
-import { SPACING } from "../../../../constants/theme";
+
 import { parseDisplayDate } from "../../../../lib/date";
 import { obligationViewerActsAsCollector } from "../../../../lib/obligation-viewer-labels";
 import type { ViewerEventAccountImpactCopy } from "../../../../lib/obligation-viewer-account-impact";
-import type {
-  AccountSummary,
-  ObligationEventSummary,
-  ObligationSummary,
-  SharedObligationSummary,
-} from "../../../../types/domain";
+import type { AccountSummary, ObligationEventSummary, ObligationSummary, SharedObligationSummary } from "../../../../types/domain";
 
 export type ViewerLinkAccountSheetStyles = {
   overlay: StyleProp<ViewStyle>;
@@ -72,7 +61,7 @@ type Props = {
   linkIsPending: boolean;
   onClose: () => void;
   onSelectAccount: (accountId: number) => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 };
 
 export function ViewerLinkAccountSheet({
@@ -92,22 +81,12 @@ export function ViewerLinkAccountSheet({
   onSelectAccount,
   onConfirm,
 }: Props) {
+  const submit = onConfirm;
+  const validationFields = { accountId: selectedAccountField(linkingAccountId, accounts) };
   return (
-    <Modal
-      visible={Boolean(linkingEvent)}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <View
-          style={[styles.linkSheet, { paddingBottom: insetBottom + SPACING.lg }]}
-          onStartShouldSetResponder={() => true}
-        >
-          <View style={styles.eventMenuHandle} />
-          <Text style={styles.linkSheetTitle}>
-            {viewerLinkExists ? "Cambiar cuenta asociada" : "Asociar a una cuenta"}
-          </Text>
+    <FormFeedbackProvider visible={Boolean(linkingEvent)} resetKey={linkingEvent?.id} busy={linkIsPending} onSubmit={submit} fields={validationFields}>
+    <BottomSheet entranceAnimation="springFade" visible={Boolean(linkingEvent)} onClose={onClose} title={viewerLinkExists ? "Cambiar cuenta asociada" : "Asociar a una cuenta"} snapHeight={0.9} footer={<FormSubmitBar label="Confirmar asociación" onSubmit={submit} loading={linkIsPending}></FormSubmitBar>}>
+
           {linkingEvent && obligation ? (
             <Text style={styles.linkSheetSub}>
               {linkingEvent.eventType === "payment"
@@ -150,7 +129,7 @@ export function ViewerLinkAccountSheet({
               <Text style={styles.linkSheetImpactBody}>{linkingEventImpactCopy.note}</Text>
             </View>
           ) : null}
-          {accounts.map((acc) => (
+          <FormFieldGroup fieldId="accountId" label="Cuenta">{accounts.map((acc) => (
             <TouchableOpacity
               key={acc.id}
               style={[
@@ -169,7 +148,7 @@ export function ViewerLinkAccountSheet({
                 <Text style={styles.linkAccountCheck}>OK</Text>
               ) : null}
             </TouchableOpacity>
-          ))}
+          ))}</FormFieldGroup>
           {viewerProjectedAccount && viewerProjectedBalance != null ? (
             <View style={styles.accountProjectionCard}>
               <Text style={styles.accountProjectionTitle}>Proyectado para {viewerProjectedAccount.name}</Text>
@@ -202,14 +181,8 @@ export function ViewerLinkAccountSheet({
           {accounts.length === 0 ? (
             <Text style={styles.linkNoAccounts}>No tienes cuentas registradas en este workspace</Text>
           ) : null}
-          <Button
-            label="Confirmar asociacion"
-            onPress={onConfirm}
-            loading={linkIsPending}
-            style={{ marginTop: SPACING.sm, opacity: linkingAccountId ? 1 : 0.4 }}
-          />
-        </View>
-      </Pressable>
-    </Modal>
+
+    </BottomSheet>
+    </FormFeedbackProvider>
   );
 }

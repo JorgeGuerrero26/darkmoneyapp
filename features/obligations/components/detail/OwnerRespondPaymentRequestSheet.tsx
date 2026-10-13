@@ -1,26 +1,15 @@
-import {
-  Modal,
-  Pressable,
-  Text,
-  TouchableOpacity,
-  View,
-  type StyleProp,
-  type ViewStyle,
-  type TextStyle,
-} from "react-native";
+import { BottomSheet } from "../../../../components/ui/BottomSheet";
+import { FormFeedbackProvider, FormSubmitBar, FormFieldGroup, FormActionButton } from "../../../../components/ui/FormFeedback";
+import { selectedAccountField } from "../../../../lib/form-field-rules";
+import { Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type TextStyle } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Button } from "../../../../components/ui/Button";
+
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
-import { SPACING } from "../../../../constants/theme";
+
 import { parseDisplayDate } from "../../../../lib/date";
-import type {
-  AccountSummary,
-  ObligationPaymentRequest,
-  ObligationSummary,
-  SharedObligationSummary,
-} from "../../../../types/domain";
+import type { AccountSummary, ObligationPaymentRequest, ObligationSummary, SharedObligationSummary } from "../../../../types/domain";
 
 export type OwnerRespondPaymentRequestSheetStyles = {
   overlay: StyleProp<ViewStyle>;
@@ -61,8 +50,8 @@ type Props = {
   insetBottom: number;
   acceptIsPending: boolean;
   onSelectAccount: (accountId: number | null) => void;
-  onAccept: (req: ObligationPaymentRequest) => void;
-  onReject: (req: ObligationPaymentRequest) => void;
+  onAccept: (req: ObligationPaymentRequest) => void | Promise<void>;
+  onReject: (req: ObligationPaymentRequest) => void | Promise<void>;
   onCancel: () => void;
 };
 
@@ -84,19 +73,11 @@ export function OwnerRespondPaymentRequestSheet({
   onReject,
   onCancel,
 }: Props) {
+  const submit = () => notificationRequestTarget ? onAccept(notificationRequestTarget) : undefined;
+  const validationFields = { accountId: selectedAccountField(ownerResponseAccountId, ownerAccounts, true) };
   return (
-    <Modal
-      visible={Boolean(notificationRequestTarget)}
-      transparent
-      animationType="fade"
-      onRequestClose={onCancel}
-    >
-      <Pressable style={styles.overlay} onPress={onCancel}>
-        <View
-          style={[styles.linkSheet, { paddingBottom: insetBottom + SPACING.lg }]}
-          onStartShouldSetResponder={() => true}
-        >
-          <Text style={styles.linkSheetTitle}>Responder solicitud</Text>
+    <FormFeedbackProvider visible={Boolean(notificationRequestTarget)} resetKey={notificationRequestTarget?.id} busy={acceptIsPending} onSubmit={submit} fields={validationFields}>
+    <BottomSheet entranceAnimation="springFade" visible={Boolean(notificationRequestTarget)} onClose={onCancel} title={"Responder solicitud"} snapHeight={0.9} footer={<FormSubmitBar label="Aceptar" onSubmit={submit} loading={acceptIsPending}><FormActionButton label="Rechazar" variant="secondary" style={{ flex: 1 }} onAction={() => notificationRequestTarget ? onReject(notificationRequestTarget) : undefined} /></FormSubmitBar>}>
           {notificationRequestTarget && obligation ? (
             <>
               <Text style={styles.linkSheetSub}>
@@ -109,7 +90,7 @@ export function OwnerRespondPaymentRequestSheet({
               ) : null}
               <Text style={styles.linkSheetHint}>{ownerAccountQuestion}</Text>
               <Text style={styles.ownerAccountLabel}>{ownerAccountLabel}</Text>
-              {ownerAccounts.map((acc) => (
+              <FormFieldGroup fieldId="accountId" label="Cuenta">{ownerAccounts.map((acc) => (
                 <TouchableOpacity
                   key={acc.id}
                   style={[
@@ -128,7 +109,7 @@ export function OwnerRespondPaymentRequestSheet({
                     <Text style={styles.linkAccountCheck}>OK</Text>
                   ) : null}
                 </TouchableOpacity>
-              ))}
+              ))}</FormFieldGroup>
               {ownerProjectedAccount && ownerProjectedBalance != null ? (
                 <View style={styles.accountProjectionCard}>
                   <Text style={styles.accountProjectionTitle}>Proyectado para {ownerProjectedAccount.name}</Text>
@@ -175,28 +156,8 @@ export function OwnerRespondPaymentRequestSheet({
               </TouchableOpacity>
             </>
           ) : null}
-          <Button
-            label="Aceptar"
-            onPress={() => {
-              if (notificationRequestTarget) onAccept(notificationRequestTarget);
-            }}
-            loading={acceptIsPending}
-          />
-          <Button
-            label="Rechazar"
-            variant="ghost"
-            onPress={() => {
-              if (notificationRequestTarget) onReject(notificationRequestTarget);
-            }}
-            style={styles.rejectConfirmBtn}
-          />
-          <Button
-            label="Cancelar"
-            variant="ghost"
-            onPress={onCancel}
-          />
-        </View>
-      </Pressable>
-    </Modal>
+
+    </BottomSheet>
+    </FormFeedbackProvider>
   );
 }

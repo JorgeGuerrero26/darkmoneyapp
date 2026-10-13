@@ -1,7 +1,7 @@
 
 const { act, create } = require("react-test-renderer");
 import { Text } from "react-native";
-import { FormFeedbackProvider, FormSubmitBar, useFormField, FieldFeedbackMessage } from "../FormFeedback";
+import { FormFeedbackProvider, FormSubmitBar, useFormField, FieldFeedbackMessage, FormActionButton } from "../FormFeedback";
 import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
 import { FormFieldError } from "../../../lib/form-errors";
 
@@ -89,5 +89,16 @@ describe("shared form feedback", () => {
     act(() => tree.update(render(1, 2, "20", false)));
     act(() => tree.update(render(1, 2, "20")));
     expect(tree.root.findAll((n: any) => n.props.accessibilityRole === "alert")).toHaveLength(0);
+  });
+  it("retries the failed secondary decision without saving or requiring the primary account", async () => {
+    const reject = jest.fn().mockRejectedValueOnce(new Error("Sin conexión")).mockResolvedValueOnce(undefined);
+    act(() => { tree = create(<FormFeedbackProvider onSubmit={save} fields={{ account: requiredField(null, "Elige una cuenta") }}>
+      <FormActionButton label="Rechazar" onAction={reject} /><FormSubmitBar onSubmit={save} />
+    </FormFeedbackProvider>); });
+    await act(async () => tree.root.findAll((n: any) => n.props.accessibilityLabel === "Rechazar" && n.props.onPress)[0].props.onPress());
+    expect(reject).toHaveBeenCalledTimes(1);
+    await act(async () => tree.root.findAll((n: any) => n.props.accessibilityLabel === "Reintentar" && n.props.onPress)[0].props.onPress());
+    expect(reject).toHaveBeenCalledTimes(2);
+    expect(save).not.toHaveBeenCalled();
   });
 });

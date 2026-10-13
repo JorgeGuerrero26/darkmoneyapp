@@ -22,3 +22,8 @@ export function emailField(value: string, optional = false): FormFieldRule {
 export function passwordField(value: string, minimum = 0): FormFieldRule {
   return requiredField(value, "Escribe tu contraseña", value.length < minimum ? `Usa al menos ${minimum} caracteres` : null);
 }
+
+export function selectedAccountField(value: number | null, accounts: readonly { id: number; isArchived?: boolean }[], optional = false): FormFieldRule {
+  const rule = requiredField(value, accounts.length ? "Elige una cuenta" : "Crea una cuenta para continuar", value != null && !accounts.some((account) => account.id === value && !account.isArchived) ? "Esta cuenta ya no está disponible" : null);
+  return { ...rule, missing: optional ? null : rule.missing, serverKeys: ["settlement_account_id"] };
+}

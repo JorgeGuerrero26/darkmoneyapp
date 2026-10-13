@@ -865,6 +865,7 @@ function ObligationDetailScreen() {
         currencyCode: obligation.currencyCode,
       },
       showToast,
+      errorMode: "throw",
       successMessage: existingLink
         ? "Cuenta asociada actualizada"
         : `${viewerEventLabel.charAt(0).toUpperCase() + viewerEventLabel.slice(1)} asociado a tu cuenta`,
@@ -1370,7 +1371,7 @@ function ObligationDetailScreen() {
         insetBottom={insets.bottom}
         acceptIsPending={acceptRequestMutation.isPending}
         onSelectAccount={setOwnerResponseAccountId}
-        onAccept={(req) => void handleAcceptRequest(req)}
+        onAccept={(req) => handleAcceptRequest(req, true)}
         onReject={(req) => {
           setRejectingRequest(req);
           setRejectReason("");
@@ -1412,8 +1413,8 @@ function ObligationDetailScreen() {
         acceptIsPending={acceptEditRequestMutation.isPending}
         rejectIsPending={rejectEditRequestMutation.isPending}
         onSelectAccount={setOwnerEditResponseAccountId}
-        onAccept={(target) => void handleAcceptEditRequest(target)}
-        onReject={(target) => void handleRejectEditRequest(target)}
+        onAccept={(target) => handleAcceptEditRequest(target, true)}
+        onReject={(target) => handleRejectEditRequest(target, true)}
         onCancel={() => setOwnerEditRequestTarget(null)}
       />
 
@@ -1425,7 +1426,7 @@ function ObligationDetailScreen() {
         rejectIsPending={rejectRequestMutation.isPending}
         insetBottom={insets.bottom}
         onChangeReason={setRejectReason}
-        onConfirm={handleRejectRequest}
+        onConfirm={() => handleRejectRequest(true)}
         onCancel={() => setRejectingRequest(null)}
       />
 

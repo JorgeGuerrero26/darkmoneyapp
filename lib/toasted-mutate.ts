@@ -14,6 +14,7 @@ type ToastedMutateOptions<TInput, TResult> = {
   showToast: ShowToast;
   successMessage: SuccessMessage<TResult>;
   onSuccess?: (result: TResult) => void | Promise<void>;
+  errorMode?: "toast" | "throw";
 };
 
 /**
@@ -40,6 +41,7 @@ export async function toastedMutate<TInput, TResult>(
     }
     return true;
   } catch (err: unknown) {
+    if (options.errorMode === "throw") throw err;
     options.showToast(humanizeError(err), "error");
     return false;
   }

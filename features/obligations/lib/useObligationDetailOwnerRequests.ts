@@ -59,7 +59,7 @@ export function useObligationDetailOwnerRequests({
     setOwnerResponseAccountId(ownerDefaultAccountId(obligation));
   }, [notificationRequestTarget?.id, obligation]);
 
-  async function handleAcceptRequest(req: ObligationPaymentRequest) {
+  async function handleAcceptRequest(req: ObligationPaymentRequest, surfaceErrors = false) {
     if (!obligation) return;
     const selectedAccountId = ownerResponseAccountId;
     const viewerAutoLinked = Boolean(req.viewerAccountId);
@@ -84,6 +84,7 @@ export function useObligationDetailOwnerRequests({
         shareId: req.shareId,
       },
       showToast,
+      errorMode: surfaceErrors ? "throw" : "toast",
       successMessage: viewerAutoLinked
         ? "Solicitud aceptada - el movimiento quedo registrado en la cuenta del solicitante"
         : "Solicitud aceptada y evento registrado",
@@ -99,7 +100,7 @@ export function useObligationDetailOwnerRequests({
     setOwnerResponseAccountId(ownerDefaultAccountId(obligation));
   }
 
-  async function handleRejectRequest() {
+  async function handleRejectRequest(surfaceErrors = false) {
     if (!rejectingRequest) return;
     await toastedMutate({
       mutate: rejectRequestMutation.mutateAsync,
@@ -113,6 +114,7 @@ export function useObligationDetailOwnerRequests({
         obligationTitle: obligation?.title,
       },
       showToast,
+      errorMode: surfaceErrors ? "throw" : "toast",
       successMessage: "Solicitud rechazada",
       onSuccess: () => {
         setRejectingRequest(null);
@@ -166,7 +168,7 @@ export function useObligationDetailOwnerRequests({
     });
   }
 
-  async function handleAcceptEditRequest(target: PendingOwnerEditRequest) {
+  async function handleAcceptEditRequest(target: PendingOwnerEditRequest, surfaceErrors = false) {
     if (!obligation || !ownerUserId) return;
     await toastedMutate({
       mutate: acceptEditRequestMutation.mutateAsync,
@@ -195,12 +197,13 @@ export function useObligationDetailOwnerRequests({
         accountId: ownerEditResponseAccountId,
       },
       showToast,
+      errorMode: surfaceErrors ? "throw" : "toast",
       successMessage: "Solicitud de edicion aprobada",
       onSuccess: () => setOwnerEditRequestTarget(null),
     });
   }
 
-  async function handleRejectEditRequest(target: PendingOwnerEditRequest) {
+  async function handleRejectEditRequest(target: PendingOwnerEditRequest, surfaceErrors = false) {
     if (!obligation || !ownerUserId || !target.payload.requestedByUserId) return;
     await toastedMutate({
       mutate: rejectEditRequestMutation.mutateAsync,
@@ -223,6 +226,7 @@ export function useObligationDetailOwnerRequests({
         proposedNotes: target.payload.proposedNotes ?? null,
       },
       showToast,
+      errorMode: surfaceErrors ? "throw" : "toast",
       successMessage: "Solicitud de edicion rechazada",
       onSuccess: () => setOwnerEditRequestTarget(null),
     });
