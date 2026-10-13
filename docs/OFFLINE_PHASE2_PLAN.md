@@ -1,6 +1,7 @@
 # Motor offline — Fase 2: SQLite, motor de sync y piloto de movimientos
 
-Estado: **en ejecución (2026-10-12).** Diseño: [OFFLINE_ENGINE_DESIGN.md](OFFLINE_ENGINE_DESIGN.md).
+Estado: **implementada y probada en automático (2026-10-12); pendiente de la prueba en iPhone/Android**
+(`docs/OFFLINE_DEVICE_TEST.md`). Diseño: [OFFLINE_ENGINE_DESIGN.md](OFFLINE_ENGINE_DESIGN.md).
 Servidor (Fase 1, ya en producción): [OFFLINE_PHASE1_PLAN.md](OFFLINE_PHASE1_PLAN.md).
 
 ## 1. Objetivo y alcance
@@ -85,3 +86,35 @@ con la app cerrada **no se promete** (iOS la limita y Android no es fiable).
   Supabase). Ver `docs/BUILD_IPA_GITHUB.md`.
 - `LEGACY_RUNTIMES` del publicador OTA: el runtime 1.0.10 y el 1.0.9/1.0.8 existentes no reciben
   el motor (no tienen SQLite); no se tocan.
+
+## 7. Resultado de la ejecución (2026-10-12)
+
+**Hecho y probado en automático**
+
+| Qué | Cómo se probó | Resultado |
+|---|---|---|
+| Núcleo: cola con fusión, pool de IDs, filtros SQL, saldos en centavos, almacén | Jest (SQLite en memoria) | 33 pruebas |
+| Runtime: encendido/apagado, sin módulo nativo, sin red, cierre de sesión, cambio de usuario, nudge | Jest con servidor falso | 13 pruebas |
+| Motor contra el SQL real de la Fase 1: diez altas sin red, respuesta perdida sin duplicar, dos dispositivos, conflictos, borrado propagado, rechazos, 2.500 filas | `npm run test:offline-e2e` (PGlite + migraciones) | 17 pruebas |
+| Paridad con **datos reales**: saldos = `v_account_balances`; 12 combinaciones de filtros y orden = implementación independiente | Jest sobre `.tmp/offline-fixtures` (local, no corre en CI) | 13 pruebas |
+| Motor completo contra la **base real**, en una transacción revertida | `.tmp/offline-fixtures/engine-vs-prod.mjs` | descarga 1.159 filas en 2,2 s; 10 altas locales en 22 ms; envío en 2,0 s; ciclo sin cambios 0,2 s; saldos locales = servidor; conteos idénticos tras el rollback |
+| Regresión de la app | `npm test` completo, `npm run typecheck`, paquete de iOS con `expo export` | 182 suites / 1.492 pruebas; el paquete trae el motor |
+
+**Pendiente — requiere tu teléfono**
+
+- Todo `docs/OFFLINE_DEVICE_TEST.md` (expo-sqlite real, red real, segundo plano en iOS).
+- Prueba de swipe tras alternar Movimientos → Cuentas → Movimientos (regla de CLAUDE.md): la
+  lista de Movimientos cambió de origen de datos. **Resultado: pendiente.**
+- Primera ejecución del workflow del IPA (nunca corrió; ver errores conocidos en `docs/BUILD_IPA_GITHUB.md`).
+
+**Limitaciones conocidas de esta fase (a propósito)**
+
+- Solo **movimientos** se escriben offline. Cuentas, categorías, contactos, presupuestos,
+  suscripciones y obligaciones siguen necesitando internet (Fases 3 y 4).
+- **Inicio/Dashboard**: lo que viene de consultas propias (movimientos recientes, analíticas,
+  presupuestos, historial por categoría) se pone al día al enviar; sin internet queda como estaba.
+  Los **saldos** sí se actualizan al instante.
+- El **resumen** de la lista (total de ingresos y gastos del filtro) lo calcula el servidor; sin
+  internet muestra el último valor conocido.
+- Los **comprobantes** (fotos) siguen necesitando internet.
+- Si se agotan los ~200 IDs reservados estando sin red, guardar vuelve a pedir internet.

@@ -275,6 +275,25 @@ Hay dos mecanismos de limpieza:
 
 Usar `notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}:${counterpartyToken}")` para evitar duplicados cuando Gmail dispara `onNotificationPosted` múltiples veces con diferente contenido. `counterpartyToken` (`extractCounterpartyToken`, regex conservador sobre "X te envió/yapeó/pagó/transfirió") separa tiles cuando 2 transacciones simultáneas del mismo monto vienen de remitentes distintos; sin match queda vacío y preserva el colapso previo.
 
+## Modo sin conexión (motor offline, beta)
+
+Guarda movimientos en SQLite y los sincroniza solo. **Apagado por defecto**, detrás del interruptor
+*Ajustes → Modo sin conexión*; con él apagado la app se comporta como siempre. Diseño y fases:
+`docs/OFFLINE_ENGINE_DESIGN.md`, `docs/OFFLINE_PHASE1_PLAN.md` (servidor), `docs/OFFLINE_PHASE2_PLAN.md` (cliente).
+
+- Código en `lib/offline/**` (el runtime no depende de React Native; `expo-sqlite` se carga con
+  `require` protegido: en un binario sin el módulo nativo el motor queda "no disponible").
+- Las consultas y mutaciones de movimientos eligen la base local solo con `useOfflineLocalReady`
+  y usan `networkMode: "always"` en ese caso; sin él React Query las pausa sin red y nada se leería.
+- Servidor: `sync_tables` (lista blanca), `reserve_ids`, `pull_changes`, `sync_live_ids`, `push_batch`.
+  **Toda migración que toque una tabla sincronizable debe revisar ese contrato** y, si cambia una
+  vista de saldos, la réplica local (`computeAccountBalances`, `lib/offline/movement-store.ts`).
+- Dinero en centavos enteros en SQLite; nunca `REAL`.
+- Pruebas: `npm test` (unitarias y paridad con datos reales si existe `.tmp/offline-fixtures`) y
+  `npm run test:offline-e2e` (motor contra las migraciones reales en PostgreSQL local). **Nada de eso
+  verifica el teléfono**: la prueba en dispositivo es `docs/OFFLINE_DEVICE_TEST.md`; registrarla aparte.
+- IPA de iPhone sin Mac: `docs/BUILD_IPA_GITHUB.md` (workflow de GitHub + Sideloadly).
+
 ## Skills
 
 Las skills locales viven en .claude/skills/ o .agents/skills/.

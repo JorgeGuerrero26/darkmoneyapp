@@ -1,0 +1,123 @@
+name: Compilar IPA de iPhone (sin firmar)
+
+# Genera un .ipa SIN FIRMAR en un Mac de GitHub (gratis: el repo es público) para firmarlo e
+# instalarlo después desde Windows con Sideloadly y el Apple ID gratuito. No hace falta Mac ni
+# cuenta de pago. Guía completa y errores conocidos: docs/BUILD_IPA_GITHUB.md.
+#
+# Se lanza a mano: Actions → "Compilar IPA de iPhone (sin firmar)" → Run workflow.
+#
+# Secretos (Settings → Secrets and variables → Actions → New repository secret):
+#   EXPO_PUBLIC_SUPABASE_URL        la misma URL del .env
+#   EXPO_PUBLIC_SUPABASE_ANON_KEY   la misma clave anónima del .env (ya viaja dentro de cada APK/IPA)
+#   EXPO_PUBLIC_UNIVERSAL_LINK_HOST opcional; si falta se usa darkmoney.company
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ios-ipa
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      EXPO_PUBLIC_UNIVERSAL_LINK_HOST: ${{ secrets.EXPO_PUBLIC_UNIVERSAL_LINK_HOST || 'darkmoney.company' }}
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar secretos
+        run: |
+          test -n "$EXPO_PUBLIC_SUPABASE_URL" || { echo "::error::Falta el secreto EXPO_PUBLIC_SUPABASE_URL"; exit 1; }
+          test -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" || { echo "::error::Falta el secreto EXPO_PUBLIC_SUPABASE_ANON_KEY"; exit 1; }
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Expo lee .env al empaquetar el JS; así las variables llegan aunque Xcode limpie el entorno.
+      - name: Escribir .env de compilación
+        run: |
+          {
+            echo "EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL"
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY"
+            echo "EXPO_PUBLIC_UNIVERSAL_LINK_HOST=$EXPO_PUBLIC_UNIVERSAL_LINK_HOST"
+          } > .env
+
+      - name: Generar el proyecto iOS (expo prebuild)
+        run: npx expo prebuild --platform ios --no-install
+
+      # El Apple ID gratuito no admite Push ni Associated Domains: con ellos la firma falla
+      # (docs/REINSTALL_IOS.md, Paso 3). Se vacían a propósito.
+      - name: Vaciar entitlements
+        run: |
+          cat > ios/DarkMoney/DarkMoney.entitlements <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict/>
+          </plist>
+          EOF
+
+      - name: Instalar pods
+        working-directory: ios
+        run: pod install
+
+      - name: Compilar (Release, sin firmar)
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/DarkMoney.xcworkspace -scheme DarkMoney -configuration Release \
+            -destination "generic/platform=iOS" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | tail -n 60
+
+      - name: Empaquetar el .ipa
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./app.json').expo.version")
+          APP=build/Build/Products/Release-iphoneos/DarkMoney.app
+          test -d "$APP" || { echo "::error::No se generó $APP"; exit 1; }
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry "DarkMoney-$VERSION.ipa" Payload
+          echo "IPA_NAME=DarkMoney-$VERSION.ipa" >> "$GITHUB_ENV"
+          ls -lh "DarkMoney-$VERSION.ipa"
+
+      # BUILD SUCCEEDED no garantiza que los módulos nativos entraron (pasó con ExpoSpeechRecognition
+      # en el IPA 1.0.8: docs/REINSTALL_IOS.md). Se comprueba en el binario.
+      - name: Verificar módulos nativos dentro del binario
+        run: |
+          set -euo pipefail
+          BIN=Payload/DarkMoney.app/DarkMoney
+          fail=0
+          for k in ExpoSQLite ExpoSecureStore ExpoCamera ExpoSpeechRecognition; do
+            n=$(grep -ao "$k" "$BIN" | wc -l | tr -d ' ')
+            echo "$k: $n"
+            if [ "$n" -eq 0 ]; then echo "::error::El módulo $k no está en el binario"; fail=1; fi
+          done
+          # El JS va embebido (Release): sin esto la app necesitaría un servidor de desarrollo.
+          test -f Payload/DarkMoney.app/main.jsbundle || { echo "::error::Falta main.jsbundle"; fail=1; }
+          exit $fail
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DarkMoney-ipa
+          path: ${{ env.IPA_NAME }}
+          retention-days: 3
+          if-no-files-found: error
