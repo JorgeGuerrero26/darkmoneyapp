@@ -116,6 +116,12 @@ jobs:
           n=$(grep -ao "ExpoSpeechRecognition" "$BIN" | wc -l | tr -d " " || true)
           echo "ExpoSpeechRecognition: ${n:-0}"
           echo "ExpoSpeech (prefijo): $(grep -ao "ExpoSpeech" "$BIN" | wc -l | tr -d " " || true)"
+          echo "--- Diagnóstico de voz ---"
+          echo "deployment target del proyecto:"; grep -m3 "IPHONEOS_DEPLOYMENT_TARGET" ios/DarkMoney.xcodeproj/project.pbxproj || true
+          grep -i "deploymentTarget" ios/Podfile.properties.json || true
+          echo "pod en Pods/:"; ls ios/Pods | grep -i speech || echo "(no hay carpeta de speech en ios/Pods)"
+          echo "en ExpoModulesProvider:"; grep -rn -i "speech" ios --include=ExpoModulesProvider.swift || echo "(speech no está en ExpoModulesProvider)"
+          echo "productos compilados:"; find build/Build/Products -iname "*speech*" -maxdepth 4 | head || true
           echo "Podfile.lock:"; grep -i "speech" ios/Podfile.lock || echo "(sin entradas de speech en Podfile.lock)"
           if [ "${n:-0}" -eq 0 ]; then echo "::warning::ExpoSpeechRecognition no está en el binario: el dictado por voz no funcionará en este IPA"; fi
           # El JS va embebido (Release): sin esto la app necesitaría un servidor de desarrollo.
