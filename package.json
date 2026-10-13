@@ -19,6 +19,7 @@
     "typecheck:catalogs": "tsc -p tsconfig.catalog-typecheck.json --noEmit",
     "test": "jest",
     "test:ota": "node --test scripts/__tests__/ota-export.test.mjs",
+    "test:offline-e2e": "tsc -p tsconfig.offline-tests.json && node --test .tmp/offline-tests/lib/offline/__tests__/sync-engine.e2e.js",
     "logs": "node scripts/logs.mjs",
     "ota": "node scripts/publish-ota.mjs",
     "build:android": "node scripts/preflight-native-version.mjs && eas build --platform android --profile preview"
@@ -58,6 +59,7 @@
     "expo-speech": "~14.0.8",
     "expo-speech-recognition": "^56.0.1",
     "expo-splash-screen": "~31.0.13",
+    "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
     "expo-updates": "~29.0.18",
     "lucide-react-native": "^0.577.0",
@@ -74,6 +76,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
+    "@electric-sql/pglite": "^0.5.9",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.1.10",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
