@@ -18,6 +18,26 @@ Formularios de movimientos, cuentas, categorías, contactos, tipos de gasto, tip
 
 Las reglas financieras siguen en los validadores y builders. Los componentes compartidos no consultan Supabase. Los errores de transporte de las confirmaciones e invitaciones devuelven su promesa al formulario para presentar el aviso en el mismo lugar.
 
+## Revisión de formularios restantes (12 de octubre)
+
+Se revisaron los controles editables activos y sus llamadas de guardado:
+
+| Grupo | Formularios revisados |
+| --- | --- |
+| Acceso y perfil | Iniciar sesión, registro, recuperación, nueva contraseña, bienvenida y perfil |
+| Recursos | Movimientos, cuentas, créditos/deudas, presupuestos, contactos, categorías, tipos de gasto, tipos de cambio, suscripciones e ingresos fijos |
+| Pagos y solicitudes | Pago/cobro, ajuste de capital, solicitud de pago, solicitud de edición, respuestas del propietario, rechazo y vinculación de cuenta desde detalle y analítica |
+| Opcionales | Más detalles de obligación, plan de pagos, bruto/descuentos, cambios de monto, fechas de vigencia, confirmación de llegada/pago y ajuste rápido de presupuesto |
+| Auxiliares | Invitaciones, workspace, biometría, renombrar plantilla/conversación y mensaje del reporte PDF |
+
+- Las filas añadidas a descuentos y cambios de monto deben completarse o quitarse. La diferencia entre bruto, descuentos y neto sigue siendo informativa.
+- Validación y guardado interpretan igual las comas y los separadores de miles. Las tasas conservan sus decimales y el saldo inicial admite valores negativos.
+- Se comprueba que las fechas existan en el calendario. Se conservan las restricciones de fechas propias de cada módulo.
+- Los errores del servidor que identifican un campo aparecen en ese campo; los errores ambiguos o de conexión permanecen sobre los botones.
+- Un reintento de una acción secundaria repite esa acción. Por ejemplo, reintentar Rechazar no ejecuta Aprobar.
+- Cerrar la ventana o cambiar de registro limpia los errores temporales. La tecla Siguiente mantiene el paso al campo siguiente.
+- Búsquedas, filtros, chat del asistente y selectores conservan su interacción; no son formularios de registro. Los campos de las hojas opcionales heredan el estado del formulario que las abre.
+
 ## Verificación
 
 - TypeScript, whitespace y ESLint.

@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Check, Pencil, Trash2 } from "lucide-react-native";
+import { Pencil, Trash2 } from "lucide-react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { TextField } from "../../../components/ui/TextField";
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import { searchChats, type StoredChat } from "../lib/chat-store";
 
@@ -117,9 +118,10 @@ export function AssistantChatsSheet({
             const selected = chat.id === activeId;
             if (renamingId === chat.id) {
               return (
-                <View key={chat.id} style={[styles.row, styles.rowSelected]}>
+                 <FormFeedbackProvider key={chat.id} visible={visible} resetKey={chat.id} fields={{ title: { value: draftTitle } }} onSubmit={commitRename}>
+                 <View style={[styles.row, styles.rowSelected]}>
                   <View style={styles.rowMain}>
-                    <TextField
+                    <TextField fieldId="title"
                       value={draftTitle}
                       onChangeText={setDraftTitle}
                       autoFocus
@@ -131,16 +133,9 @@ export function AssistantChatsSheet({
                       accessibilityLabel="Nombre de la conversación"
                     />
                   </View>
-                  <Pressable
-                    style={styles.delete}
-                    onPress={commitRename}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel="Guardar el nombre"
-                  >
-                    <Check size={18} color={COLORS.pro} />
-                  </Pressable>
                 </View>
+                <FormSubmitBar label="Guardar el nombre" onSubmit={commitRename} />
+                </FormFeedbackProvider>
               );
             }
             return (

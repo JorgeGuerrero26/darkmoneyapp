@@ -1,14 +1,9 @@
-import {
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-  type TextStyle,
-} from "react-native";
+import { Text, View, type StyleProp, type ViewStyle, type TextStyle } from "react-native";
 
 import { BottomSheet } from "../../../../components/ui/BottomSheet";
-import { Button } from "../../../../components/ui/Button";
+
 import { Input } from "../../../../components/ui/Input";
+import { FormFeedbackProvider, FormSubmitBar, FormActionButton } from "../../../../components/ui/FormFeedback";
 
 export type ObligationReportSheetStyles = {
   shareSheet: StyleProp<ViewStyle>;
@@ -22,8 +17,8 @@ type Props = {
   message: string;
   isSharing: boolean;
   onChangeMessage: (value: string) => void;
-  onCopyMessage: () => void;
-  onSharePdf: () => void;
+  onCopyMessage: () => void | Promise<void>;
+  onSharePdf: () => void | Promise<void>;
   onClose: () => void;
 };
 
@@ -42,13 +37,18 @@ export function ObligationReportSheet({
   onSharePdf,
   onClose,
 }: Props) {
+  const fields = { message: { value: message } };
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Reporte listo" snapHeight={0.62}>
+    <FormFeedbackProvider visible={visible} busy={isSharing} fields={fields} onSubmit={onSharePdf}>
+    <BottomSheet visible={visible} onClose={onClose} title="Reporte listo" snapHeight={0.62}
+      footer={<FormSubmitBar label="Compartir PDF" onSubmit={() => { void onSharePdf(); }} loadingLabel="Generando PDF…" failureTitle="No se pudo completar la acción">
+        <FormActionButton label="Copiar mensaje" variant="secondary" style={{ flex: 1 }} onAction={onCopyMessage} />
+      </FormSubmitBar>}>
       <View style={styles.shareSheet}>
         <Text style={styles.shareSheetSub}>
           Folio {folio}. Copia el mensaje, comparte el PDF por WhatsApp y pega el texto en el chat.
         </Text>
-        <Input
+        <Input fieldId="message"
           label="Mensaje para acompañar el reporte"
           value={message}
           onChangeText={onChangeMessage}
@@ -56,14 +56,8 @@ export function ObligationReportSheet({
           numberOfLines={5}
           textAlignVertical="top"
         />
-        <Button label="Copiar mensaje" variant="secondary" onPress={onCopyMessage} />
-        <Button
-          label="Compartir PDF"
-          onPress={onSharePdf}
-          loading={isSharing}
-          loadingLabel="Generando PDF…"
-        />
       </View>
     </BottomSheet>
+    </FormFeedbackProvider>
   );
 }

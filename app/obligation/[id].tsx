@@ -740,7 +740,7 @@ function ObligationDetailScreen() {
     try {
       await sharePdfFromHtml(reportResult.html, reportResult.fileName, "Compartir reporte");
     } catch (err) {
-      showErrorToast("No se pudo compartir el reporte", err);
+      throw err;
     } finally {
       setIsSharingReport(false);
     }
@@ -1539,8 +1539,8 @@ function ObligationDetailScreen() {
         message={reportMessage}
         isSharing={isSharingReport}
         onChangeMessage={setReportMessage}
-        onCopyMessage={() => void handleCopyReportMessage()}
-        onSharePdf={() => void handleShareReportPdf()}
+        onCopyMessage={handleCopyReportMessage}
+        onSharePdf={handleShareReportPdf}
         onClose={() => setReportSheetOpen(false)}
       />
       </>}

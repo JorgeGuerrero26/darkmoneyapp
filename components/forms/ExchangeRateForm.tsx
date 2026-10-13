@@ -88,6 +88,7 @@ function CurrencyPicker({ fieldId, label, value, onChange, options, exclude }: C
   );
 }
 type Props = {
+  visible?: boolean;
   initialFrom?: string;
   initialTo?: string;
   initialRate?: string;
@@ -104,6 +105,7 @@ export function ExchangeRateForm({
   initialRate = "",
   initialNotes = "",
   currencyOptions,
+  visible = true,
   onSave,
   onCancel: _onCancel,
   loading,
@@ -141,7 +143,7 @@ export function ExchangeRateForm({
   const validationFields = { from: requiredField(from, "Elige la moneda origen", from.trim().length !== 3 ? "Elige una moneda válida" : null), to: requiredField(to, "Elige la moneda destino", to === from ? "Las monedas deben ser diferentes" : to.trim().length !== 3 ? "Elige una moneda válida" : null), rate: { ...optionalNumberField(rate, { positive: true, kind: "rate" }), missing: !rate.trim() ? "Ingresa el tipo de cambio" : null }, notes: { value: notes } };
 
   return (
-    <FormFeedbackProvider visible={true} busy={loading} fields={validationFields} onSubmit={handleSave}>
+    <FormFeedbackProvider visible={visible} busy={loading} fields={validationFields} onSubmit={handleSave}>
 
     <View style={styles.body}>
       {/* Antes decía literalmente «1 [origen] = tasa [destino]»: una plantilla que nadie

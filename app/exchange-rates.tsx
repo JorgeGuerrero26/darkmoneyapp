@@ -450,6 +450,7 @@ function ExchangeRatesScreen() {
             entranceAnimation="springFade"
           >
             <ExchangeRateForm
+              visible={showForm}
               key="new"
               currencyOptions={currencyOptions}
               onSave={handleSave}
