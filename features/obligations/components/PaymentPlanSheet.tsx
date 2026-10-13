@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
-import { integerField, positiveAmountField } from "../../../lib/form-field-rules";
+import { integerField, positiveAmountField, optionalNumberField, parseFormAmountInput } from "../../../lib/form-field-rules";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Plus, Trash2 } from "lucide-react-native";
@@ -122,9 +122,9 @@ export function PaymentPlanSheet({
         : null;
     }
     const payments = agreed
-      .map((draft) => ({ amount: Number(draft.amount), dueDate: draft.dueDate }))
+      .map((draft) => ({ amount: parseFormAmountInput(draft.amount) ?? Number.NaN, dueDate: draft.dueDate }))
       .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
-    const tailAmount = Number(tail);
+    const tailAmount = parseFormAmountInput(tail) ?? Number.NaN;
     return {
       mode: "custom",
       agreed: payments,
@@ -184,7 +184,7 @@ export function PaymentPlanSheet({
     }
     const index = agreed.findIndex((item) => item.key === monthPickerFor);
     if (index < 0) return null;
-    const amount = Number(agreed[index].amount);
+    const amount = parseFormAmountInput(agreed[index].amount) ?? Number.NaN;
     const month = monthOf(index);
     return {
       title: `Mes del pago ${index + 1}`,
@@ -203,7 +203,7 @@ export function PaymentPlanSheet({
 
   const validationFields = mode === "equal" ? { count: integerField(count, 1, 999) } : Object.fromEntries([
     ...agreed.map((draft) => [`amount-${draft.key}`, positiveAmountField(draft.amount)] as const),
-    ["tail", { ...positiveAmountField(tail), missing: !complete && !tail.trim() ? "Ingresa la cuota que se repite" : null, invalid: !complete && tail.trim() ? "Ajusta las cuotas para cubrir el saldo" : null }],
+    ["tail", { ...optionalNumberField(tail, { positive: true }), missing: !complete && !tail.trim() ? "Ingresa la cuota que se repite" : null, invalid: optionalNumberField(tail, { positive: true }).invalid ?? (!complete && tail.trim() ? "Ajusta las cuotas para cubrir el saldo" : null) }],
   ]);
   const savePlan = () => { onSave(draftPlan); onClose(); };
   return (

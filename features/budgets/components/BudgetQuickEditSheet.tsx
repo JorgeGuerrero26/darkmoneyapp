@@ -1,6 +1,6 @@
-import { humanizeError } from "../../../lib/errors";
+
 import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
-import { positiveAmountField } from "../../../lib/form-field-rules";
+import { positiveAmountField, parseFormAmountInput } from "../../../lib/form-field-rules";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -47,7 +47,7 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
     if (updateMutation.isPending) return;
     setError("");
     if (!budget) return;
-    const parsed = Number(limitAmount.replace(/,/g, "."));
+    const parsed = parseFormAmountInput(limitAmount) ?? Number.NaN;
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return;
     }
@@ -60,14 +60,14 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
-      setError(humanizeError(err));
+      throw err;
     }
   }
 
   if (!budget) return null;
 
   return (
-    <FormFeedbackProvider visible={visible} busy={updateMutation.isPending} fields={{ limitAmount: positiveAmountField(limitAmount) }} onSubmit={handleSave}>
+    <FormFeedbackProvider resetKey={budget.id} visible={visible} busy={updateMutation.isPending} fields={{ limitAmount: positiveAmountField(limitAmount) }} onSubmit={handleSave}>
 
     <BottomSheet visible={visible} onClose={onClose} title="Ajuste rápido" snapHeight={0.5} footer={<FormSubmitBar onSubmit={handleSave} loading={updateMutation.isPending} error={error} />}>
       <View style={styles.body}>

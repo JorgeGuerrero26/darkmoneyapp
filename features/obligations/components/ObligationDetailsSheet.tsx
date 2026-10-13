@@ -1,6 +1,8 @@
+import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
+import { dateField, optionalNumberField } from "../../../lib/form-field-rules";
 import { StyleSheet, Text, View } from "react-native";
 
-import { Button } from "../../../components/ui/Button";
+
 import { FormDateRow } from "../../../components/ui/FormDateRow";
 import { FormOptionRow } from "../../../components/ui/FormOptionRow";
 import { InlineFormSheet } from "../../../components/ui/InlineFormSheet";
@@ -62,18 +64,18 @@ export function ObligationDetailsSheet({
   onClose,
   onDone,
 }: Props) {
+  const fields = { dueDate: dateField(dueDate, { optional: true }), interestRate: optionalNumberField(interestRate, { nonnegative: true, kind: "rate" }), description: { value: description }, notes: { value: notes } };
   return (
+    <FormFeedbackProvider visible={visible} fields={fields} onSubmit={onDone}>
     <InlineFormSheet
       visible={visible}
       title="Más detalles"
       onBack={onClose}
-      doneLabel="Listo"
-      onDone={onDone}
       footer={
         <View style={styles.footer}>
           {/* No crea la obligación: guarda lo de esta hoja y vuelve al formulario, donde sigue
               estando "Crear obligación". */}
-          <Button label="Guardar detalles" size="lg" onPress={onDone} />
+          <FormSubmitBar label="Guardar detalles" onSubmit={onDone} />
         </View>
       }
     >
@@ -96,7 +98,7 @@ export function ObligationDetailsSheet({
           onPress={onOpenPlan}
         />
         {planHint ? <Text style={styles.planHint}>{planHint}</Text> : null}
-        <FormDateRow
+        <FormDateRow fieldId="dueDate"
           grouped
           label="Vence"
           value={dueDate}
@@ -104,7 +106,7 @@ export function ObligationDetailsSheet({
           placeholder="Sin fecha"
           optional
         />
-        <FormOptionRow
+        <FormOptionRow fieldId="settlementAccountId"
           grouped
           last
           label="Cuenta de liquidación"
@@ -118,7 +120,7 @@ export function ObligationDetailsSheet({
           lo que hacía era desplegar este mismo campo debajo (revisión 21). */}
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Tasa de interés</Text>
-        <TextField
+        <TextField fieldId="interestRate"
           style={styles.input}
           value={interestRate}
           onChangeText={onChangeInterestRate}
@@ -131,7 +133,7 @@ export function ObligationDetailsSheet({
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripción</Text>
-        <TextField
+        <TextField fieldId="description"
           style={styles.input}
           value={description}
           onChangeText={onChangeDescription}
@@ -143,7 +145,7 @@ export function ObligationDetailsSheet({
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Notas</Text>
-        <TextField
+        <TextField fieldId="notes"
           style={[styles.input, styles.notes]}
           value={notes}
           onChangeText={onChangeNotes}
@@ -154,6 +156,7 @@ export function ObligationDetailsSheet({
         />
       </View>
     </InlineFormSheet>
+    </FormFeedbackProvider>
   );
 }
 

@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField } from "../../lib/form-field-rules";
+import { requiredField, positiveAmountField, optionalNumberField, dateField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1091,6 +1091,7 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
       const message = err instanceof Error ? err.message : String(err);
       // Sesión/token stale (RLS 42501, JWT): el MutationCache ya dispara la
       // recuperación; avisar que reintente en vez de un error críptico de RLS.
+      if (!isAuthLikeError(message) && !isAmbiguousTransportError(err instanceof Error ? { message: err.message } : null)) throw err;
       setSubmitError(
         isAuthLikeError(message)
           ? "Tu sesión se actualizó. Vuelve a tocar Guardar."
@@ -1141,13 +1142,18 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
       destinationAmount: form.movementType === "income" || transferCurrenciesDiffer ? { ...positiveAmountField(form.destinationAmount), reveal: () => setStep(1) } : { value: form.destinationAmount },
       sourceAccountId: form.movementType === "income" ? { value: form.sourceAccountId } : requiredField(form.sourceAccountId, "Elige una cuenta", null, () => setSourceAccountPickerOpen(true)),
       destinationAccountId: form.movementType === "income" || form.movementType === "transfer" ? { ...requiredField(form.destinationAccountId, "Elige el destino", form.movementType === "transfer" && form.sourceAccountId === form.destinationAccountId ? "El destino debe ser diferente del origen" : null, () => setDestinationAccountPickerOpen(true)), reveal: () => setStep(1) } : { value: form.destinationAccountId },
-      occurredAt: { ...requiredField(form.occurredAt, "Elige la fecha", form.movementType === "expense" && form.status === "posted" && form.occurredAt > todayPeru() ? "Un gasto no puede tener fecha futura" : null, () => { setStep(2); setDateTimeOpen(true); }), reveal: () => setStep(2) },
+      occurredAt: { ...dateField(form.occurredAt), invalid: dateField(form.occurredAt).invalid ?? (form.movementType === "expense" && form.status === "posted" && form.occurredAt > todayPeru() ? "Un gasto no puede tener fecha futura" : null), open: () => { setStep(2); setDateTimeOpen(true); }, reveal: () => setStep(2) },
       split: { value: splitLines, invalid: splitLines ? validateSplit(splitLines, (form.movementType === "income" ? destinationAmountNum : sourceAmountNum) ?? 0).error : null, reveal: () => setStep(2) },
-      transferRate: { ...positiveAmountField(fx.transferRateInput, "Ingresa el tipo de cambio"), invalid: transferCurrenciesDiffer && fx.transferRateInput.trim() ? positiveAmountField(fx.transferRateInput).invalid : null, missing: transferCurrenciesDiffer && !fx.transferRateInput.trim() && !fx.transferBaseFxSuggestion ? "Ingresa el tipo de cambio" : null, reveal: () => setStep(1) },
+      transferRate: { ...optionalNumberField(fx.transferRateInput, { positive: true, kind: "rate" }), missing: transferCurrenciesDiffer && !fx.transferRateInput.trim() && !fx.transferBaseFxSuggestion ? "Ingresa el tipo de cambio" : null, reveal: () => setStep(1) },
+      description: { value: form.description, reveal: () => setStep(2) },
+      notes: { value: form.notes, reveal: () => setStep(2) },
+      categoryId: { value: form.categoryId, reveal: () => setStep(2) },
+      spendTypeId: { value: form.spendTypeId, reveal: () => setStep(2) },
+      counterpartyId: { value: form.counterpartyId, reveal: () => setStep(2) },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={submitLoading} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editMovement?.id} visible={visible} busy={submitLoading} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
     <BottomSheet

@@ -57,7 +57,7 @@ export function ScheduledChangesSection({ open, onToggle, changes, onChange }: P
 
           {changes.map((row) => (
             <View key={row.key} style={styles.card}>
-              <FormDateRow
+              <FormDateRow fieldId={`change-date-${row.key}`}
                 label="Desde"
                 value={row.date}
                 onChange={(value) => update(row.key, { date: value })}
@@ -67,7 +67,7 @@ export function ScheduledChangesSection({ open, onToggle, changes, onChange }: P
                 <Text style={styles.rowLabel} maxFontSizeMultiplier={1.4}>
                   Llega
                 </Text>
-                <TextField
+                <TextField fieldId={`change-amount-${row.key}`}
                   value={row.amount}
                   onChangeText={(value) => update(row.key, { amount: value })}
                   keyboardType="decimal-pad"

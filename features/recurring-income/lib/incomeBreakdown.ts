@@ -1,3 +1,4 @@
+import { parseFormAmountInput } from "../../../lib/form-field-rules";
 /**
  * El desglose de un sueldo: bruto, descuentos y lo que queda.
  *
@@ -45,7 +46,7 @@ export type Deduction = {
 export const FREQUENT_DEDUCTIONS: readonly string[] = ["AFP", "ONP", "Renta 5ta", "EPS", "Préstamo", "Otro"];
 
 export function parseMoney(value: string): number | null {
-  const parsed = Number(String(value).replace(",", "."));
+  const parsed = parseFormAmountInput(value) ?? Number.NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
@@ -53,7 +54,7 @@ export function parseMoney(value: string): number | null {
  * Las filas que valen como descuento.
  *
  * Una fila a medio llenar —nombre sin monto, monto sin nombre— no es un error que haya que
- * gritarle al usuario: es una fila que todavía no dice nada. Se descarta al guardar.
+ * gritarle al usuario: es una fila que todavía no dice nada. El formulario pide completarla o quitarla antes de guardar.
  */
 export function collectDeductions(drafts: readonly DeductionDraft[]): Deduction[] {
   const out: Deduction[] = [];

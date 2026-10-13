@@ -1,9 +1,11 @@
+import { dateField } from "../../../lib/form-field-rules";
+import { FormFieldError } from "../../../lib/form-errors";
 import { useCallback, useState } from "react";
 import { format } from "date-fns";
 
 import { useConfirmRecurringIncomeArrivalMutation } from "../../../services/queries/workspace-data";
 import { useToast } from "../../../hooks/useToast";
-import { humanizeError } from "../../../lib/errors";
+
 import type { RecurringIncomeSummary } from "../../../types/domain";
 import { parseMoneyInput, validateArrivalDraft, type RecurringIncomeBaseChangeMode } from "./arrival-validation";
 
@@ -58,8 +60,7 @@ export function useArrivalSheetController(workspaceId: number | null) {
       currentBaseAmount: target.amount,
     });
     if (!validation.ok) {
-      setError(validation.error);
-      return;
+      throw new FormFieldError({ [dateField(date).missing || dateField(date).invalid ? "date" : parseMoneyInput(amount) == null ? "amount" : "accountId"]: validation.error });
     }
     try {
       setError("");
@@ -92,7 +93,7 @@ export function useArrivalSheetController(workspaceId: number | null) {
       setTarget(null);
       showToast("Llegada confirmada", "success");
     } catch (err) {
-      setError(humanizeError(err));
+      throw err;
     }
   }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, notes, showToast, target]);
 

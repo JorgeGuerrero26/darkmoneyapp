@@ -1,12 +1,12 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { requiredField, positiveAmountField, integerField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { HelpCircle } from "lucide-react-native";
 import { format } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
+
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useCreateSubscriptionMutation, useUpdateSubscriptionMutation, useWorkspaceSnapshotQuery, type SubscriptionFormInput } from "../../services/queries/workspace-data";
@@ -233,7 +233,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       nameRef.current?.focus();
       return;
     }
-    const parsed = parseFloat(amount.replace(",", "."));
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount.trim() || Number.isNaN(parsed) || parsed <= 0) {
       haptics.error();
       setAmountError("Ingresa un monto mayor a 0");
@@ -347,7 +347,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSubmitError(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -426,17 +426,20 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
       name: requiredField(name, "Escribe el nombre"),
       amount: positiveAmountField(amount),
-      nextDueDate: requiredField(nextDueDate, "Elige el próximo cobro", nextDueDate < startDate ? "El próximo cobro debe ser igual o posterior al inicio" : anchorIssue),
-      accountId: { value: accountId, missing: autoCreateMovement && accountId == null ? "Elige una cuenta" : null, open: () => setAccountOpen(true) },
-      startDate: { ...requiredField(startDate, "Elige el inicio"), autoContinue: true, reveal: () => setOptionalsOpen(true) },
-      endDate: { value: endDate, invalid: endDate && endDate < startDate ? "La fecha de fin no puede ser anterior al inicio" : null, reveal: () => setOptionalsOpen(true) },
+      nextDueDate: { ...dateField(nextDueDate, { min: startDate }), invalid: dateField(nextDueDate, { min: startDate }).invalid ?? (nextDueDate < startDate ? "El próximo cobro debe ser igual o posterior al inicio" : anchorIssue) },
+      accountId: { ...selectedAccountField(accountId, activeAccounts, !autoCreateMovement), open: () => setAccountOpen(true) },
+      startDate: { ...dateField(startDate), autoContinue: true, reveal: () => setOptionalsOpen(true) },
+      endDate: { ...dateField(endDate, { optional: true, min: startDate }), reveal: () => setOptionalsOpen(true) },
       intervalCount: integerField(intervalCount, 1, 9999),
       remindDaysBefore: { value: remindDaysBefore, invalid: !Number.isFinite(remindDaysBefore) || remindDaysBefore < 0 ? "Elige un recordatorio válido" : null, open: () => setRemindOpen(true) },
       currencyCode: requiredField(currencyCode, "Elige una moneda", null, () => setOptionalsOpen(true)),
+      description: { value: description, reveal: () => setOptionalsOpen(true) },
+      notes: { value: notes, reveal: () => setOptionalsOpen(true) },
+      categoryId: { value: categoryId, open: () => setCategoryOpen(true) },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editSubscription?.id} visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
       <BottomSheet

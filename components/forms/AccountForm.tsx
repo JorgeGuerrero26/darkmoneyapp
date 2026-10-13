@@ -1,6 +1,6 @@
-import { humanizeError } from "../../lib/errors";
+
 import { FormFeedbackProvider } from "../ui/FormFeedback";
-import { requiredField } from "../../lib/form-field-rules";
+import { requiredField, parseFormAmountInput, optionalNumberField } from "../../lib/form-field-rules";
 import { Clock, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -43,7 +43,7 @@ type Props = {
 
 /** La linea de credito es referencia para el usuario; no participa en ningun calculo. */
 function parseCreditLimit(value: string): number | null {
-  const parsed = Number(String(value).replace(",", "."));
+  const parsed = parseFormAmountInput(value) ?? Number.NaN;
   return Number.isFinite(parsed) && parsed > 0 ? Number(parsed.toFixed(2)) : null;
 }
 
@@ -234,7 +234,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       return;
     }
     const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
-    const parsedBalance = parseFloat(openingBalance);
+    const parsedBalance = (parseFormAmountInput(openingBalance) ?? Number.NaN);
     const input: AccountFormInput = {
       name: name.trim(),
       type,
@@ -285,7 +285,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSaveFailure(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -303,10 +303,12 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const validationFields = {
 
       name: requiredField(name, "Escribe el nombre"),
+      openingBalance: optionalNumberField(openingBalance),
+      creditLimit: type === "credit_card" ? optionalNumberField(creditLimit, { positive: true }) : { value: creditLimit },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editAccount?.id} visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <FormSheetScaffold
       visible={visible}

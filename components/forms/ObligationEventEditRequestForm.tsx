@@ -1,11 +1,11 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { positiveAmountField } from "../../lib/form-field-rules";
+import { positiveAmountField, parseFormAmountInput, dateField, integerField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Info } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
+
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useCreateObligationEventEditRequestMutation } from "../../services/queries/obligations";
@@ -70,7 +70,7 @@ export function ObligationEventEditRequestForm({
     setAmountError("");
     setSubmitError("");
 
-    const parsedAmount = Number.parseFloat(amount.replace(",", "."));
+    const parsedAmount = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       haptics.error();
       setAmountError("Ingresa un monto valido");
@@ -109,8 +109,7 @@ export function ObligationEventEditRequestForm({
       onClose();
     } catch (error: unknown) {
       haptics.error();
-      setSubmitError(humanizeError(error));
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      throw error;
     } finally {
       submittingRef.current = false;
     }
@@ -122,10 +121,14 @@ export function ObligationEventEditRequestForm({
   const validationFields = {
 
       amount: positiveAmountField(amount),
+      eventDate: dateField(eventDate),
+      installmentNo: isPayment ? integerField(installmentNo, 1, 999999, true) : { value: installmentNo },
+      description: { value: description },
+      notes: { value: notes },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={createRequest.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={event?.id} visible={visible} busy={createRequest.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <BottomSheet
       visible={visible}
@@ -157,7 +160,7 @@ export function ObligationEventEditRequestForm({
         currencyCode={obligation.currencyCode}
       />
 
-      <DatePickerInput
+      <DatePickerInput fieldId="eventDate"
         label="Fecha propuesta *"
         value={eventDate}
         onChange={setEventDate}

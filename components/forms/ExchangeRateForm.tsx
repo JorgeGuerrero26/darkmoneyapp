@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../../components/ui/FormFeedback";
-import { requiredField, positiveAmountField } from "../../lib/form-field-rules";
+import { requiredField, optionalNumberField, parseFormAmountInput } from "../../lib/form-field-rules";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ArrowRight, ChevronDown } from "lucide-react-native";
@@ -117,7 +117,7 @@ export function ExchangeRateForm({
   function handleSave() {
     const fromTrim = from.trim().toUpperCase();
     const toTrim = to.trim().toUpperCase();
-    const rateNum = parseFloat(rate.replace(",", "."));
+    const rateNum = parseFormAmountInput(rate, "rate") ?? Number.NaN;
     if (!fromTrim || fromTrim.length !== 3) {
       setError("Moneda origen inválida (ej. USD)");
       return;
@@ -138,8 +138,10 @@ export function ExchangeRateForm({
     return onSave(fromTrim, toTrim, rateNum, notes.trim());
   }
 
+  const validationFields = { from: requiredField(from, "Elige la moneda origen", from.trim().length !== 3 ? "Elige una moneda válida" : null), to: requiredField(to, "Elige la moneda destino", to === from ? "Las monedas deben ser diferentes" : to.trim().length !== 3 ? "Elige una moneda válida" : null), rate: { ...optionalNumberField(rate, { positive: true, kind: "rate" }), missing: !rate.trim() ? "Ingresa el tipo de cambio" : null }, notes: { value: notes } };
+
   return (
-    <FormFeedbackProvider visible={true} busy={loading} fields={{ from: requiredField(from, "Elige la moneda origen", from.trim().length !== 3 ? "Elige una moneda válida" : null), to: requiredField(to, "Elige la moneda destino", to === from ? "Las monedas deben ser diferentes" : to.trim().length !== 3 ? "Elige una moneda válida" : null), rate: positiveAmountField(rate, "Ingresa el tipo de cambio") }} onSubmit={handleSave}>
+    <FormFeedbackProvider visible={true} busy={loading} fields={validationFields} onSubmit={handleSave}>
 
     <View style={styles.body}>
       {/* Antes decía literalmente «1 [origen] = tasa [destino]»: una plantilla que nadie
@@ -174,7 +176,7 @@ export function ExchangeRateForm({
       />
 
       <Text style={styles.inputLabel}>Notas (opcional)</Text>
-      <TextField
+      <TextField fieldId="notes"
         style={styles.input}
         placeholder="ej. Tipo de cambio BCP"
         placeholderTextColor={COLORS.storm}

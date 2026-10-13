@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
-import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
+import { requiredField, positiveAmountField, dateField } from "../../../lib/form-field-rules";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
@@ -99,7 +99,7 @@ export function RecurringIncomeArrivalSheet({
   const changed = diff !== "";
 
   return (
-    <FormFeedbackProvider visible={visible} busy={Boolean(loading)} fields={{ amount: { ...positiveAmountField(amount), reveal: () => setDifferentOpen(true) }, date: { ...requiredField(date, "Elige la fecha"), autoContinue: true, reveal: () => setDifferentOpen(true) }, accountId: requiredField(accountId, "Elige una cuenta", null, () => setAccountPickerOpen(true)) }} onSubmit={onSubmit}>
+    <FormFeedbackProvider visible={visible} busy={Boolean(loading)} resetKey={item.id} fields={{ notes: { value: notes, reveal: () => setNotesOpen(true) }, amount: { ...positiveAmountField(amount), reveal: () => setDifferentOpen(true) }, date: { ...dateField(date), autoContinue: true, reveal: () => setDifferentOpen(true) }, accountId: requiredField(accountId, "Elige una cuenta", null, () => setAccountPickerOpen(true)) }} onSubmit={onSubmit}>
 
     <BottomSheet
       visible={visible}
@@ -175,7 +175,7 @@ export function RecurringIncomeArrivalSheet({
 
               <View style={styles.field}>
                 <Text style={styles.fieldLabel}>Notas</Text>
-                <TextField
+                <TextField fieldId="notes"
                   style={styles.notesInput}
                   multiline
                   value={notes}
@@ -206,7 +206,7 @@ export function RecurringIncomeArrivalSheet({
             doneLabel="Listo"
             onDone={() => setNotesOpen(false)}
           >
-            <TextField
+            <TextField fieldId="notes"
               style={styles.notesInput}
               multiline
               autoFocus

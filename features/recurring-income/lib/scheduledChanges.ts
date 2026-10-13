@@ -1,3 +1,4 @@
+import { parseFormAmountInput } from "../../../lib/form-field-rules";
 /**
  * Cambios de monto programados de un ingreso fijo: "desde enero gano 5.000".
  *
@@ -60,6 +61,6 @@ export function toChangeDrafts(changes: readonly ScheduledChange[] | null | unde
 /** Del formulario a lo que se guarda. Las filas a medias (sin fecha o sin monto) se descartan. */
 export function collectChanges(drafts: readonly ScheduledChangeDraft[]): ScheduledChange[] {
   return normalizeScheduledChanges(
-    drafts.map((d) => ({ effectiveDate: d.date.trim(), amount: Number(d.amount.replace(/,/g, ".")) })),
+    drafts.map((d) => ({ effectiveDate: d.date.trim(), amount: parseFormAmountInput(d.amount) ?? Number.NaN })),
   );
 }

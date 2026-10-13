@@ -1,5 +1,6 @@
+import { ObligationInviteFields } from "../../features/obligations/components/ObligationInviteFields";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField } from "../../lib/form-field-rules";
+import { requiredField, positiveAmountField, optionalNumberField, dateField, emailField, parseFormAmountInput, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -33,7 +34,7 @@ import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { Input } from "../ui/Input";
+
 import { CurrencyInput } from "../ui/CurrencyInput";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -183,12 +184,12 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [notes, setNotes] = useState("");
 
   const [titleError, setTitleError] = useState("");
-  const [amountError, setAmountError] = useState("");
-  const [originError, setOriginError] = useState("");
+  const [, setAmountError] = useState("");
+  const [, setOriginError] = useState("");
   const [counterpartyError, setCounterpartyError] = useState("");
-  const [settlementAccountError, setSettlementAccountError] = useState("");
-  const [currencyError, setCurrencyError] = useState("");
-  const [startDateError, setStartDateError] = useState("");
+  const [, setSettlementAccountError] = useState("");
+  const [, setCurrencyError] = useState("");
+  const [, setStartDateError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [showDiscard, setShowDiscard] = useState(false);
   const [shareEmail, setShareEmail] = useState("");
@@ -209,12 +210,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
   const titleRef = useRef<TextInput>(null);
   const principalAmountRef = useRef<TextInput>(null);
-  const descriptionRef = useRef<TextInput>(null);
-  const notesRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const originSectionYRef = useRef(0);
   const counterpartySectionYRef = useRef(0);
-  const settlementSectionYRef = useRef(0);
   const currencySectionYRef = useRef(0);
   const startDateSectionYRef = useRef(0);
 
@@ -302,7 +300,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         result.invitedEmail,
       );
     } catch (err: unknown) {
-      setSubmitError(humanizeError(err));
+      throw err;
     }
   }
 
@@ -382,7 +380,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       firstValidationMessage = message;
       valid = false;
     }
-    const amount = parseFloat(principalAmount);
+    const amount = (parseFormAmountInput(principalAmount) ?? Number.NaN);
     if (!isEditing && (!principalAmount || isNaN(amount) || amount <= 0)) {
       const message = "Ingresa un monto válido";
       setAmountError(message);
@@ -447,10 +445,10 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             counterpartyId,
             settlementAccountId,
             dueDate: dueDate || null,
-            installmentAmount: installmentAmount ? parseFloat(installmentAmount) : null,
+            installmentAmount: installmentAmount ? (parseFormAmountInput(installmentAmount) ?? Number.NaN) : null,
             installmentCount: installmentCount ? parseInt(installmentCount) : null,
             paymentPlan: normalizePaymentPlan(paymentPlan),
-            interestRate: interestRate ? parseFloat(interestRate) : null,
+            interestRate: interestRate ? (parseFormAmountInput(interestRate, "rate") ?? Number.NaN) : null,
             description: description.trim() || null,
             notes: notes.trim() || null,
           },
@@ -491,10 +489,10 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           dueDate: dueDate || null,
           counterpartyId,
           settlementAccountId,
-          installmentAmount: installmentAmount ? parseFloat(installmentAmount) : null,
+          installmentAmount: installmentAmount ? (parseFormAmountInput(installmentAmount) ?? Number.NaN) : null,
           installmentCount: installmentCount ? parseInt(installmentCount) : null,
           paymentPlan: normalizePaymentPlan(paymentPlan),
-          interestRate: interestRate ? parseFloat(interestRate) : null,
+          interestRate: interestRate ? (parseFormAmountInput(interestRate, "rate") ?? Number.NaN) : null,
           description: description.trim() || null,
           notes: notes.trim() || null,
         });
@@ -539,34 +537,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      const friendly = humanizeError(err);
-      if (friendly === "Selecciona cómo nació esta obligación") {
-        setOriginError(friendly);
-        scrollRef.current?.scrollTo({ y: Math.max(0, originSectionYRef.current - 24), animated: true });
-      } else if (friendly === "Selecciona un contacto") {
-        setCounterpartyError(friendly);
-        scrollRef.current?.scrollTo({ y: Math.max(0, counterpartySectionYRef.current - 24), animated: true });
-      } else if (friendly === "Selecciona una cuenta de liquidación") {
-        setSettlementAccountError(friendly);
-        scrollRef.current?.scrollTo({ y: Math.max(0, settlementSectionYRef.current - 24), animated: true });
-      } else if (friendly === "Selecciona una moneda") {
-        setCurrencyError(friendly);
-        scrollRef.current?.scrollTo({ y: Math.max(0, currencySectionYRef.current - 24), animated: true });
-      } else if (friendly === "Selecciona una fecha válida") {
-        setStartDateError(friendly);
-        scrollRef.current?.scrollTo({ y: Math.max(0, startDateSectionYRef.current - 24), animated: true });
-      } else if (friendly === "El título es obligatorio") {
-        setTitleError(friendly);
-        scrollRef.current?.scrollTo({ y: 0, animated: true });
-        setTimeout(() => titleRef.current?.focus(), 250);
-      } else if (friendly === "Ingresa un monto válido") {
-        setAmountError(friendly);
-        scrollRef.current?.scrollTo({ y: 0, animated: true });
-        setTimeout(() => principalAmountRef.current?.focus(), 250);
-      } else {
-        setSubmitError(friendly);
-        scrollRef.current?.scrollTo({ y: 0, animated: true });
-      }
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -623,11 +594,18 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       principalAmount: isEditing ? { value: principalAmount } : positiveAmountField(principalAmount),
       counterpartyId: requiredField(counterpartyId, "Elige un contacto", null, () => setCounterpartyOpen(true)),
       currencyCode: isEditing ? { value: currencyCode } : requiredField(currencyCode, "Elige una moneda", null, () => setCurrencyOpen(true)),
-      startDate: isEditing ? { value: startDate } : requiredField(startDate, "Elige la fecha"),
+      startDate: isEditing ? { value: startDate } : dateField(startDate),
+      dueDate: { ...dateField(dueDate, { optional: true, min: startDate }), autoContinue: true, reveal: () => setDetailsOpen(true) },
+      interestRate: { ...optionalNumberField(interestRate, { nonnegative: true, kind: "rate" }), reveal: () => setDetailsOpen(true) },
+      settlementAccountId: { ...selectedAccountField(settlementAccountId, activeAccountsSorted, true), reveal: () => setDetailsOpen(true), open: () => setSettlementOpen(true) },
+      description: { value: description, reveal: () => setDetailsOpen(true) },
+      notes: { value: notes, reveal: () => setDetailsOpen(true) },
+      shareEmail: { ...emailField(shareEmail, true), serverKeys: ["invited_email"], reveal: () => setReassignExpanded(true) },
+      shareMessage: { value: shareMessage, reveal: () => setReassignExpanded(true) },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editObligation?.id} visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
       <BottomSheet
@@ -995,32 +973,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                   <Text style={styles.shareHint}>
                     Un solo acceso activo a la vez. Enviar con otro correo reasigna al nuevo destinatario.
                   </Text>
-                  <Input
-                    label="Email del destinatario"
-                    value={shareEmail}
-                    onChangeText={setShareEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    placeholder="correo@ejemplo.com"
-                  />
-                  <Input
-                    label="Mensaje (opcional)"
-                    value={shareMessage}
-                    onChangeText={setShareMessage}
-                    placeholder="Mensaje para el invitado"
-                    multiline
-                    numberOfLines={3}
-                    style={styles.shareMessageInput}
-                  />
-                  <Button
-                    label="Enviar invitación"
-                    variant="secondary"
-                    onPress={handleShareInvite}
-                    loading={shareMutation.isPending}
-                    disabled={!shareEmail.trim()}
-                    style={styles.shareBtn}
-                  />
+                  <ObligationInviteFields key={editObligation.id} visible={visible} email={shareEmail} message={shareMessage} onEmailChange={setShareEmail} onMessageChange={setShareMessage} onSend={handleShareInvite} busy={shareMutation.isPending} resend={false} />
                 </>
               ) : null}
               {/* Quitarle el acceso a alguien y cambiarle el correo tenían el mismo peso, uno al
@@ -1050,32 +1003,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               </View>
               {reassignExpanded ? (
                 <>
-              <Input
-                label="Email"
-                value={shareEmail}
-                onChangeText={setShareEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="correo@ejemplo.com"
-              />
-              <Input
-                label="Mensaje (opcional)"
-                value={shareMessage}
-                onChangeText={setShareMessage}
-                placeholder="Actualizar mensaje y reenviar"
-                multiline
-                numberOfLines={3}
-                style={styles.shareMessageInput}
-              />
-              <Button
-                label="Reenviar invitación"
-                variant="secondary"
-                onPress={handleShareInvite}
-                loading={shareMutation.isPending}
-                disabled={!shareEmail.trim()}
-                style={styles.shareBtn}
-              />
+              <ObligationInviteFields key={editObligation.id} visible={visible} email={shareEmail} message={shareMessage} onEmailChange={setShareEmail} onMessageChange={setShareMessage} onSend={handleShareInvite} busy={shareMutation.isPending} resend={true} />
                 </>
               ) : null}
               <TouchableOpacity
@@ -1095,32 +1023,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 Invita por correo para acceso en solo lectura (&quot;Compartida contigo&quot;). Al guardar con correo
                 nuevo también se envía (misma lógica que la web).
               </Text>
-              <Input
-                label="Email del destinatario"
-                value={shareEmail}
-                onChangeText={setShareEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="correo@ejemplo.com"
-              />
-              <Input
-                label="Mensaje (opcional)"
-                value={shareMessage}
-                onChangeText={setShareMessage}
-                placeholder="Mensaje para el invitado"
-                multiline
-                numberOfLines={3}
-                style={styles.shareMessageInput}
-              />
-              <Button
-                label="Enviar invitación"
-                variant="secondary"
-                onPress={handleShareInvite}
-                loading={shareMutation.isPending}
-                disabled={!shareEmail.trim()}
-                style={styles.shareBtn}
-              />
+              <ObligationInviteFields key={editObligation.id} visible={visible} email={shareEmail} message={shareMessage} onEmailChange={setShareEmail} onMessageChange={setShareMessage} onSend={handleShareInvite} busy={shareMutation.isPending} resend={false} />
             </>
           )}
         </View>

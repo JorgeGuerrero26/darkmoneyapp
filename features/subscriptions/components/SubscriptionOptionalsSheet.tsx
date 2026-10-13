@@ -155,7 +155,7 @@ export function SubscriptionOptionalsSheet({
       </View>
 
       <Text style={styles.sectionLabel}>Notas</Text>
-      <TextField
+      <TextField fieldId="description"
         style={styles.input}
         value={description}
         onChangeText={onChangeDescription}
@@ -163,7 +163,7 @@ export function SubscriptionOptionalsSheet({
         placeholderTextColor={COLORS.storm}
         accessibilityLabel="Resumen de la suscripción"
       />
-      <TextField
+      <TextField fieldId="notes"
         style={[styles.input, styles.notes]}
         value={notes}
         onChangeText={onChangeNotes}

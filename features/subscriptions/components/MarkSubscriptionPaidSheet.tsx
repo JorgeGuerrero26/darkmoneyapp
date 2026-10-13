@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
-import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
+import { requiredField, positiveAmountField, dateField, parseFormAmountInput } from "../../../lib/form-field-rules";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
@@ -88,7 +88,7 @@ export function MarkSubscriptionPaidSheet({
       subscription.dayOfMonth,
     ),
   );
-  const parsedAmount = Number(amount.replace(/,/g, "."));
+  const parsedAmount = parseFormAmountInput(amount) ?? Number.NaN;
   const amountForCopy = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : subscription.amount;
 
   function handleConfirm() {
@@ -98,7 +98,7 @@ export function MarkSubscriptionPaidSheet({
       setAccountOpen(true);
       return;
     }
-    const parsed = Number(amount.replace(/,/g, "."));
+    const parsed = parseFormAmountInput(amount) ?? Number.NaN;
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError("Escribe cuánto pagaste.");
       return;
@@ -107,7 +107,7 @@ export function MarkSubscriptionPaidSheet({
   }
 
   return (
-    <FormFeedbackProvider visible={visible} busy={isPending} fields={{ amount: positiveAmountField(amount), accountId: requiredField(accountId, "Elige una cuenta", accountId != null && !selectedAccount ? "Esta cuenta no está disponible" : null, () => setAccountOpen(true)), paidDate: requiredField(paidDate, "Elige la fecha") }} onSubmit={handleConfirm}>
+    <FormFeedbackProvider resetKey={subscription.id} visible={visible} busy={isPending} fields={{ amount: positiveAmountField(amount), accountId: requiredField(accountId, "Elige una cuenta", accountId != null && !selectedAccount ? "Esta cuenta no está disponible" : null, () => setAccountOpen(true)), paidDate: dateField(paidDate) }} onSubmit={handleConfirm}>
 
     <BottomSheet
       visible={visible}

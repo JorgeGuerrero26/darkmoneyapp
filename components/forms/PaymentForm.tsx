@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { positiveAmountField } from "../../lib/form-field-rules";
+import { positiveAmountField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { ArrowRight, Info } from "lucide-react-native";
@@ -11,7 +11,7 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { mirrorObligationEventAttachmentsToMovement, promoteDraftAttachmentsToEvent } from "../../lib/entity-attachments";
 import { todayPeru } from "../../lib/date";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
+
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useUiStore } from "../../store/ui-store";
@@ -326,7 +326,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     setAmountError("");
     setAccountError("");
     setSubmitError("");
-    const parsed = parseFloat(amount);
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount || isNaN(parsed) || parsed <= 0) {
       haptics.error();
       setAmountError("Ingresa un monto válido");
@@ -451,7 +451,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       backgroundAttachmentSync?.();
     } catch (err: unknown) {
       haptics.error();
-      setSubmitError(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -468,7 +468,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     [activeAccounts, accountId],
   );
   const parsedAmount = useMemo(() => {
-    const parsed = Number.parseFloat(amount);
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [amount]);
 
@@ -543,12 +543,15 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
 
   const validationFields = {
 
-      amount: positiveAmountField(amount, "Ingresa el monto", obligation ? describeOverpayment({ amount: parseFloat(amount), pendingAmount: pendingAmount + (isEditMode && editEvent?.eventType === "payment" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: actsAsCollector ? "cobro" : "pago" }) : null),
-      accountId: { value: accountId, missing: createMovement && activeAccounts.length > 0 && accountId == null ? "Elige una cuenta" : null },
+      amount: positiveAmountField(amount, "Ingresa el monto", obligation ? describeOverpayment({ amount: (parseFormAmountInput(amount) ?? Number.NaN), pendingAmount: pendingAmount + (isEditMode && editEvent?.eventType === "payment" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: actsAsCollector ? "cobro" : "pago" }) : null),
+      accountId: { ...selectedAccountField(accountId, activeAccounts, !(createMovement && activeAccounts.length > 0)), serverKeys: ["account_id", "settlement_account_id"] },
+      paymentDate: { ...dateField(paymentDate), serverKeys: ["event_date", "occurred_at"] },
+      description: { value: description },
+      notes: { value: notes },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={createPaymentMutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editEvent?.id ?? obligation?.id} visible={visible} busy={createPaymentMutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
       <BottomSheet
@@ -640,7 +643,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       ) : null}
 
       <View style={styles.group}>
-        <FormDateRow grouped last label="Cuándo" value={paymentDate} onChange={setPaymentDate} />
+        <FormDateRow fieldId="paymentDate" grouped last label="Cuándo" value={paymentDate} onChange={setPaymentDate} />
       </View>
 
       {/* Create movement toggle + account selector — solo en modo crear */}
@@ -764,7 +767,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         <EditPaymentImpact
           currentPending={obligation.pendingAmount}
           oldAmount={editEvent.amount}
-          newAmount={parseFloat(amount) || 0}
+          newAmount={(parseFormAmountInput(amount) ?? Number.NaN) || 0}
           currency={obligation.currencyCode}
         />
       ) : null}

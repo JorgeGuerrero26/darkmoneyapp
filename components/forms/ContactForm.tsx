@@ -1,6 +1,6 @@
-import { humanizeError } from "../../lib/errors";
+
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField } from "../../lib/form-field-rules";
+import { requiredField, emailField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -131,7 +131,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSaveFailure(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -142,10 +142,14 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
   const validationFields = {
 
       name: requiredField(name, "Escribe el nombre"),
+      email: emailField(email, true),
+      phone: { value: phone },
+      documentNumber: { value: documentNumber },
+      notes: { value: notes },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editContact?.id} visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
     <BottomSheet

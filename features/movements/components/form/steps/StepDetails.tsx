@@ -210,7 +210,7 @@ export const StepDetails = memo(function StepDetails({
       {/* Sin etiqueta encima: el placeholder ya dice qué es Y qué pasa si lo dejas vacío. La
           sugerencia de descripción vive en la misma tarjeta, debajo del texto que cambia. */}
       <View style={[styles.group, descriptionFocused && styles.groupFocused]}>
-        <TextField
+        <TextField fieldId="description"
           style={styles.descriptionInput}
           placeholder="Descripción — se genera sola si la dejas vacía"
           placeholderTextColor={COLORS.storm}
@@ -235,7 +235,7 @@ export const StepDetails = memo(function StepDetails({
           fila que quedaba 120 px más arriba, fuera de la vista. */}
       <View style={styles.group}>
         {showCategoryRow ? (
-          <FormOptionRow
+          <FormOptionRow fieldId="categoryId"
             grouped
             label="Categoría"
             value={selectedCategoryName}
@@ -252,7 +252,7 @@ export const StepDetails = memo(function StepDetails({
         {/* La categoría dice en qué se fue; el tipo, si hacía falta. Va pegada a la categoría
             porque es la que lo propone, y el valor dice cuándo viene de ella. */}
         {showSpendTypeRow ? (
-          <FormOptionRow
+          <FormOptionRow fieldId="spendTypeId"
             grouped
             label="Tipo de gasto"
             value={spendTypeName}
@@ -261,7 +261,7 @@ export const StepDetails = memo(function StepDetails({
             onPress={onOpenSpendType}
           />
         ) : null}
-        <FormOptionRow
+        <FormOptionRow fieldId="counterpartyId"
           grouped
           label="Contraparte"
           value={selectedCounterpartyName}
@@ -337,7 +337,7 @@ export const StepDetails = memo(function StepDetails({
         onLayout={(event) => { notesTop.current = event.nativeEvent.layout.y; }}
       >
         <Text style={styles.sectionLabel}>Notas</Text>
-        <Input
+        <Input fieldId="notes"
           placeholder="Para lo que no cabe en la descripción"
           value={notes}
           onChangeText={onChangeNotes}

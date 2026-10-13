@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { positiveAmountField } from "../../lib/form-field-rules";
+import { positiveAmountField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
@@ -7,7 +7,7 @@ import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-nat
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { todayPeru } from "../../lib/date";
-import { humanizeError } from "../../lib/errors";
+
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
@@ -98,7 +98,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
   const currentPrincipal = obligation?.pendingAmount ?? 0;
 
   const resultingAmount = useMemo(() => {
-    const parsed = parseFloat(amount);
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount || isNaN(parsed) || parsed <= 0) return null;
     return isIncrease ? currentPrincipal + parsed : Math.max(0, currentPrincipal - parsed);
   }, [amount, currentPrincipal, isIncrease]);
@@ -107,7 +107,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
     [activeAccounts, accountId],
   );
   const projectedAccountDelta = useMemo(() => {
-    const parsed = parseFloat(amount);
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!createMovement || !selectedAccount || !amount || isNaN(parsed) || parsed <= 0) return null;
     if (isIncrease) {
       return isReceivable ? -parsed : parsed;
@@ -163,7 +163,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
     setAmountError("");
     setAccountError("");
     setSubmitError("");
-    const parsed = parseFloat(amount);
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount || isNaN(parsed) || parsed <= 0) {
       haptics.error();
       setAmountError("Ingresa un monto válido");
@@ -230,7 +230,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSubmitError(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -270,12 +270,14 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
 
   const validationFields = {
 
-      amount: positiveAmountField(amount, "Ingresa el monto", !isIncrease && obligation ? describeOverpayment({ amount: parseFloat(amount), pendingAmount: currentPrincipal + (isEditMode && editEvent?.eventType === "principal_decrease" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: "descuento" }) : null),
-      accountId: { value: accountId, missing: !isEditMode && createMovement && activeAccounts.length > 0 && accountId == null ? "Elige una cuenta" : null },
+      amount: positiveAmountField(amount, "Ingresa el monto", !isIncrease && obligation ? describeOverpayment({ amount: (parseFormAmountInput(amount) ?? Number.NaN), pendingAmount: currentPrincipal + (isEditMode && editEvent?.eventType === "principal_decrease" ? editEvent.amount : 0), formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: "descuento" }) : null),
+      accountId: { ...selectedAccountField(accountId, activeAccounts, !(!isEditMode && createMovement && activeAccounts.length > 0)), serverKeys: ["account_id", "settlement_account_id"] },
+      eventDate: dateField(eventDate),
+      reason: { value: reason },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={mutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editEvent?.id ?? obligation?.id} visible={visible} busy={mutation.isPending || updateEventMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
       <BottomSheet
@@ -371,7 +373,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
         ) : null}
 
         <View style={styles.group}>
-          <FormDateRow grouped last label="Cuándo" value={eventDate} onChange={setEventDate} />
+          <FormDateRow fieldId="eventDate" grouped last label="Cuándo" value={eventDate} onChange={setEventDate} />
         </View>
 
         {!isEditMode ? (

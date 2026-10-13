@@ -1,4 +1,4 @@
-import { humanizeError } from "../../lib/errors";
+
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { requiredField } from "../../lib/form-field-rules";
 import { useEffect, useRef, useState } from "react";
@@ -70,7 +70,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
       }
       onClose();
     } catch (error) {
-      setSaveFailure(humanizeError(error));
+      throw error;
     } finally {
       submittingRef.current = false;
     }
@@ -82,7 +82,7 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editSpendType?.id} visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <BottomSheet
       visible={visible}

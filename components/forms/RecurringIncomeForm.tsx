@@ -1,5 +1,6 @@
+import { incomeOptionalFields } from "../../features/recurring-income/lib/optional-form-fields";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, integerField } from "../../lib/form-field-rules";
+import { requiredField, positiveAmountField, integerField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -7,7 +8,7 @@ import { format } from "date-fns";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
+
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useCreateRecurringIncomeMutation, useUpdateRecurringIncomeMutation, useWorkspaceSnapshotQuery, type RecurringIncomeFormInput } from "../../services/queries/workspace-data";
@@ -316,7 +317,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       nameRef.current?.focus();
       return;
     }
-    const parsed = parseFloat(amount.replace(",", "."));
+    const parsed = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount.trim() || Number.isNaN(parsed) || parsed <= 0) {
       haptics.error();
       setAmountError("Ingresa un monto mayor a 0");
@@ -396,7 +397,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSubmitError(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -407,14 +408,19 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
 
       name: requiredField(name, "Escribe el nombre"),
       amount: positiveAmountField(amount),
-      nextExpectedDate: requiredField(nextExpectedDate, "Elige la próxima llegada", nextExpectedDate < startDate ? "La próxima llegada no puede ser anterior al inicio" : anchorIssue),
-      accountId: requiredField(accountId, "Elige una cuenta", null, () => setAccountOpen(true)),
-      endDate: { value: endDate, invalid: endDate && endDate < startDate ? "La fecha de fin no puede ser anterior al inicio" : null, reveal: () => setOptionalsOpen(true) },
+      nextExpectedDate: { ...dateField(nextExpectedDate, { min: startDate }), invalid: dateField(nextExpectedDate, { min: startDate }).invalid ?? (nextExpectedDate < startDate ? "La próxima llegada no puede ser anterior al inicio" : anchorIssue) },
+      accountId: { ...selectedAccountField(accountId, activeAccounts), open: () => setAccountOpen(true) },
+      endDate: { ...dateField(endDate, { optional: true, min: startDate }), reveal: () => setOptionalsOpen(true) },
       intervalCount: integerField(intervalCount, 1, 9999),
+      notes: { value: notes, reveal: () => setOptionalsOpen(true) },
+      categoryId: { value: categoryId, open: () => setCategoryOpen(true) },
+      startDate: { ...dateField(startDate, { optional: true }), autoContinue: true, reveal: () => setOptionalsOpen(true) },
+      currencyCode: requiredField(currencyCode, "Elige una moneda", null, () => setCurrencyOpen(true)),
+      ...Object.fromEntries(Object.entries(incomeOptionalFields(grossAmount, deductions, scheduledChanges)).map(([id, rule]) => [id, { ...rule, autoContinue: id.startsWith("change-date-"), reveal: () => id.startsWith("change-") ? setChangesOpen(true) : setBreakdownOpen(true) }])),
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editRecurringIncome?.id} visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
       <BottomSheet

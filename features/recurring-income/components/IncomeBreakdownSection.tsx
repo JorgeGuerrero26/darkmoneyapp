@@ -36,7 +36,7 @@ const nextKey = () => `d${(seed += 1)}`;
  * pantalla aparte costaría un salto para un dato que se consulta seguido. Cerrada, un alquiler o
  * unas clases —que no tienen descuentos— no ven una fila que no necesitan pedir.
  *
- * Nada de aquí bloquea el guardado. La línea de verificación informa y ya: hay descuentos reales
+ * Las filas añadidas deben completarse o quitarse. La línea de verificación solo informa: hay descuentos reales
  * que la boleta no detalla, y exigir el cuadre castigaría al usuario por algo que no controla.
  */
 export function IncomeBreakdownSection({
@@ -98,7 +98,7 @@ export function IncomeBreakdownSection({
             <Text style={styles.rowLabel} maxFontSizeMultiplier={1.4}>
               Bruto
             </Text>
-            <TextField
+            <TextField fieldId="grossAmount"
               value={grossAmount}
               onChangeText={onChangeGross}
               keyboardType="decimal-pad"
@@ -113,7 +113,7 @@ export function IncomeBreakdownSection({
           {deductions.map((row) => (
             <Fragment key={row.key}>
               <View style={styles.row}>
-                <TextField
+                <TextField fieldId={`deduction-name-${row.key}`}
                   style={styles.nameInput}
                   value={row.name}
                   onChangeText={(value) => updateRow(row.key, { name: value })}
@@ -124,7 +124,7 @@ export function IncomeBreakdownSection({
                 <Text style={styles.minus} maxFontSizeMultiplier={1.3}>
                   −
                 </Text>
-                <TextField
+                <TextField fieldId={`deduction-amount-${row.key}`}
                   value={row.amount}
                   onChangeText={(value) => updateRow(row.key, { amount: value })}
                   keyboardType="decimal-pad"

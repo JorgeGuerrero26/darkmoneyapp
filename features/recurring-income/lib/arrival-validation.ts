@@ -1,3 +1,4 @@
+import { parseFormAmountInput, dateField } from "../../../lib/form-field-rules";
 /**
  * Qué pasa con lo que se espera de aquí en adelante.
  *
@@ -10,7 +11,7 @@ export type RecurringIncomeBaseChangeMode = "once" | "forever";
 
 /** Movida desde app/recurring-income.tsx para compartirla con el dashboard. Cuerpo verbatim. */
 export function parseMoneyInput(value: string): number | null {
-  const parsed = Number(value.replace(",", "."));
+  const parsed = parseFormAmountInput(value) ?? Number.NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
@@ -35,7 +36,7 @@ export type ArrivalDraftResult =
  * llega esto, lo que llega **es** lo que acaba de declarar.
  */
 export function validateArrivalDraft(input: ArrivalDraftInput): ArrivalDraftResult {
-  if (!input.date.trim()) return { ok: false, error: "La fecha real de llegada es obligatoria." };
+  if (dateField(input.date).missing || dateField(input.date).invalid) return { ok: false, error: "La fecha real de llegada es obligatoria." };
   if (input.actualAmount == null) return { ok: false, error: "Ingresa un monto real mayor a 0." };
   if (input.accountId == null) return { ok: false, error: "Elige la cuenta destino para registrar el movimiento." };
 

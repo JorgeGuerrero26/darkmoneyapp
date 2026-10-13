@@ -1,6 +1,6 @@
-import { humanizeError } from "../../lib/errors";
+
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { positiveAmountField } from "../../lib/form-field-rules";
+import { positiveAmountField, parseFormAmountInput, dateField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { format, startOfMonth, endOfMonth } from "date-fns";
@@ -172,7 +172,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       showToast("Elige qué limita este presupuesto. Puede ser todo el gasto, si es un tope general.", "error");
       return;
     }
-    const amount = parseFloat(limitAmount);
+    const amount = (parseFormAmountInput(limitAmount) ?? Number.NaN);
     if (!limitAmount || isNaN(amount) || amount <= 0) {
       setAmountError("Ingresa un monto válido mayor a 0");
       valid = false;
@@ -228,7 +228,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSaveFailure(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -262,11 +262,14 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
       scopeId: { value: `${scopeTouched}:${categoryId}:${spendTypeId}:${accountId}`, missing: !scopeTouched && categoryId == null && spendTypeId == null && accountId == null ? "Elige qué limitas" : null, open: () => setScopeOpen(true) },
       limitAmount: positiveAmountField(limitAmount),
-      periodEnd: { value: periodEnd, invalid: periodEnd < periodStart ? "La fecha final no puede ser anterior a la inicial" : null },
+      periodEnd: dateField(periodEnd, { min: periodStart }),
+      name: { value: name },
+      notes: { value: notes },
+      periodStart: dateField(periodStart),
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editBudget?.id} visible={visible} busy={createMutation.isPending || updateMutation.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <>
     <BottomSheet
@@ -541,7 +544,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
       {recurrence === "none" ? (
         <View style={styles.group}>
-          <FormDateRow label="Desde" value={periodStart} onChange={setPeriodStart} grouped />
+          <FormDateRow fieldId="periodStart" label="Desde" value={periodStart} onChange={setPeriodStart} grouped />
           <FormDateRow fieldId="periodEnd" label="Hasta" value={periodEnd} onChange={setPeriodEnd} grouped last />
         </View>
       ) : (

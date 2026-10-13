@@ -1,4 +1,4 @@
-import { humanizeError } from "../../lib/errors";
+
 import { FormFeedbackProvider } from "../ui/FormFeedback";
 import { requiredField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -185,7 +185,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSaveFailure(humanizeError(err));
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -229,7 +229,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={editCategory?.id} visible={visible} busy={isLoading} onSubmit={handleSubmit} fields={validationFields}>
 
     <FormSheetScaffold
       visible={visible}

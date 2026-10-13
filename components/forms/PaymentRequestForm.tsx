@@ -1,5 +1,5 @@
-import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { positiveAmountField } from "../../lib/form-field-rules";
+import { FormFeedbackProvider, FormSubmitBar, FormFieldGroup } from "../ui/FormFeedback";
+import { positiveAmountField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Clock, Info } from "lucide-react-native";
@@ -7,7 +7,7 @@ import { Clock, Info } from "lucide-react-native";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { todayPeru } from "../../lib/date";
-import { humanizeError } from "../../lib/errors";
+
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
@@ -79,7 +79,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
     setSubmitError("");
     setAmountError("");
 
-    const numAmount = parseFloat(amount.replace(",", "."));
+    const numAmount = (parseFormAmountInput(amount) ?? Number.NaN);
     if (!amount.trim() || isNaN(numAmount) || numAmount <= 0) {
       haptics.error();
       setAmountError(`Ingresa el monto del ${verb}`);
@@ -135,8 +135,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      setSubmitError(humanizeError(err));
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      throw err;
     } finally {
       submittingRef.current = false;
     }
@@ -144,11 +143,14 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
 
   const validationFields = {
 
-      amount: positiveAmountField(amount, "Ingresa el monto", describeOverpayment({ amount: parseFloat(amount.replace(",", ".")), pendingAmount: obligation.pendingAmount, formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: verb })),
+      amount: positiveAmountField(amount, "Ingresa el monto", describeOverpayment({ amount: (parseFormAmountInput(amount) ?? Number.NaN), pendingAmount: obligation.pendingAmount, formatAmount: (value) => formatCurrency(value, obligation.currencyCode), noun: verb })),
+      paymentDate: dateField(paymentDate),
+      accountId: { ...selectedAccountField(selectedAccountId, viewerAccounts, true), serverKeys: ["viewer_account_id"] },
+      description: { value: description },
   };
 
   return (
-    <FormFeedbackProvider visible={visible} busy={createRequest.isPending} onSubmit={handleSubmit} fields={validationFields}>
+    <FormFeedbackProvider resetKey={obligation.id} visible={visible} busy={createRequest.isPending} onSubmit={handleSubmit} fields={validationFields}>
 
     <BottomSheet visible={visible} onClose={handleClose} title={title} scrollRef={scrollRef} footer={<FormSubmitBar label={`Enviar solicitud de registro de ${verb}`} onSubmit={handleSubmit} loading={createRequest.isPending} error={submitError} />}>
 
@@ -195,16 +197,16 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
         currencyCode={obligation.currencyCode}
       />
 
-      <DatePickerInput
+      <DatePickerInput fieldId="paymentDate"
         label="Fecha *"
         value={paymentDate}
         onChange={setPaymentDate}
       />
 
       {/* Account selector */}
-      <View style={styles.field}>
+      <FormFieldGroup fieldId="accountId" label={accountLabel}>
         <View style={styles.accountLabelRow}>
-          <Text style={styles.fieldLabel}>{accountLabel}</Text>
+
           <Text style={styles.accountOptional}>opcional</Text>
         </View>
         {viewerAccounts.length === 0 ? (
@@ -241,7 +243,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
             })}
           </View>
         )}
-      </View>
+      </FormFieldGroup>
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripción (opcional)</Text>

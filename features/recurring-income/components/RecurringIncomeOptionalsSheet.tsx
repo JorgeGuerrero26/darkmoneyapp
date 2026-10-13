@@ -93,7 +93,7 @@ export function RecurringIncomeOptionalsSheet({
           />
         ) : null}
         {showCategory ? (
-          <FormOptionRow
+          <FormOptionRow fieldId="categoryId"
             grouped
             label="Categoría"
             value={categoryLabel}
@@ -133,7 +133,7 @@ export function RecurringIncomeOptionalsSheet({
       <Text style={styles.hint}>Solo si este ingreso empezó antes o termina en una fecha conocida.</Text>
 
       <Text style={styles.sectionLabel}>Notas</Text>
-      <TextField
+      <TextField fieldId="notes"
         style={[styles.input, styles.notes]}
         value={notes}
         onChangeText={onChangeNotes}
