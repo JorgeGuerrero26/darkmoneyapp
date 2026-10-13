@@ -2742,9 +2742,6 @@ export function recordManualMovementFingerprint(
   void notificationDetection.recordManualMovementRegistered(`${prefix} ${amount.toFixed(2)}`);
 }
 
-/** Movimientos creados por el motor local: no hace falta empujar la sincronización, ya está agendada. */
-const locallyCreated = new WeakSet<object>();
-
 export function useCreateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   const localReady = useOfflineLocalReady(workspaceId);
@@ -2764,7 +2761,6 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       if (workspaceId) {
         const local = await offlineRuntime.createMovement(workspaceId, input);
         if (local) {
-          locallyCreated.add(local);
           recordManualMovementFingerprint(workspaceId, input);
           return local;
         }
@@ -2786,8 +2782,6 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       );
     },
     onSuccess: (_data) => {
-      // Creado por la vía de siempre con el motor encendido: la base local aún no lo tiene.
-      if (!locallyCreated.has(_data)) void offlineRuntime.requestSync("write");
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
       if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);

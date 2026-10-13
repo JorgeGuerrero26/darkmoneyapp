@@ -74,6 +74,15 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
     });
   }, [queryClient]);
 
+  // Tras CUALQUIER escritura exitosa de la app (alta online, pago de una obligación, categoría
+  // nueva…) la base local se pone al día en breve: el motor junta varias en un solo ciclo.
+  useEffect(() => {
+    if (!enabled) return;
+    return queryClient.getMutationCache().subscribe((event) => {
+      if (event.type === "updated" && event.action.type === "success") offlineRuntime.nudge();
+    });
+  }, [queryClient, enabled]);
+
   // Encendido / apagado y cambio de usuario o de espacio.
   useEffect(() => {
     if (!loaded) return;

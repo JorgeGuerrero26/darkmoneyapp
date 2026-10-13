@@ -235,6 +235,15 @@ export class OfflineRuntime {
     return report;
   }
 
+  /**
+   * Algo se escribió por otra vía (un alta online, un pago de obligación, una categoría nueva):
+   * la base local todavía no lo tiene. Se pone al día en breve, junto con otras escrituras que
+   * lleguen seguidas, sin esperar al latido de 5 minutos.
+   */
+  nudge() {
+    if (this.state.availability === "ready") this.scheduleWriteSync();
+  }
+
   private scheduleWriteSync() {
     if (this.writeTimer) clearTimeout(this.writeTimer);
     this.writeTimer = setTimeout(() => {

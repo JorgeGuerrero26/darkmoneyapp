@@ -10,13 +10,14 @@ const expense = (description: string, amount: number) => ({
 });
 
 /** Servidor falso mínimo: acepta todo y devuelve la fila como la dejaría el servidor real. */
-function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean }): SyncTransport {
+function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: number }): SyncTransport {
   let nextId = 1000;
   return {
     async reserveIds(_ws, _table, count) {
       return Array.from({ length: count }, () => nextId++);
     },
     async pullChanges(_ws, cursors, tables) {
+      log.pulls += 1;
       return {
         server_time: "2026-10-12T15:00:00.000Z",
         tables: Object.fromEntries(
@@ -42,7 +43,7 @@ function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean }): SyncTran
 }
 
 function setup(overrides: Partial<RuntimeDeps> = {}) {
-  const log = { pushed: [] as PushOp[][], failPush: false };
+  const log = { pushed: [] as PushOp[][], failPush: false, pulls: 0 };
   const drivers: Record<string, SqlDriver> = {};
   const deleted: string[] = [];
   const runtime = new OfflineRuntime({
@@ -157,6 +158,25 @@ describe("OfflineRuntime", () => {
     await settle();
     const kinds = log.pushed.flat().map((op) => op.kind);
     expect(kinds).toEqual(["insert", "delete"]);
+  });
+
+  it("nudge: tras una escritura por otra vía la base local se pone al día sin esperar el latido", async () => {
+    const { runtime, log } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    const before = log.pulls;
+    runtime.nudge();
+    runtime.nudge(); // varias seguidas se juntan en un solo ciclo
+    await settle();
+    expect(log.pulls).toBe(before + 1);
+  });
+
+  it("nudge no hace nada con el modo apagado", async () => {
+    const { runtime, log } = setup();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+    runtime.nudge();
+    await settle();
+    expect(log.pulls).toBe(0);
   });
 
   it("editar algo que no está en local devuelve false para caer al camino online", async () => {
