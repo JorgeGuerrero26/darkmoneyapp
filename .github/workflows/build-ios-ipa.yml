@@ -103,14 +103,21 @@ jobs:
       # en el IPA 1.0.8: docs/REINSTALL_IOS.md). Se comprueba en el binario.
       - name: Verificar módulos nativos dentro del binario
         run: |
-          set -euo pipefail
+          set -uo pipefail
           BIN=Payload/DarkMoney.app/DarkMoney
           fail=0
-          for k in ExpoSQLite ExpoSecureStore ExpoCamera ExpoSpeechRecognition; do
-            n=$(grep -ao "$k" "$BIN" | wc -l | tr -d ' ')
+          # grep -c sale con 1 si no hay coincidencias; con pipefail eso mataba el script antes de mostrar el 0.
+          for k in ExpoSQLite ExpoSecureStore ExpoCamera; do
+            n=$(grep -ao "$k" "$BIN" | wc -l | tr -d " " || true)
             echo "$k: $n"
-            if [ "$n" -eq 0 ]; then echo "::error::El módulo $k no está en el binario"; fail=1; fi
+            if [ "${n:-0}" -eq 0 ]; then echo "::error::El módulo $k no está en el binario"; fail=1; fi
           done
+          # Reconocimiento de voz: solo avisa (el asistente de voz está protegido con require y degrada a no-op).
+          n=$(grep -ao "ExpoSpeechRecognition" "$BIN" | wc -l | tr -d " " || true)
+          echo "ExpoSpeechRecognition: ${n:-0}"
+          echo "ExpoSpeech (prefijo): $(grep -ao "ExpoSpeech" "$BIN" | wc -l | tr -d " " || true)"
+          echo "Podfile.lock:"; grep -i "speech" ios/Podfile.lock || echo "(sin entradas de speech en Podfile.lock)"
+          if [ "${n:-0}" -eq 0 ]; then echo "::warning::ExpoSpeechRecognition no está en el binario: el dictado por voz no funcionará en este IPA"; fi
           # El JS va embebido (Release): sin esto la app necesitaría un servidor de desarrollo.
           test -f Payload/DarkMoney.app/main.jsbundle || { echo "::error::Falta main.jsbundle"; fail=1; }
           exit $fail
