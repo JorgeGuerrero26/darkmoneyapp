@@ -75,6 +75,23 @@ jobs:
           </plist>
           EOF
 
+      # ExpoSpeechRecognition no entra a los pods en el runner aunque localmente sí se resuelve:
+      # se vuelca lo que ve el autolinking para ver dónde se pierde. No bloquea.
+      - name: Diagnóstico de autolinking (voz)
+        continue-on-error: true
+        run: |
+          echo "--- carpeta del paquete ---"
+          ls -la node_modules/expo-speech-recognition node_modules/expo-speech-recognition/ios || true
+          echo "--- expo-module.config.json ---"
+          cat node_modules/expo-speech-recognition/expo-module.config.json || true
+          echo "--- autolinking (apple) ---"
+          npx expo-modules-autolinking resolve --platform apple --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log("módulos:",j.modules.length);console.log(JSON.stringify(j.modules.filter(m=>/speech/i.test(m.packageName)),null,1))})' || true
+          echo "--- autolinking (ios) ---"
+          npx expo-modules-autolinking resolve --platform ios --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log("módulos:",j.modules.length);console.log(j.modules.map(m=>m.packageName).filter(n=>/speech/i.test(n)))})' || true
+          echo "--- Podfile ---"
+          grep -n -i "expo_modules\|exclude\|platform :ios\|speech" ios/Podfile || true
+          cat ios/Podfile.properties.json || true
+
       - name: Instalar pods
         working-directory: ios
         run: pod install
