@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "target": "ES2022",
+    "outDir": ".tmp/offline-tests",
+    "rootDir": ".",
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": [
+    "lib/offline/*.ts",
+    "lib/offline/__tests__/helpers/*.ts",
+    "lib/offline/__tests__/*.e2e.ts"
+  ],
+  "exclude": ["lib/offline/expo-driver.ts"]
+}
