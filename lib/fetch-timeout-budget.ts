@@ -72,6 +72,10 @@ function isTableWrite(url: string, method: string | undefined): boolean {
   // Solo escrituras de tabla. Los RPC viajan por POST pero son mayormente lecturas, y en
   // /auth/v1 un refresh colgado 25 s congelaría el arranque entero.
   if (!url.includes("/rest/v1/")) return false;
+  // push_batch (motor offline) es la excepción: escribe hasta 100 operaciones por llamada y
+  // cortarla a los 12 s de una lectura dejaría el lote en duda. Es idempotente por op_id, así
+  // que si aun así vence, el reintento no duplica.
+  if (url.includes("/rest/v1/rpc/push_batch")) return true;
   return !url.includes("/rest/v1/rpc/");
 }
 

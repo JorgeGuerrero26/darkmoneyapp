@@ -38,6 +38,13 @@ describe("resolveFetchTimeoutMs", () => {
     expect(resolveFetchTimeoutMs(RPC, "POST")).toBe(READ_TIMEOUT_MS);
   });
 
+  it("push_batch del motor offline es la excepción: escribe, así que tiene plazo de escritura", () => {
+    const PUSH = "https://proj.supabase.co/rest/v1/rpc/push_batch";
+    expect(resolveFetchTimeoutMs(PUSH, "POST")).toBe(WRITE_TIMEOUT_MS);
+    // El resto de RPC del motor son lecturas y conservan el plazo corto.
+    expect(resolveFetchTimeoutMs("https://proj.supabase.co/rest/v1/rpc/pull_changes", "POST")).toBe(READ_TIMEOUT_MS);
+  });
+
   it("auth sigue corto: un refresh colgado congelaria el arranque", () => {
     expect(resolveFetchTimeoutMs(AUTH, "POST")).toBe(READ_TIMEOUT_MS);
   });
