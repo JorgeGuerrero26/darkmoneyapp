@@ -12,9 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24: las pruebas del motor offline usan node:sqlite, que no existe antes de Node 22.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Instalar dependencias
@@ -30,6 +31,10 @@ jobs:
 
       - name: Validación del publicador OTA
         run: npm run test:ota
+
+      # Motor offline contra las migraciones reales (PostgreSQL local con PGlite).
+      - name: Motor offline de punta a punta
+        run: npm run test:offline-e2e
 
   edge-functions:
     runs-on: ubuntu-latest
