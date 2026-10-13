@@ -12,6 +12,7 @@ import type { MovementFormInput } from "./workspace-data";
 import type { JsonValue, MovementRecord, MovementType } from "../../types/domain";
 import { parseDuplicateVerdict, type DuplicateAiResult } from "../../features/notifications/lib/duplicate-verdict";
 import { requestDetectedRegistrationUndo, type DetectionUndoInput } from "../../features/detected-movements/lib/detection-undo";
+import { detectionDuplicateBounds } from "../../features/detected-movements/lib/duplicate-day";
 
 export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate" | "needs_review";
 export type DetectedMovementConfidence = "high" | "medium" | "low";
@@ -78,6 +79,8 @@ export type DuplicateMovementInput = {
   amount: number;
   occurredAt: string;
   description: string;
+  destinationAccountId?: number | null;
+  destinationAmount?: number | null;
 };
 
 function isPackageName(s?: string | null): boolean {
@@ -748,31 +751,32 @@ export function useAiUsageTodayQuery(userId?: string | null) {
 
 export async function findPossibleDuplicateMovement(input: DuplicateMovementInput): Promise<MovementRecord | null> {
   if (!supabase) throw new Error("Supabase no está configurado.");
-  const date = new Date(input.occurredAt);
-  const day = Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
-  const from = `${day}T00:00:00.000Z`;
-  const to = `${day}T23:59:59.999Z`;
+  const { from, to } = detectionDuplicateBounds(input.occurredAt);
+  if (!input.accountId || !Number.isFinite(input.amount) || input.amount <= 0) throw new Error("Revisa cuenta e importe antes de comprobar coincidencias.");
+  if (input.movementType === "transfer" && (!input.destinationAccountId || !Number.isFinite(input.destinationAmount) || input.destinationAmount! <= 0))
+    throw new Error("Revisa el destino de la transferencia antes de comprobar coincidencias.");
   const amountColumn = input.movementType === "income" ? "destination_amount" : "source_amount";
   const accountColumn = input.movementType === "income" ? "destination_account_id" : "source_account_id";
-
-  let query = supabase
-    .from("movements")
-    .select("id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata")
-    .eq("workspace_id", input.workspaceId)
-    .eq("movement_type", input.movementType)
-    .eq("status", "posted")
-    .gte("occurred_at", from)
-    .lte("occurred_at", to)
-    .eq(amountColumn, input.amount);
-
-  if (input.accountId) query = query.eq(accountColumn, input.accountId);
-
-  const { data, error } = await query.limit(10);
-  if (error) throw new Error(error.message ?? "No se pudo validar duplicados");
   const normalizedDescription = normalizeDescription(input.description);
-  const row = (data ?? []).find((item: any) => normalizeDescription(item.description ?? "") === normalizedDescription);
-  if (!row) return null;
-  return mapDuplicateMovement(row);
+  for (let offset = 0; ; offset += 500) {
+    const query = supabase
+      .from("movements")
+      .select("id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata")
+      .eq("workspace_id", input.workspaceId)
+      .eq("movement_type", input.movementType)
+      .eq("status", "posted")
+      .gte("occurred_at", from)
+      .lt("occurred_at", to)
+      .eq(amountColumn, input.amount)
+      .eq(accountColumn, input.accountId)
+      .order("occurred_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 499);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message ?? "No se pudo validar duplicados");
+    const row = (data ?? []).find((item: any) => normalizeDescription(item.description ?? "") === normalizedDescription &&
+      (input.movementType !== "transfer" || (Number(item.destination_account_id) === input.destinationAccountId && Number(item.destination_amount) === input.destinationAmount)));
+    if (row) return mapDuplicateMovement(row);
+    if (!data || data.length < 500) return null;
+  }
 }
 
 function mapDuplicateMovement(row: Record<string, any>): MovementRecord {
@@ -810,47 +814,47 @@ export type SameDayDetectionSignals = {
 /** Conteos que alimentan la verificación IA: si hay más señales detectadas que
  *  movimientos coincidentes, el "duplicado" probablemente es otro movimiento real. */
 export async function countSameDayDetectionSignals(input: {
+  userId: string;
+  currencyCode: string;
   workspaceId: number;
   amount: number;
   movementType: string;
   occurredAt: string;
-  accountId?: number | null;
+  accountId: number | null;
 }): Promise<SameDayDetectionSignals> {
   if (!supabase) throw new Error("Supabase no está configurado.");
-  const date = new Date(input.occurredAt);
-  const day = Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
-  const from = `${day}T00:00:00.000Z`;
-  const to = `${day}T23:59:59.999Z`;
-
-  const suggestionsQuery = supabase
+  if (!input.userId || !input.currencyCode || !input.accountId || !Number.isFinite(input.amount) || input.amount <= 0)
+    throw new Error("Revisa el usuario, la moneda y la cuenta para comprobar coincidencias.");
+  const { from, to } = detectionDuplicateBounds(input.occurredAt);
+  const suggestionsQuery = () => supabase!
     .from("notification_detected_movement_suggestions")
-    .select("id, status", { count: "exact" })
+    .select("id", { count: "exact", head: true })
     .eq("workspace_id", input.workspaceId)
+    .eq("user_id", input.userId).eq("currency_code", input.currencyCode).eq("movement_type", input.movementType)
+    .in("status", ["pending", "needs_review", "registered"])
     .eq("amount", input.amount)
     .gte("occurred_at", from)
-    .lte("occurred_at", to);
+    .lt("occurred_at", to);
 
   const amountColumn = input.movementType === "income" ? "destination_amount" : "source_amount";
-  let movementsQuery = supabase
+  const movementsQuery = supabase
     .from("movements")
     .select("id", { count: "exact", head: true })
     .eq("workspace_id", input.workspaceId)
     .eq("movement_type", input.movementType)
     .eq("status", "posted")
     .gte("occurred_at", from)
-    .lte("occurred_at", to)
-    .eq(amountColumn, input.amount);
-  if (input.accountId) {
-    const accountColumn = input.movementType === "income" ? "destination_account_id" : "source_account_id";
-    movementsQuery = movementsQuery.eq(accountColumn, input.accountId);
-  }
-
-  const [suggestionsRes, movementsRes] = await Promise.all([suggestionsQuery, movementsQuery]);
-  const rows = (suggestionsRes.data ?? []) as Array<{ status: string }>;
+    .lt("occurred_at", to)
+    .eq(amountColumn, input.amount)
+    .eq(input.movementType === "income" ? "destination_account_id" : "source_account_id", input.accountId);
+  const results = await Promise.all([suggestionsQuery(), suggestionsQuery().eq("status", "registered"), movementsQuery]);
+  if (results.some(result => result.error || !Number.isSafeInteger(result.count) || result.count! < 0))
+    throw new Error("No se pudo consultar la evidencia de coincidencias.");
+  if (results[1].count! > results[0].count!) throw new Error("La evidencia cambió durante la consulta.");
   return {
-    sameDaySuggestions: suggestionsRes.count ?? rows.length,
-    sameDayRegisteredFromSuggestions: rows.filter((row) => row.status === "registered").length,
-    sameDayMatchingMovements: movementsRes.count ?? 0,
+    sameDaySuggestions: results[0].count!,
+    sameDayRegisteredFromSuggestions: results[1].count!,
+    sameDayMatchingMovements: results[2].count!,
   };
 }
 

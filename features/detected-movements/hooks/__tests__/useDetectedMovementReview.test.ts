@@ -12,6 +12,9 @@ const mockUndo = jest.fn().mockResolvedValue({});
 const mockDelete = jest.fn();
 const mockMark = jest.fn().mockResolvedValue({});
 const mockDuplicate = jest.fn().mockResolvedValue(null);
+const mockCounts = jest.fn();
+const mockDuplicateAi = jest.fn();
+let mockProAccess = false;
 const mockResolved = jest.fn();
 const mockAccounts = [{ id: 1, name: "Principal", currencyCode: "PEN", isArchived: false }] as AccountSummary[];
 const mockCategories = [{ id: 2, name: "Compras", kind: "expense", isActive: true }] as CategorySummary[];
@@ -41,6 +44,8 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
   useUndoDetectedMovementRegistrationMutation: () => ({ ...mockMutation, mutateAsync: mockUndo }),
   useAiUsageTodayQuery: () => ({ data: null }),
   findPossibleDuplicateMovement: (...args: unknown[]) => mockDuplicate(...args),
+  countSameDayDetectionSignals: (...args: unknown[]) => mockCounts(...args),
+  confirmDuplicateWithAi: (...args: unknown[]) => mockDuplicateAi(...args),
   recordSuggestionAction: jest.fn().mockResolvedValue(null),
 }));
 jest.mock("../../../../services/queries/workspace-data", () => ({
@@ -54,7 +59,7 @@ jest.mock("../../../../services/queries/workspace-data", () => ({
   useMarkNotificationReadMutation: () => mockMutation,
   usePersistLearningFeedbackMutation: () => mockMutation,
   useDashboardAnalyticsQuery: () => ({ data: null }),
-  useUserEntitlementQuery: () => ({ data: { proAccessEnabled: false } }),
+  useUserEntitlementQuery: () => ({ data: { proAccessEnabled: mockProAccess } }),
 }));
 jest.mock("../../../../services/queries/email-detection-access", () => ({ useEmailDetectionProAccessQuery: () => ({ data: true }), assertEmailDetectionProAccess: jest.fn().mockResolvedValue(true) }));
 jest.mock("../../../../services/queries/movement-patterns", () => ({ useMovementPatternsQuery: () => ({ data: null }) }));
@@ -69,7 +74,7 @@ jest.mock("../../../../hooks/useMovementBudgetImpact", () => ({ useMovementBudge
 let current: DetectedMovementReview;
 function Harness({ visible = true, previewEnabled = false }: { visible?: boolean; previewEnabled?: boolean }) { current = useDetectedMovementReview({ visible, previewEnabled, suggestionId: 7, onClose: jest.fn(), onResolved: mockResolved }); return null; }
 let renderer: ReturnType<typeof create>;
-beforeEach(async () => { jest.clearAllMocks(); mockWorkspaceId = 9; mockUndo.mockResolvedValue({}); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
+beforeEach(async () => { jest.clearAllMocks(); mockProAccess = false; mockCounts.mockResolvedValue({ sameDaySuggestions: 2, sameDayRegisteredFromSuggestions: 1, sameDayMatchingMovements: 1 }); mockDuplicateAi.mockResolvedValue({ verdict: "distinct", reason: null }); mockWorkspaceId = 9; mockUndo.mockResolvedValue({}); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
 afterEach(async () => { await act(async () => renderer.unmount()); });
 
 function learnedMovement(id: number, overrides: Partial<LearningMovement> = {}): LearningMovement {
@@ -220,6 +225,28 @@ it("pide resolver el duplicado y permite guardar igual de forma explícita", asy
   expect(current.duplicateCandidate?.id).toBe(22);
   expect(mockCreate).not.toHaveBeenCalled();
   await act(async () => { await current.submit(true); });
+  expect(mockCreate).toHaveBeenCalledTimes(1);
+});
+it("a failed duplicate lookup never becomes permission to save", async () => {
+  mockDuplicate.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => { await current.submit(); });
+  expect(mockCreate).not.toHaveBeenCalled(); expect(mockDuplicateAi).not.toHaveBeenCalled();
+  expect(current.saveError).toBeTruthy();
+});
+it("a failed count read stays in manual review without calling AI with made-up evidence", async () => {
+  mockProAccess = true; await act(async () => renderer.update(React.createElement(Harness)));
+  mockDuplicate.mockResolvedValue({ id: 22, description: "Tambo", occurredAt: mockReceipt.occurredAt });
+  mockCounts.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => { await current.submit(); });
+  expect(mockCounts).toHaveBeenCalledWith(expect.objectContaining({ userId: "tester", currencyCode: "PEN", accountId: 1 }));
+  expect(mockDuplicateAi).not.toHaveBeenCalled(); expect(mockCreate).not.toHaveBeenCalled();
+  expect(current.duplicateCandidate?.id).toBe(22);
+});
+it("uses scoped evidence for the same AI contract when it confirms a distinct movement", async () => {
+  mockProAccess = true; await act(async () => renderer.update(React.createElement(Harness)));
+  mockDuplicate.mockResolvedValue({ id: 22, description: "Tambo", occurredAt: mockReceipt.occurredAt });
+  await act(async () => { await current.submit(); });
+  expect(mockDuplicateAi).toHaveBeenCalledWith(expect.objectContaining({ counts: { sameDaySuggestions: 2, sameDayRegisteredFromSuggestions: 1, sameDayMatchingMovements: 1 } }));
   expect(mockCreate).toHaveBeenCalledTimes(1);
 });
 

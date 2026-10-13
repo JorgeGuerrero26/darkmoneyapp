@@ -687,7 +687,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
     amount,
     occurredAt: suggestion.occurredAt,
     description,
-  }).catch(() => null);
+  });
   if (duplicate) {
     // Antes de cerrar como 'duplicate' vinculada al movimiento existente, se consulta la IA
     // (cuando aplica): si no puede confirmar, la sugerencia pasa a 'needs_review' en vez de
@@ -697,13 +697,15 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
         ? (suggestion.metadata as Record<string, JsonValue>)
         : {};
     const counts = await countSameDayDetectionSignals({
+      userId,
+      currencyCode: selectedAccountCurrencyCode,
       workspaceId,
       amount,
       movementType,
       occurredAt: suggestion.occurredAt,
       accountId: payload.accountId ?? null,
-    }).catch(() => ({ sameDaySuggestions: 0, sameDayRegisteredFromSuggestions: 0, sameDayMatchingMovements: 1 }));
-    const aiResult = await confirmDuplicateWithAi({
+    }).catch(() => null);
+    const aiResult = counts && counts.sameDayMatchingMovements > 0 ? await confirmDuplicateWithAi({
       workspaceId,
       suggestion: {
         description,
@@ -719,7 +721,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
         amount,
       },
       counts,
-    });
+    }) : { verdict: "unknown" as const, reason: null };
     const action = resolveDuplicateAction(aiResult.verdict);
 
     if (action === "close-duplicate") {

@@ -702,6 +702,8 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
           amount: parsedAmount,
           occurredAt,
           description,
+          destinationAccountId: movementType === "transfer" ? destinationAccountId : null,
+          destinationAmount: movementType === "transfer" ? (transferCurrenciesDiffer ? parsePositiveAmountInput(destinationAmount) : parsedAmount) : null,
         });
         if (duplicate) {
           // Conserva la verificación existente de IA; si no confirma que es distinto,
@@ -709,13 +711,15 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
           let confirmedDistinct = false;
           if (entitlementQuery.data?.proAccessEnabled) {
             const counts = await countSameDayDetectionSignals({
+              userId: profile?.id ?? suggestion.userId,
+              currencyCode: suggestion.currencyCode,
               workspaceId: activeWorkspaceId,
               amount: parsedAmount,
               movementType,
               occurredAt,
               accountId,
-            }).catch(() => ({ sameDaySuggestions: 0, sameDayRegisteredFromSuggestions: 0, sameDayMatchingMovements: 1 }));
-            const aiResult = await confirmDuplicateWithAi({
+            }).catch(() => null);
+            const aiResult = counts && counts.sameDayMatchingMovements > 0 ? await confirmDuplicateWithAi({
               workspaceId: activeWorkspaceId,
               suggestion: {
                 description: description.trim() || suggestion.description,
@@ -731,7 +735,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
                 amount: parsedAmount,
               },
               counts,
-            });
+            }) : { verdict: "unknown" as const, reason: null };
             if (aiResult.verdict === "distinct") {
               confirmedDistinct = true;
             }
