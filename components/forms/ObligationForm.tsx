@@ -19,6 +19,8 @@ import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import { useCreateObligationMutation, useUpdateObligationMutation, useCreateObligationShareInviteMutation, useUnlinkObligationShareMutation, useObligationActiveShareQuery, type ObligationFormInput } from "../../services/queries/obligations";
 import { shouldResendShareInvite } from "../../lib/obligation-share";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { waitUntilSent } from "../../lib/offline/ensure-sent";
 import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
@@ -496,6 +498,22 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           description: description.trim() || null,
           notes: notes.trim() || null,
         });
+        // Modo sin conexión (beta): invitar a alguien lo hace un servicio del servidor, que solo funciona con internet y
+        // necesita que la obligación YA exista allí. Si todavía solo está en el teléfono no se ofrece invitar: la obligación
+        // queda guardada, se envía sola y la invitación se hace después desde su detalle.
+        const reachedServer = activeWorkspaceId ? await waitUntilSent(offlineRuntime, activeWorkspaceId, "obligations", created.id) : true;
+        if (!reachedServer) {
+          showToast(
+            "Obligación guardada en tu teléfono",
+            "success",
+            shareEmail.trim() ? "La invitación la podrás enviar cuando haya internet." : "Se enviará sola cuando haya internet.",
+          );
+          submitDedupeKeyRef.current = null;
+          haptics.success();
+          onSuccess?.();
+          onClose();
+          return;
+        }
         if (shareEmail.trim() && activeWorkspaceId) {
           const r = await shareMutation.mutateAsync({
             workspaceId: activeWorkspaceId,
