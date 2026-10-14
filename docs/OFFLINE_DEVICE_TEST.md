@@ -21,12 +21,13 @@ Requiere el IPA/APK **1.1.0** (docs/BUILD_IPA_GITHUB.md para el IPA).
 1. Activa **modo avión** (Wi-Fi y datos apagados).
 2. En *Movimientos*, registra **10 movimientos seguidos**. Anota si cada guardado es instantáneo.
    - ✅ Cada uno se guarda al momento, sin espera ni error.
-   - ✅ Arriba de la lista aparece **Sin conexión · N cambios guardados…**.
+   - ✅ Bajo el título de la pantalla, donde decía "Actualizado hace…", aparece en dorado **Sin conexión · N por enviar ›** (tras 2–3 s si aún no hay nada guardado).
+   - ✅ Cada movimiento sin enviar muestra un reloj dorado y **Por enviar · hora**.
    - ✅ El saldo de la cuenta baja/sube de inmediato (Cuentas e inicio).
 3. Edita uno (monto y descripción), anula otro y borra otro. Deben verse al instante.
 4. **Cierra la app del todo** (desliza hacia arriba para matarla) y vuelve a abrirla **todavía sin
-   internet**. ✅ Los 10 movimientos y los cambios siguen ahí; el aviso sigue diciendo cuántos faltan.
-5. Quita el modo avión. ✅ En segundos el aviso pasa a *Enviando…* y desaparece (*Todo al día*).
+   internet**. ✅ Los 10 movimientos y los cambios siguen ahí; la línea dorada sigue diciendo cuántos faltan.
+5. Quita el modo avión. ✅ La línea pasa a gris **Enviando 2 de 3…**, aparece el aviso **3 cambios enviados** y vuelve **Actualizado hace…**.
 6. Comprueba en otro dispositivo, o en la web, que los movimientos llegaron **una sola vez** (sin
    duplicados) y con los montos correctos.
 
@@ -89,7 +90,7 @@ ingresos siguen en línea. Las migraciones de servidor `202610130001` y `2026101
 A. **Catálogo nuevo y de inmediato usado:** en modo avión crea una categoría desde *Categorías* y una cuenta
    desde *Cuentas*; sin cerrar nada, registra un movimiento con ambas. Esperado: la categoría y la cuenta
    aparecen al instante en el formulario y en su lista, el saldo de la cuenta nueva cambia, y arriba de cada
-   lista aparece el aviso "Sin conexión · N cambios guardados".
+   lista (y en el encabezado) aparece "Sin conexión · N por enviar".
 B. **Persistencia:** mata la app del todo, ábrela sin internet: todo sigue ahí. Quita el modo avión: el aviso
    pasa a "Todo al día"; en la web aparecen una sola vez (sin duplicados).
 C. **Borrado con comprobación:** borrar una categoría con movimientos debe decir, sin red, "No se puede
@@ -117,3 +118,16 @@ L. **Borrar una obligación** y todo lo de compartir (invitar, solicitudes de pa
    siendo en línea; sin red muestran el último dato guardado.
 
 ### Casos extendidos
+
+### Guía corta del estado global (Revisión 54)
+
+M. **Línea de estado:** en cualquier módulo (Movimientos, Cuentas, Presupuestos, Obligaciones…) la línea bajo el título es la misma.
+   Sin conexión: dorada, "Sin conexión · N por enviar ›". Con todo al día: "Actualizado hace…" como siempre. No debe haber tarjeta
+   ni píldora flotando en el contenido.
+N. **Hoja de pendientes:** toca la línea dorada. Se abre "Pendientes de enviar" con TODOS los cambios de todos los módulos, el más
+   reciente primero y con su hora ("Nuevo movimiento · Café", "Cuenta editada · nombre"), la nota de que los saldos ya los incluyen y
+   el botón **Intentar enviar ahora**. Tocar un cambio abre su pantalla.
+O. **Al volver internet:** gris "Enviando 2 de 3…", luego el aviso "3 cambios enviados" y de nuevo "Actualizado hace 1 s".
+P. **Si algo falla:** la línea pasa a rojo "1 cambio necesita revisión ›" y no desaparece hasta resolverlo desde la hoja.
+Q. **Corte breve:** quita y pon el internet en menos de 2 segundos: la línea no debe parpadear.
+R. **Modo apagado:** ninguna de estas líneas ni avisos aparece, y los encabezados son los de siempre.
