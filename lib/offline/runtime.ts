@@ -52,6 +52,12 @@ export type RuntimeDeps = {
   now?: () => number;
   /** Espera tras una escritura antes de sincronizar: junta varias altas seguidas en un solo envío. */
   writeDebounceMs?: number;
+  /**
+   * Espera, tras abrir la app, antes de sincronizar los DEMÁS espacios del usuario. El espacio abierto se sincroniza
+   * enseguida; los otros son trabajo de fondo (la primera vez descargan su copia completa) y no deben competir con las
+   * consultas con las que arranca la app.
+   */
+  otherWorkspacesDelayMs?: number;
 };
 
 export type RuntimeHooks = {
@@ -107,10 +113,13 @@ export class OfflineRuntime {
   private writeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly now: () => number;
   private readonly writeDebounceMs: number;
+  private readonly otherWorkspacesDelayMs: number;
+  private otherWorkspacesTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: RuntimeDeps) {
     this.now = deps.now ?? (() => Date.now());
     this.writeDebounceMs = deps.writeDebounceMs ?? 1000;
+    this.otherWorkspacesDelayMs = deps.otherWorkspacesDelayMs ?? 30_000;
   }
 
   // ─── Estado observable ──────────────────────────────────────────────────────────────────────
@@ -208,6 +217,8 @@ export class OfflineRuntime {
   private async closeEngine() {
     if (this.writeTimer) clearTimeout(this.writeTimer);
     this.writeTimer = null;
+    if (this.otherWorkspacesTimer) clearTimeout(this.otherWorkspacesTimer);
+    this.otherWorkspacesTimer = null;
     const db = this.db;
     this.engine = null;
     this.db = null;
@@ -251,7 +262,10 @@ export class OfflineRuntime {
       report = await engine.syncNow(workspaceId, { forceReconcile });
       // Los demás espacios, uno tras otro: mantienen su copia al día y envían lo que quedó pendiente
       // en ellos. Un fallo aquí no tumba el ciclo del espacio abierto.
-      for (const other of await this.otherWorkspaces(workspaceId)) {
+      // Al abrir la app solo el espacio abierto: los demás esperan un poco (ver `otherWorkspacesDelayMs`).
+      const others = reason === "start" ? [] : await this.otherWorkspaces(workspaceId);
+      if (reason === "start") this.scheduleOtherWorkspaces();
+      for (const other of others) {
         if (this.engine !== engine) break;
         const otherReport = await engine.syncNow(other, { forceReconcile }).catch((error: unknown) => ({
           error: error instanceof Error ? error.message : String(error),
@@ -284,6 +298,15 @@ export class OfflineRuntime {
    */
   nudge() {
     if (this.state.availability === "ready") this.scheduleWriteSync();
+  }
+
+  /** Sincroniza los demás espacios un rato después de abrir la app, sin estorbar a la carga inicial. */
+  private scheduleOtherWorkspaces() {
+    if (this.otherWorkspacesTimer) clearTimeout(this.otherWorkspacesTimer);
+    this.otherWorkspacesTimer = setTimeout(() => {
+      this.otherWorkspacesTimer = null;
+      void this.requestSync("interval");
+    }, this.otherWorkspacesDelayMs);
   }
 
   private scheduleWriteSync() {

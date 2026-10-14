@@ -57,6 +57,7 @@ function setup(overrides: Partial<RuntimeDeps> = {}) {
     },
     transport: fakeTransport(log),
     writeDebounceMs: 0,
+    otherWorkspacesDelayMs: 0,
     ...overrides,
   });
   const changes: string[][] = [];
@@ -275,6 +276,24 @@ describe("OfflineRuntime", () => {
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: 2, workspaceIds: [1, 2] });
     expect(runtime.getState()).toMatchObject({ workspaceId: 2, hydrated: true });
     expect(runtime.canReadLocal(2)).toBe(true); // sin esperar a ninguna descarga
+  });
+
+  it("al abrir la app solo se sincroniza el espacio abierto; los demás esperan para no estorbar a la carga inicial", async () => {
+    const { runtime, log } = setup({ otherWorkspacesDelayMs: 150 });
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2, 3] });
+    await settle();
+    expect(new Set(log.pulledWs)).toEqual(new Set([1])); // todavía nada de los otros espacios
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(new Set(log.pulledWs)).toEqual(new Set([1, 2, 3])); // pasado el retardo, se ponen al día
+  });
+
+  it("si se cierra el motor antes del retardo, no sincroniza los demás espacios", async () => {
+    const { runtime, log } = setup({ otherWorkspacesDelayMs: 150 });
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2] });
+    await settle();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(new Set(log.pulledWs)).toEqual(new Set([1]));
   });
 
   it("un cambio guardado en el espacio A se envía aunque el usuario ya esté en el B", async () => {
