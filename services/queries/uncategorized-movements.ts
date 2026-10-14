@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
 import { invokeEdgeFunction } from "./workspace-data";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { buildLocalUncategorized } from "../../features/categorize/lib/offlineUncategorized";
+import { useOfflineNetworkMode } from "./offline-writes";
 
 export type UncategorizedRow = {
   id: number;
@@ -23,7 +26,10 @@ export type UncategorizedRow = {
  */
 const MAX_ROWS = 500;
 
-async function fetchUncategorized(workspaceId: number): Promise<UncategorizedRow[]> {
+export async function fetchUncategorized(workspaceId: number): Promise<UncategorizedRow[]> {
+  // Modo sin conexión (beta): con la copia local lista se lee de ella, sin red y con lo que aún no se envió.
+  const local = await offlineRuntime.listRows(workspaceId, "movements").catch(() => null);
+  if (local) return buildLocalUncategorized(local, MAX_ROWS);
   if (!supabase) throw new Error("Supabase no está configurado.");
   const { data, error } = await supabase
     .from("movements")
@@ -41,7 +47,9 @@ async function fetchUncategorized(workspaceId: number): Promise<UncategorizedRow
 }
 
 export function useUncategorizedMovementsQuery(workspaceId: number | null) {
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useQuery({
+    networkMode,
     queryKey: ["uncategorized-movements", workspaceId],
     queryFn: () => fetchUncategorized(workspaceId!),
     enabled: Boolean(workspaceId),
@@ -58,11 +66,21 @@ export function useUncategorizedMovementsQuery(workspaceId: number | null) {
  */
 export function useAssignCategoryToMovementsMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["assign-category-to-movements"],
+    networkMode,
     mutationFn: async ({ ids, categoryId }: { ids: number[]; categoryId: number | null }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       if (ids.length === 0) return;
+      // Modo sin conexión (beta): cada movimiento se edita en el teléfono (las ediciones se juntan en la cola y se
+      // envían solas). Los que no se puedan por ahí (no están en la copia local) siguen por el servidor como siempre.
+      const remaining: number[] = [];
+      for (const id of ids) {
+        if (!(await offlineRuntime.updateMovement(workspaceId, id, { categoryId }))) remaining.push(id);
+      }
+      if (remaining.length === 0) return;
+      ids = remaining;
       const { error } = await supabase
         .from("movements")
         .update({ category_id: categoryId })

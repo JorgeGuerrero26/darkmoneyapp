@@ -7,14 +7,15 @@
  * `tables` vacío = cambió todo (descarga completa).
  */
 const KEYS_BY_TABLE: Record<string, string[]> = {
-  movements: ["movements", "movement", "categories-overview", "budget-scope-movements"],
+  movements: ["movements", "movement", "categories-overview", "budget-scope-movements", "account-analytics", "uncategorized-movements"],
   categories: ["categories-overview"],
   subscriptions: ["categories-overview"],
   spend_types: ["spend-types"],
   movement_templates: ["movement-templates"],
   recurring_income_occurrences: ["recurring-income-occurrences"],
   budgets: ["budget-scope-movements"],
-  accounts: ["budget-scope-movements"],
+  accounts: ["budget-scope-movements", "account-analytics"],
+  subscription_occurrences: ["subscription-occurrences"],
 };
 
 export function queryRootsToRefresh(tables: readonly string[]): string[] {

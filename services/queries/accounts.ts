@@ -5,6 +5,8 @@ import { displayCategoryName } from "../../lib/category-display-name";
 import { withTimeout } from "../../lib/promise-utils";
 import { formatSupabaseError, runBackgroundQueryRefresh } from "./_shared";
 import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { buildLocalAccountAnalytics } from "../../features/accounts/lib/offlineAccountAnalytics";
 import { isCoreSnapshot } from "./snapshot-cache";
 import type { WorkspaceSnapshot } from "./workspace-data";
 
@@ -223,10 +225,23 @@ export function useAccountAnalyticsQuery(
   workspaceId: number | null,
   accountId: number | null,
 ) {
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useQuery({
     queryKey: ["account-analytics", workspaceId, accountId],
     enabled: Boolean(workspaceId && accountId),
+    networkMode,
     queryFn: async () => {
+      // Modo sin conexión (beta): con la copia local lista, los movimientos de la cuenta salen de ella (funciona sin red
+      // e incluye lo que todavía no se envió). Misma selección y orden que la consulta de abajo.
+      if (workspaceId && accountId) {
+        const [movements, categories] = await Promise.all([
+          offlineRuntime.listRows(workspaceId, "movements").catch(() => null),
+          offlineRuntime.listRows(workspaceId, "categories").catch(() => null),
+        ]);
+        if (movements && categories) {
+          return buildLocalAccountAnalytics({ movements, categories, accountId, limit: ACCOUNT_ANALYTICS_LIMIT });
+        }
+      }
       if (!supabase || !workspaceId || !accountId) return [];
       const { data, error } = await supabase
         .from("movements")

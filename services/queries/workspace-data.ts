@@ -856,7 +856,7 @@ export function applyBaseCurrencyToAccounts(
   }
 }
 
-function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId" | "counterpartyId">(
+export function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId" | "counterpartyId">(
   rows: any[],
   outKey: K,
   rowKey: "category_id" | "subscription_id" | "counterparty_id",

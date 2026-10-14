@@ -12,7 +12,12 @@ import { useUiStore } from "../store/ui-store";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
 import { BUDGET_INPUT_TABLES } from "../services/queries/offline-budgets";
 import { applyLocalObligationsToCache } from "../services/queries/offline-obligations";
-import { applyLocalBudgetsToCache, applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../services/queries/offline-snapshot";
+import {
+  applyLocalBudgetsToCache,
+  applyLocalCatalogsToCache,
+  applyLocalMovementHistoriesToCache,
+  touchesSnapshotCatalogs,
+} from "../services/queries/offline-snapshot";
 import { isCoreSnapshot } from "../services/queries/snapshot-cache";
 import { refreshSnapshotDomains } from "../services/queries/workspace-data";
 
@@ -49,6 +54,10 @@ export async function reactToLocalDataChange(queryClient: QueryClient, wsId: num
   // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.
   if (tables.length === 0 || touchesSnapshotCatalogs(tables)) {
     await applyLocalCatalogsToCache(queryClient, wsId).catch(() => false);
+  }
+  // Historiales por categoría, suscripción y contacto: cambian al crear, editar, anular o borrar un movimiento.
+  if (tables.length === 0 || tables.includes("movements")) {
+    await applyLocalMovementHistoriesToCache(queryClient, wsId).catch(() => false);
   }
   // Obligaciones: las definiciones creadas o editadas sin red se muestran encima de lo del servidor.
   if (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties")) {

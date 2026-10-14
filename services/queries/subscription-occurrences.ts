@@ -3,6 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum } from "./_shared";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { useOfflineStatus } from "../../lib/offline/react";
+import { buildLocalSubscriptionOccurrences } from "../../features/subscriptions/lib/offlineSubscriptionOccurrences";
+import { useOfflineNetworkMode } from "./offline-writes";
 
 export type SubscriptionOccurrenceStatus =
   | "scheduled"
@@ -35,11 +39,20 @@ export type SubscriptionOccurrence = {
  * decide qué mes está pagado es el movimiento vinculado, no la app.
  */
 export function useSubscriptionOccurrencesQuery(subscriptionId: number | null) {
+  // El hook solo recibe la suscripción: el espacio abierto lo sabe el motor.
+  const offlineWorkspaceId = useOfflineStatus().workspaceId;
+  const networkMode = useOfflineNetworkMode(offlineWorkspaceId);
   return useQuery({
+    networkMode,
     queryKey: ["subscription-occurrences", subscriptionId],
     enabled: Boolean(supabase) && subscriptionId != null,
     staleTime: STALE.short,
     queryFn: async (): Promise<SubscriptionOccurrence[]> => {
+      // Modo sin conexión (beta): historial de solo lectura desde la copia local, si ya se descargó.
+      if (subscriptionId != null && offlineWorkspaceId != null) {
+        const local = await offlineRuntime.listRows(offlineWorkspaceId, "subscription_occurrences").catch(() => null);
+        if (local) return buildLocalSubscriptionOccurrences(local, subscriptionId);
+      }
       if (!supabase || subscriptionId == null) return [];
       const { data, error } = await supabase
         .from("subscription_occurrences")

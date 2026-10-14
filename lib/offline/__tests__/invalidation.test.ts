@@ -1,8 +1,8 @@
 import { queryRootsToRefresh } from "../invalidation";
 
 describe("qué se vuelve a leer cuando cambian los datos locales", () => {
-  it("un movimiento nuevo refresca la lista, el detalle, Categorías y los presupuestos", () => {
-    expect(queryRootsToRefresh(["movements"]).sort()).toEqual(["budget-scope-movements", "categories-overview", "movement", "movements"]);
+  it("un movimiento nuevo refresca la lista, el detalle, Categorías, los presupuestos, la analítica de cuenta y Categorizar", () => {
+    expect(queryRootsToRefresh(["movements"]).sort()).toEqual(["account-analytics", "budget-scope-movements", "categories-overview", "movement", "movements", "uncategorized-movements"]);
   });
 
   it("una categoría o una suscripción refresca el resumen de Categorías", () => {
@@ -11,6 +11,8 @@ describe("qué se vuelve a leer cuando cambian los datos locales", () => {
   });
 
   it("los catálogos con lectura propia refrescan la suya", () => {
+    expect(queryRootsToRefresh(["subscription_occurrences"])).toEqual(["subscription-occurrences"]);
+    expect(queryRootsToRefresh(["accounts"]).sort()).toEqual(["account-analytics", "budget-scope-movements"]);
     expect(queryRootsToRefresh(["spend_types"])).toEqual(["spend-types"]);
     expect(queryRootsToRefresh(["movement_templates"])).toEqual(["movement-templates"]);
     expect(queryRootsToRefresh(["recurring_income_occurrences"])).toEqual(["recurring-income-occurrences"]);

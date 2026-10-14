@@ -19,7 +19,7 @@ jest.mock("../../../lib/offline/instance", () => ({
 }));
 
 // eslint-disable-next-line import/first
-import { applyLocalBudgetsToCache, applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../offline-snapshot";
+import { applyLocalBudgetsToCache, applyLocalCatalogsToCache, applyLocalMovementHistoriesToCache, touchesSnapshotCatalogs } from "../offline-snapshot";
 
 const KEY = ["workspace-snapshot", 1, "core"];
 
@@ -139,6 +139,60 @@ describe("applyLocalCatalogsToCache", () => {
       const queryClient = seed();
       seedDeferred(queryClient);
       expect(await applyLocalBudgetsToCache(queryClient, 1)).toBe(false);
+    });
+  });
+
+  describe("historiales por categoría, suscripción y contacto", () => {
+    const move = (extra: Record<string, unknown>) => ({
+      id: 1, workspace_id: 1, status: "posted", movement_type: "expense", occurred_at: "2026-10-14T17:54:00.000Z", source_amount: "12",
+      destination_amount: null, source_account_id: 1, destination_account_id: null, category_id: 2, subscription_id: null, counterparty_id: null, ...extra,
+    });
+    const seedWithStale = () => {
+      const queryClient = seed();
+      queryClient.setQueryData(KEY, {
+        ...(queryClient.getQueryData(KEY) as object),
+        accounts: [{ id: 1, currencyCode: "PEN" }],
+        categoryPostedMovements: [{ id: 99, categoryId: 2 }],
+        subscriptionPostedMovements: [{ id: 99, subscriptionId: 7 }],
+        counterpartyPostedMovements: [{ id: 99, counterpartyId: 5 }],
+      });
+      return queryClient;
+    };
+    const ids = (queryClient: QueryClient, key: "categoryPostedMovements" | "subscriptionPostedMovements" | "counterpartyPostedMovements") =>
+      (get(queryClient)[key] as Array<{ id: number }>).map((m) => m.id);
+
+    it("los rehace desde los movimientos locales: solo confirmados, por categoría, suscripción y contacto", async () => {
+      Object.assign(mockRows, {
+        movements: [
+          move({ id: 1, category_id: 2 }),
+          move({ id: 2, category_id: 2, status: "voided" }),
+          move({ id: 3, category_id: null, subscription_id: 7 }),
+          move({ id: 4, category_id: null, counterparty_id: 5, occurred_at: "2026-10-15T10:00:00.000Z" }),
+        ],
+      });
+      const queryClient = seedWithStale();
+      expect(await applyLocalMovementHistoriesToCache(queryClient, 1)).toBe(true);
+      expect(ids(queryClient, "categoryPostedMovements")).toEqual([1]); // el anulado no cuenta y el viejo (99) ya no está
+      expect(ids(queryClient, "subscriptionPostedMovements")).toEqual([3]);
+      expect(ids(queryClient, "counterpartyPostedMovements")).toEqual([4]);
+    });
+
+    it("al borrar o anular un movimiento sin red, su historial se actualiza", async () => {
+      Object.assign(mockRows, { movements: [move({ id: 1, category_id: 2 }), move({ id: 5, category_id: 2, occurred_at: "2026-10-13T10:00:00.000Z" })] });
+      const queryClient = seedWithStale();
+      await applyLocalMovementHistoriesToCache(queryClient, 1);
+      expect(ids(queryClient, "categoryPostedMovements")).toEqual([1, 5]);
+      // Se borra el 1 y se anula el 5 (en la copia local).
+      Object.assign(mockRows, { movements: [move({ id: 5, category_id: 2, status: "voided", occurred_at: "2026-10-13T10:00:00.000Z" })] });
+      await applyLocalMovementHistoriesToCache(queryClient, 1);
+      expect(ids(queryClient, "categoryPostedMovements")).toEqual([]);
+    });
+
+    it("si los movimientos aún no se descargaron no toca el cache", async () => {
+      mockRows.movements = null;
+      const queryClient = seedWithStale();
+      expect(await applyLocalMovementHistoriesToCache(queryClient, 1)).toBe(false);
+      expect(ids(queryClient, "categoryPostedMovements")).toEqual([99]);
     });
   });
 });

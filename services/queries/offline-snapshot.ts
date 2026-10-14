@@ -8,6 +8,7 @@ import {
   applyBaseCurrencyToAccounts,
   buildAccountSummaries,
   buildCategorySummaries,
+  buildPostedAnalyticsMovements,
   mapBudget,
   mapCounterpartyFromRow,
   mapRecurringIncome,
@@ -126,6 +127,48 @@ export async function applyLocalBudgetsToCache(queryClient: QueryClient, workspa
   queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot", workspaceId] }, (old: unknown) => {
     if (!old || isCoreSnapshot(old)) return old;
     return { ...(old as WorkspaceDeferred), budgets };
+  });
+  return true;
+}
+
+/**
+ * Historiales de movimientos por categoría, suscripción y contacto (los que alimentan los detalles y los totales).
+ * Al crear un movimiento ya se parchean al instante; al EDITAR, ANULAR o BORRAR uno sin red nadie los tocaba y
+ * quedaban con lo de antes. Se rehacen desde los movimientos de la copia local con los mismos mapeadores del servidor.
+ */
+export async function applyLocalMovementHistoriesToCache(queryClient: QueryClient, workspaceId: number): Promise<boolean> {
+  const current = queryClient
+    .getQueriesData({ queryKey: ["workspace-snapshot", workspaceId] })
+    .map(([, data]) => data)
+    .find(isCoreSnapshot) as WorkspaceSnapshot | undefined;
+  if (!current) return false;
+  const movements = await offlineRuntime.listRows(workspaceId, "movements");
+  if (!movements) return false;
+
+  const baseCurrency = (current.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode ?? "PEN").toUpperCase();
+  const accountCurrency = new Map(current.accounts.map((account) => [account.id, account.currencyCode.toUpperCase()]));
+  const newestFirst = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+    Date.parse(String(b.occurred_at)) - Date.parse(String(a.occurred_at)) || Number(b.id) - Number(a.id);
+  const posted = movements.filter((row) => row.status === "posted").sort(newestFirst);
+  const history = <K extends "categoryId" | "subscriptionId" | "counterpartyId">(
+    outKey: K,
+    column: "category_id" | "subscription_id" | "counterparty_id",
+  ) =>
+    buildPostedAnalyticsMovements(
+      posted.filter((row) => row[column] != null),
+      outKey,
+      column,
+      accountCurrency,
+      baseCurrency,
+      current.exchangeRates,
+    );
+
+  const categoryPostedMovements = history("categoryId", "category_id");
+  const subscriptionPostedMovements = history("subscriptionId", "subscription_id");
+  const counterpartyPostedMovements = history("counterpartyId", "counterparty_id");
+  queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot", workspaceId] }, (old: unknown) => {
+    if (!isCoreSnapshot(old)) return old;
+    return { ...old, categoryPostedMovements, subscriptionPostedMovements, counterpartyPostedMovements };
   });
   return true;
 }
