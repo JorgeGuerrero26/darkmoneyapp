@@ -332,6 +332,7 @@ describe("refreshSnapshotDomains", () => {
         data: [
           {
             id: 99,
+            workspace_id: 7,
             category_id: 4,
             subscription_id: 8,
             counterparty_id: 5,
