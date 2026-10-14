@@ -41,7 +41,8 @@ normal solo alcanza al del repo:
 |---|---|
 | actual (`app.json`) | el APK nuevo |
 | 1.0.9 | el APK que tienen los compañeros |
-| 1.0.8 | el IPA del iPhone, congelado |
+
+(El IPA 1.0.8 del iPhone ya no existe: el iPhone corre el IPA 1.1.0, que es el runtime actual. Se quitó de `LEGACY_RUNTIMES` el 2026-10-14.)
 
 Publicar en uno solo deja a los demás atrás **en silencio**: no hay error, y la única señal es
 que alguien reporta que un arreglo "no llegó". `scripts/publish-ota.mjs` publica en todos y

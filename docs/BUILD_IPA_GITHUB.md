@@ -50,9 +50,9 @@ la sesión guardada en el llavero puede no heredarse y hay que **volver a inicia
 
 El IPA nuevo trae `version` 1.1.0 → **runtime 1.1.0**. Los arreglos solo-JS futuros se publican con
 `npm run ota -- "descripción"` como siempre; `scripts/publish-ota.mjs` los manda al runtime actual
-y a los de `LEGACY_RUNTIMES`. Cuando el iPhone ya corra el IPA 1.1.0, **la entrada 1.0.8 de
-`LEGACY_RUNTIMES` deja de hacer falta para el iPhone** — pero solo se quita cuando conste que
-ningún dispositivo corre ese binario.
+y a los de `LEGACY_RUNTIMES`. El iPhone ya corre el IPA 1.1.0 y el dueño confirmó que ningún dispositivo corre el 1.0.8:
+**la entrada 1.0.8 se quitó de `LEGACY_RUNTIMES` el 2026-10-14.** Si alguna vez reaparece un
+dispositivo con ese IPA, hay que volver a ponerla (o reinstalarle el 1.1.0).
 
 ## Errores conocidos / qué mirar si falla
 

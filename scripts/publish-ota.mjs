@@ -4,21 +4,20 @@
  *
  * ## Por qué existe
  *
- * El iPhone corre un IPA firmado a mano cuyo `runtimeVersion` quedó congelado en 1.0.8,
- * mientras el repo va en 1.0.9. Como la política de runtime es `appVersion`, una publicación
- * normal solo alcanza a 1.0.9: **el iPhone se queda atrás en silencio**, sin ningún error, y
- * la única señal es que el usuario reporta que un arreglo "no llegó".
+ * La política de runtime es `appVersion`: una publicación normal solo alcanza al runtime del
+ * repo y **los binarios con otro runtime se quedan atrás en silencio**, sin ningún error; la
+ * única señal es que alguien reporta que un arreglo "no llegó". Hubo dos casos: el iPhone con un
+ * IPA firmado a mano congelado en 1.0.8 (ya reemplazado por el IPA 1.1.0, 2026-10-14) y el APK
+ * 1.0.9 de los compañeros.
  *
- * Así que cada cambio hay que publicarlo dos veces, cambiando `app.json` en medio. Hacerlo a
- * mano es un ritual de cinco pasos donde olvidar el segundo no avisa de nada. Este script lo
- * hace entero y **restaura `app.json` pase lo que pase**, incluso si la publicación falla.
+ * Así que cada cambio hay que publicarlo en cada runtime vivo, cambiando `app.json` en medio.
+ * Hacerlo a mano es un ritual donde olvidar un paso no avisa de nada. Este script lo hace
+ * entero y **restaura `app.json` pase lo que pase**, incluso si la publicación falla.
  *
  * ## Cuándo borrar esto
  *
- * Cuando exista un IPA nuevo con el runtime actual — o sea, cuando haya cuenta de Apple
- * Developer y `eas build --platform ios` pueda correr desde Windows —, sacar 1.0.8 de
- * LEGACY_RUNTIMES. Cuando los compañeros instalen el APK nuevo, sacar también 1.0.9. Con la
- * lista vacía, este script se vuelve un `eas update` normal y se puede borrar.
+ * Cuando los compañeros instalen el APK nuevo, sacar también 1.0.9. Con la lista vacía, este
+ * script se vuelve un `eas update` normal y se puede borrar.
  *
  * ## Uso
  *
@@ -37,12 +36,15 @@ const CHANNEL = "preview";
  *
  *   1.0.9 — el APK que tienen los compañeros. Mientras no instalen el nuevo, esta es su
  *           única vía de recibir arreglos.
- *   1.0.8 — el IPA del iPhone, congelado hasta que haya cuenta de Apple Developer.
+ *
+ * (1.0.8, el IPA viejo del iPhone, se quitó el 2026-10-14: el dueño confirmó que ningún
+ * dispositivo lo corre desde que el iPhone usa el IPA 1.1.0. Sus actualizaciones ya publicadas
+ * siguen en EAS, pero no se les publica más.)
  *
  * Se quita una entrada de aquí SOLO cuando conste que ya nadie corre ese binario. Dejar una
  * de más solo gasta un publicado; quitarla antes de tiempo deja a alguien tirado en silencio.
  */
-const LEGACY_RUNTIMES = ["1.0.9", "1.0.8"];
+const LEGACY_RUNTIMES = ["1.0.9"];
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
