@@ -12,6 +12,7 @@ import type { MovementFormInput } from "./workspace-data";
 import type { JsonValue, MovementRecord, MovementType } from "../../types/domain";
 import { parseDuplicateVerdict, type DuplicateAiResult } from "../../features/notifications/lib/duplicate-verdict";
 import { requestDetectedRegistrationUndo, type DetectionUndoInput } from "../../features/detected-movements/lib/detection-undo";
+import { requestDetectedSplit, type DetectedSplitInput } from "../../features/detected-movements/lib/detection-split";
 import { detectionDuplicateBounds } from "../../features/detected-movements/lib/duplicate-day";
 
 export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate" | "needs_review";
@@ -500,6 +501,27 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
       void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
       void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", variables.suggestionId] });
       void queryClient.invalidateQueries({ queryKey: ["notifications", userId ?? null] });
+    },
+  });
+}
+
+/** Registra una detección dividida en una sola transacción del servidor; nunca parte por parte. */
+export function useRegisterDetectedSplitMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["register-detected-split"],
+    mutationFn: async (input: DetectedSplitInput & { userId: string }) => {
+      if (!supabase || !input.userId) throw new Error("No hay una sesión disponible.");
+      const { userId: _userId, ...request } = input;
+      return requestDetectedSplit(supabase, request);
+    },
+    onSettled: async (_result, _error, input) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", input.suggestionId] }),
+        queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", input.userId, input.workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["movements"] }),
+        queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+      ]);
     },
   });
 }

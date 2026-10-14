@@ -11,7 +11,7 @@ import { useAuth } from "../../../lib/auth-context";
 import { useWorkspace } from "../../../lib/workspace-context";
 import { useToast } from "../../../hooks/useToast";
 import { useHaptics } from "../../../hooks/useHaptics";
-import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation } from "../../../services/queries/notification-detection";
+import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation, useRegisterDetectedSplitMutation } from "../../../services/queries/notification-detection";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../../lib/notification-detection-apps";
 import { useCreateCategoryMutation, useCreateCounterpartyMutation, useCreateMovementMutation, useCreateRecurringIncomeMutation, useCreateSubscriptionMutation, useMarkNotificationReadMutation, usePersistLearningFeedbackMutation, useUserEntitlementQuery, useWorkspaceSnapshotQuery } from "../../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../../services/queries/movement-patterns";
@@ -37,7 +37,7 @@ import { dateTimeStrToISO, todayPeru } from "../../../lib/date";
 import { validateMovementForm } from "../../movements/lib/form-validation";
 import { patternMovementAmount } from "../../movements/lib/pattern-heuristics";
 import { mapAiCategoryRecommendation } from "../../movements/lib/category-suggestion-derivation";
-import { splitLineMetadata, splitLineDescription, validateSplit, type SplitLine } from "../../movements/lib/split-movement";
+import { validateSplit, type SplitLine } from "../../movements/lib/split-movement";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../../lib/movement-ai-orchestrator";
 import { useSpendTypesQuery } from "../../../services/queries/spend-types";
 
@@ -91,6 +91,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const settings = settingsQuery.data ?? [];
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const undoDetectedRegistration = useUndoDetectedMovementRegistrationMutation();
+  const registerDetectedSplit = useRegisterDetectedSplitMutation();
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
@@ -845,40 +846,46 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
         showToast(splitValidation.error ?? "Revisa la división de montos", "error");
         return;
       }
-      const splitGroup = `suggestion:${suggestion.id}`;
+      // Una sola transacción en el servidor: guarda todas las partes y resuelve la detección, o no guarda nada.
+      // Sin plan B parte por parte: si falla se reintenta la misma operación completa.
+      let registered: { movementId: number } | null = null;
       try {
-        let firstCreatedId: number | null = null;
-        for (let index = 0; index < splitLines.length; index++) {
-          const line = splitLines[index];
-          const created = await createMovement.mutateAsync(buildMovementCreateInput({
-            movementType,
-            status: "posted",
-            occurredAt,
-            description: splitLineDescription(description.trim() || suggestion.description, index, splitLines.length),
+        registered = await registerDetectedSplit.mutateAsync({
+          userId: suggestion.userId,
+          workspaceId: suggestion.workspaceId,
+          suggestionId: suggestion.id,
+          expectedUpdatedAt: suggestion.updatedAt,
+          header: {
+            movementType: movementType as "expense" | "income",
+            accountId: accountId!,
+            currencyCode: (suggestion.currencyCode ?? "PEN").toUpperCase(),
+            amount: parsedAmount,
+            description: description.trim() || suggestion.description,
             notes: notes.trim() || null,
-            sourceAccountId: accountId,
-            sourceAmount: parsePositiveAmountInput(line.amount)!,
-            destinationAccountId: accountId,
-            destinationAmount: parsePositiveAmountInput(line.amount)!,
-            transferCurrenciesDiffer: false,
-            fxRate: null,
-            categoryId: line.categoryId,
-              spendTypeId: line.spendTypeId ?? null,
+            occurredAt,
             counterpartyId,
-            subscriptionId: linkedSubscriptionId,
-            metadata: splitLineMetadata(detectionMetadata, splitGroup, index, splitLines.length),
-            // Línea 1 conserva la clave del headless (`suggestion:<id>`): si ambas vías
-            // corren, la línea 1 colisiona con el movimiento único del headless y no se duplica.
-            dedupeKey: index === 0 ? splitGroup : `${splitGroup}:split-${index + 1}`,
-          }));
-          if (firstCreatedId == null) firstCreatedId = created.id;
-        }
-        // Feedback de categoría omitido: la división usa varias categorías, no una sola.
-        await finishRegistration(firstCreatedId!, null);
+            metadata: detectionMetadata as unknown as Record<string, never>,
+            ...(movementType === "expense" && linkedSubscriptionId != null ? { subscriptionId: linkedSubscriptionId } : {}),
+            ...(movementType === "income" && linkedRecurringIncomeId != null ? { recurringIncomeId: linkedRecurringIncomeId } : {}),
+          },
+          parts: splitLines.map((line) => ({
+            amount: parsePositiveAmountInput(line.amount)!,
+            categoryId: line.categoryId!,
+            ...(movementType === "expense" && line.spendTypeId != null ? { spendTypeId: line.spendTypeId } : {}),
+          })),
+        });
       } catch (error) {
         haptics.error();
         setSaveError(humanizeError(error));
-      showErrorToast("No se pudo guardar el movimiento", error);
+        showErrorToast("No se pudo guardar el movimiento", error);
+        return;
+      }
+      // El dinero ya quedó guardado y la detección resuelta: un fallo posterior (avisos, métricas) no es un fallo de guardado.
+      try {
+        // Feedback de categoría omitido: la división usa varias categorías, no una sola.
+        await finishRegistration(registered.movementId, null, { alreadyResolved: true });
+      } catch {
+        void suggestionQuery.refetch();
       }
       return;
     }
@@ -921,9 +928,10 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
    * Post-procesamiento común a la vía única y a la vía split (marcar sugerencia, telemetría,
    * feedback de categoría, toast y cierre) para que ambas se mantengan sincronizadas.
    */
-  async function finishRegistration(movementId: number, feedbackIntent: CategoryFeedbackIntent | null) {
+  async function finishRegistration(movementId: number, feedbackIntent: CategoryFeedbackIntent | null, options?: { alreadyResolved?: boolean }) {
     if (!suggestion) return;
-    await markRegistered(movementId);
+    // La división la resuelve el servidor dentro de su transacción: no se vuelve a marcar.
+    if (!options?.alreadyResolved) await markRegistered(movementId);
     if (profile?.id && activeWorkspaceId) {
       if (feedbackIntent) {
         const isAccept = feedbackIntent.kind === "accepted_category_suggestion";
@@ -1011,8 +1019,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId });
     } catch (error) {
       // El trigger ya resolvió el registro simple. Fallar al marcar el aviso no cambia
-      // un movimiento guardado en un error de guardado. La división conserva su cierre.
-      if (splitLines?.length) throw error;
+      // un movimiento guardado en un error de guardado.
       void suggestionQuery.refetch();
     }
   }

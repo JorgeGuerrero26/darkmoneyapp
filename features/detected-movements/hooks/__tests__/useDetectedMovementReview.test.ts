@@ -9,6 +9,7 @@ import type { LearningMovement } from "../../lib/personal-learning";
 const { create, act } = require("react-test-renderer");
 const mockCreate = jest.fn();
 const mockUndo = jest.fn().mockResolvedValue({});
+const mockSplit = jest.fn();
 const mockDelete = jest.fn();
 const mockMark = jest.fn().mockResolvedValue({});
 const mockDuplicate = jest.fn().mockResolvedValue(null);
@@ -42,6 +43,7 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
   useNotificationDetectionSettingsQuery: () => ({ data: mockSettings, isLoading: mockSettingsLoading }),
   useMarkDetectedMovementSuggestionMutation: () => ({ ...mockMutation, mutateAsync: mockMark }),
   useUndoDetectedMovementRegistrationMutation: () => ({ ...mockMutation, mutateAsync: mockUndo }),
+  useRegisterDetectedSplitMutation: () => ({ ...mockMutation, mutateAsync: mockSplit }),
   useAiUsageTodayQuery: () => ({ data: null }),
   findPossibleDuplicateMovement: (...args: unknown[]) => mockDuplicate(...args),
   countSameDayDetectionSignals: (...args: unknown[]) => mockCounts(...args),
@@ -74,7 +76,7 @@ jest.mock("../../../../hooks/useMovementBudgetImpact", () => ({ useMovementBudge
 let current: DetectedMovementReview;
 function Harness({ visible = true, previewEnabled = false }: { visible?: boolean; previewEnabled?: boolean }) { current = useDetectedMovementReview({ visible, previewEnabled, suggestionId: 7, onClose: jest.fn(), onResolved: mockResolved }); return null; }
 let renderer: ReturnType<typeof create>;
-beforeEach(async () => { jest.clearAllMocks(); mockProAccess = false; mockCounts.mockResolvedValue({ sameDaySuggestions: 2, sameDayRegisteredFromSuggestions: 1, sameDayMatchingMovements: 1 }); mockDuplicateAi.mockResolvedValue({ verdict: "distinct", reason: null }); mockWorkspaceId = 9; mockUndo.mockResolvedValue({}); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
+beforeEach(async () => { jest.clearAllMocks(); mockProAccess = false; mockCounts.mockResolvedValue({ sameDaySuggestions: 2, sameDayRegisteredFromSuggestions: 1, sameDayMatchingMovements: 1 }); mockDuplicateAi.mockResolvedValue({ verdict: "distinct", reason: null }); mockWorkspaceId = 9; mockUndo.mockResolvedValue({}); mockSplit.mockResolvedValue({ movementId: 31, movementIds: [31, 32], alreadyRegistered: false }); mockLearning = []; mockSettingsLoading = false; mockSettings = []; mockSuggestion = mockReceipt; mockSnapshot = { ...mockSnapshot, categories: mockCategories, accounts: mockAccounts, exchangeRates: [] }; mockDuplicate.mockResolvedValue(null); mockCreate.mockResolvedValue({ id: 13 }); await act(async () => { renderer = create(React.createElement(Harness)); }); });
 afterEach(async () => { await act(async () => renderer.unmount()); });
 
 function learnedMovement(id: number, overrides: Partial<LearningMovement> = {}): LearningMovement {
@@ -340,6 +342,28 @@ it("reintentar un descarte fallido vuelve a descartar y nunca registra", async (
   expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "discarded", expectedStatus: "pending" });
   expect(mockCreate).not.toHaveBeenCalled();
   expect(mockResolved).toHaveBeenCalledWith(7, "discarded");
+});
+
+it("una división se guarda en una sola operación del servidor, sin crear partes sueltas", async () => {
+  await act(async () => { current.setAccountId(1); current.setSplitLines([{ categoryId: 2, amount: "7.50" }, { categoryId: 4, amount: "5.00" }]); });
+  await act(async () => { await current.submit(); });
+  expect(mockSplit).toHaveBeenCalledTimes(1);
+  const request = mockSplit.mock.calls[0][0];
+  expect(request).toMatchObject({ workspaceId: 9, suggestionId: 7, userId: "tester" });
+  expect(request.parts).toEqual([{ amount: 7.5, categoryId: 2 }, { amount: 5, categoryId: 4 }]);
+  expect(request.header).toMatchObject({ movementType: "expense", accountId: 1, currencyCode: "PEN", amount: 12.5 });
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockMark).not.toHaveBeenCalled(); // el servidor ya resolvió la detección dentro de su transacción
+  expect(mockResolved).toHaveBeenCalledWith(7, "registered");
+});
+
+it("si la división falla no se crea ninguna parte ni se cierra la revisión", async () => {
+  mockSplit.mockRejectedValueOnce(new Error("El servidor aún no permite divisiones atómicas."));
+  await act(async () => { current.setAccountId(1); current.setSplitLines([{ categoryId: 2, amount: "7.50" }, { categoryId: 4, amount: "5.00" }]); });
+  await act(async () => { await current.submit(); });
+  expect(mockCreate).not.toHaveBeenCalled();
+  expect(mockResolved).not.toHaveBeenCalled();
+  expect(current.saveError).toBeTruthy();
 });
 
 it("Deshacer usa una sola mutación con el registro original tras cambiar de espacio", async () => {
