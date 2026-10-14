@@ -18,6 +18,7 @@ import type { SyncReport, SyncTransport } from "./sync-types";
 import { listRowsLocal } from "./resource-store";
 import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-writes";
 import type { MirroredTable, WritableResourceTable } from "./schema";
+import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pending";
 import { ONLINE_ONLY_COMPOUND_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
@@ -31,6 +32,8 @@ export type OfflineState = {
   workspaceId: number | null;
   /** Cambios guardados en el teléfono que todavía no confirmó el servidor. */
   pending: number;
+  /** Cuántos cambios había por enviar al empezar el ciclo actual (para decir "Enviando 2 de 3"). 0 = no se está enviando. */
+  sendingTotal: number;
   /** Cambios que el servidor no aceptó (bandeja). */
   rejected: number;
   /** Cambios aplicados que conviene revisar (otra persona había cambiado el monto). */
@@ -55,7 +58,7 @@ export type RuntimeHooks = {
   /** Cambió algo que la UI muestra (una escritura local o datos recién descargados). */
   onDataChanged?: (tables: string[]) => void | Promise<void>;
   /** Terminó un ciclo que envió cambios: el momento de refrescar lo que solo el servidor calcula. */
-  onPushed?: () => void | Promise<void>;
+  onPushed?: (report: SyncReport) => void | Promise<void>;
 };
 
 const INITIAL_STATE: OfflineState = {
@@ -65,6 +68,7 @@ const INITIAL_STATE: OfflineState = {
   hydrated: false,
   workspaceId: null,
   pending: 0,
+  sendingTotal: 0,
   rejected: 0,
   review: 0,
   lastSyncAt: null,
@@ -236,7 +240,8 @@ export class OfflineRuntime {
     // Sin red no tiene sentido intentarlo, salvo que el usuario lo pida (el botón da el motivo real).
     if (!this.state.online && reason !== "manual") return null;
 
-    this.patch({ syncing: true });
+    const sendingTotal = this.db ? await countOutbox(this.db).catch(() => 0) : 0;
+    this.patch({ syncing: true, sendingTotal });
     let report: SyncReport | null = null;
     let otherError: string | null = null;
     try {
@@ -250,19 +255,22 @@ export class OfflineRuntime {
           pushed: 0,
         }));
         if (otherReport.error && !otherError) otherError = otherReport.error;
-        if (report && otherReport.pushed > 0 && !otherReport.error) report = { ...report, pushed: report.pushed + otherReport.pushed };
+        if (report && otherReport.pushed > 0 && !otherReport.error) {
+          report = { ...report, pushed: report.pushed + otherReport.pushed, applied: report.applied + ((otherReport as { applied?: number }).applied ?? 0) };
+        }
       }
     } finally {
       const hydrated = await engine.isHydrated(workspaceId).catch(() => false);
       this.patch({
         syncing: false,
+        sendingTotal: 0,
         hydrated,
         lastSyncAt: report && !report.error ? this.now() : this.state.lastSyncAt,
         lastError: report?.error ?? otherError,
       });
       await this.refreshCounts();
     }
-    if (report && report.pushed > 0 && !report.error) void this.hooks.onPushed?.();
+    if (report && report.pushed > 0 && !report.error) void this.hooks.onPushed?.(report);
     return report;
   }
 
@@ -378,6 +386,17 @@ export class OfflineRuntime {
       [workspaceId, id],
     );
     return Number(row?.n ?? 0);
+  }
+
+  /** Cambios sin enviar de todos los espacios, del más reciente al más antiguo (hoja de pendientes). */
+  async listPendingChanges(): Promise<PendingChange[]> {
+    return this.db ? listPendingChanges(this.db) : [];
+  }
+
+  /** Cuándo se guardó cada fila pendiente de una tabla del espacio (para marcarla en su lista). */
+  async pendingRowTimes(workspaceId: number, table: string): Promise<Array<{ id: number; at: string }>> {
+    if (!this.canReadLocal(workspaceId) || !this.db) return [];
+    return pendingRowTimes(this.db, workspaceId, table);
   }
 
   /** IDs de las filas de una tabla con operaciones sin enviar (para mostrar lo local encima de lo del servidor). */
