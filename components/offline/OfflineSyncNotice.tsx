@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -10,7 +11,7 @@ import { describeOfflineNotice } from "../../lib/offline/status-copy";
  * está al día (o con el modo sin conexión apagado): solo informa cuando hay algo que decir —
  * sin internet, cambios por enviar, o cambios que el servidor no aceptó.
  */
-export function OfflineSyncNotice() {
+export function OfflineSyncNotice({ from = "movements" }: { from?: string }) {
   const router = useRouter();
   const status = useOfflineStatus();
   const notice = describeOfflineNotice(status);
@@ -20,7 +21,7 @@ export function OfflineSyncNotice() {
     <View style={styles.outer}>
       <Pressable
         style={[styles.container, notice.tone === "attention" && styles.attention]}
-        onPress={() => router.push("/(app)/offline?from=movements" as never)}
+        onPress={() => router.push(`/(app)/offline?from=${from}` as never)}
         accessibilityRole="button"
         accessibilityLabel={`${notice.title}. ${notice.body}`}
       >
@@ -56,3 +57,18 @@ const styles = StyleSheet.create({
   title: { color: COLORS.text, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm },
   body: { color: COLORS.textMuted, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, lineHeight: 16 },
 });
+
+/**
+ * Slot `context` de un módulo: muestra el aviso de sincronización encima de lo que el módulo ya ponía
+ * ahí. Con el modo apagado, o con todo al día, devuelve `children` tal cual (el módulo se ve igual que antes).
+ */
+export function OfflineContextSlot({ from, children }: { from: string; children?: ReactNode }) {
+  const status = useOfflineStatus();
+  if (!describeOfflineNotice(status)) return <>{children}</>;
+  return (
+    <View style={{ gap: SPACING.sm }}>
+      <OfflineSyncNotice from={from} />
+      {children}
+    </View>
+  );
+}

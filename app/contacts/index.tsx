@@ -13,6 +13,7 @@ import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
+import { OfflineContextSlot } from "../../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
@@ -360,6 +361,7 @@ function ContactsScreen() {
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
+      context={<OfflineContextSlot from="contacts" />}
       header={
         <ScreenHeader
           title={selectMode ? `${selectedIds.size} seleccionado${selectedIds.size === 1 ? "" : "s"}` : "Contactos"}

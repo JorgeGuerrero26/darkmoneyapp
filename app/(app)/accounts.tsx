@@ -30,6 +30,7 @@ import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
+import { OfflineContextSlot } from "../../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { AccountForm } from "../../components/forms/AccountForm";
@@ -554,7 +555,7 @@ function AccountsScreen() {
             <ActiveFilterBar items={activeFilterItems} onClear={clearAccountFilters} />
           ) : null
         }
-        context={!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}
+        context={<OfflineContextSlot from="accounts">{!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}</OfflineContextSlot>}
         summary={summaryHeader}
         bulkActions={
           selectMode && selectedIds.size > 0 ? (

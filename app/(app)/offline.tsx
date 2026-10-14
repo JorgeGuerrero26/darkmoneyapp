@@ -25,7 +25,15 @@ function formatTime(timestamp: number | null): string {
 function OfflineScreen() {
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { settings: "/(app)/settings", movements: "/(app)/movements" },
+    originRoutes: {
+      settings: "/(app)/settings",
+      movements: "/(app)/movements",
+      budgets: "/(app)/budgets",
+      categories: "/(app)/categories",
+      contacts: "/(app)/contacts",
+      "spend-types": "/(app)/spend-types",
+      "recurring-income": "/(app)/recurring-income",
+    },
     defaultRoute: "/(app)/settings",
   });
   const status = useOfflineStatus();

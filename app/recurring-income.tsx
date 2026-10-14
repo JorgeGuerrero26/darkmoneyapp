@@ -13,6 +13,7 @@ import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar, type FilterToolbarOption } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
+import { OfflineContextSlot } from "../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
@@ -423,14 +424,16 @@ function RecurringIncomeScreen() {
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
       context={
-        !selectMode && (notificationReason || recurringIncome.length > 0) ? (
+        <OfflineContextSlot from="recurring-income">
+        {!selectMode && (notificationReason || recurringIncome.length > 0) ? (
           <ResourceContextNote>
             {notificationReason ??
               (filteredRecurringIncome.length === recurringIncome.length && !gestureHintOpen
                 ? null
                 : contextNote)}
           </ResourceContextNote>
-        ) : null
+        ) : null}
+        </OfflineContextSlot>
       }
       summary={
         !selectMode && filteredRecurringIncome.length > 0 ? (
