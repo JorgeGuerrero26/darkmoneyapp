@@ -34,6 +34,7 @@ import {
 } from "../services/queries/workspace-data";
 import { useSharedObligationsQuery } from "../services/queries/obligations";
 import { OfflineBanner } from "../components/layout/OfflineBanner";
+import { PendingChangesSheet } from "../components/offline/PendingChangesSheet";
 import { ActivityNoticeContainer } from "../components/ui/ActivityNotice";
 import { ToastProvider } from "../components/DarkMoneyToast";
 import { SuccessGlow } from "../components/ui/SuccessGlow";
@@ -1119,6 +1120,7 @@ export default function RootLayout() {
                         primero, la navegación lo tapaba. Antes de AppSplash y BiometricLock a
                         propósito, para que esos sí lo cubran. */}
                     <OfflineBanner />
+                    <PendingChangesSheet />
                     <AppSplash />
                     <BiometricLock />
                     <SuccessGlow />
