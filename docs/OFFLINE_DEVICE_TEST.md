@@ -101,4 +101,3 @@ E. **Suscripción / ingreso recurrente:** crear y editar la definición sin red 
 F. **Interruptor apagado:** repetir A–E con el modo apagado: debe comportarse exactamente como antes.
 
 ### Casos extendidos
-
