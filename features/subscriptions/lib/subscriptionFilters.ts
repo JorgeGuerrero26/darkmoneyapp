@@ -61,23 +61,64 @@ export function filterSubscriptions(
   });
 }
 
-export function getMonthlySubscriptionAmount(subscription: SubscriptionSummary, useBaseCurrency = false) {
-  const amount = useBaseCurrency && subscription.amountInBaseCurrency != null
-    ? subscription.amountInBaseCurrency
-    : subscription.amount;
-
-  switch (subscription.frequency) {
-    case "yearly":
-      return amount / 12;
-    case "weekly":
-      return (amount * 52) / 12;
-    case "quarterly":
-      return amount / 3;
+/** Cuántos "meses" cubre un cobro: lo mismo que usa el calendario para avanzar la fecha. */
+export function getSubscriptionMonthlyFactor(
+  frequency: SubscriptionSummary["frequency"],
+  intervalCount: number | null | undefined,
+): number {
+  const n = Math.max(1, Math.floor(intervalCount ?? 1) || 1);
+  switch (frequency) {
     case "daily":
-      return amount * 30;
+      return 365 / 12 / n;
+    case "weekly":
+      return 52 / 12 / n;
+    case "quarterly":
+      return 1 / (3 * n);
+    case "yearly":
+      return 1 / (12 * n);
     case "monthly":
+      return 1 / n;
     case "custom":
     default:
-      return amount;
+      // La cadencia personalizada avanza por días.
+      return 365 / 12 / n;
   }
+}
+
+/** Equivalente mensual en la moneda propia de la suscripción. */
+export function getMonthlySubscriptionAmount(subscription: SubscriptionSummary) {
+  return subscription.amount * getSubscriptionMonthlyFactor(subscription.frequency, subscription.intervalCount);
+}
+
+export type SubscriptionMonthlySummary = {
+  total: number;
+  comparableCount: number;
+  /** Activas sin conversión válida a la moneda base: no entran en el total. */
+  unconvertedCount: number;
+};
+
+/**
+ * Total mensual en moneda base. Una suscripción entra solo con conversión persistida válida o
+ * si ya está en la moneda base; nunca se suma su monto nativo como si fuera base.
+ */
+export function summarizeSubscriptionsMonthly(
+  subscriptions: SubscriptionSummary[],
+  baseCurrencyCode: string,
+): SubscriptionMonthlySummary {
+  const base = baseCurrencyCode.toUpperCase();
+  const summary: SubscriptionMonthlySummary = { total: 0, comparableCount: 0, unconvertedCount: 0 };
+  for (const subscription of subscriptions) {
+    if (subscription.status !== "active") continue;
+    const converted = subscription.amountInBaseCurrency;
+    const amount = converted != null && Number.isFinite(converted) && converted > 0
+      ? converted
+      : subscription.currencyCode.toUpperCase() === base ? subscription.amount : null;
+    if (amount == null) {
+      summary.unconvertedCount += 1;
+      continue;
+    }
+    summary.total += amount * getSubscriptionMonthlyFactor(subscription.frequency, subscription.intervalCount);
+    summary.comparableCount += 1;
+  }
+  return summary;
 }

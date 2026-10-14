@@ -5,6 +5,8 @@ import { COLORS } from "../../../constants/theme";
 
 type Props = {
   monthlyTotal: number;
+  /** Activas sin conversión a la moneda base: no están en el total. */
+  unconvertedCount?: number;
   activeCount: number;
   pausedCount: number;
   currencyCode: string;
@@ -12,6 +14,7 @@ type Props = {
 
 export function SubscriptionSummaryBar({
   monthlyTotal,
+  unconvertedCount = 0,
   activeCount,
   pausedCount,
   currencyCode,
@@ -25,13 +28,19 @@ export function SubscriptionSummaryBar({
       ? "La pausada no suma."
       : "Las pausadas no suman.";
 
+  const sinConversion = unconvertedCount === 0
+    ? null
+    : unconvertedCount === 1
+      ? "1 sin conversión no suma."
+      : `${unconvertedCount} sin conversión no suman.`;
+
   return (
     <MetricSummaryBar
       label="Al mes"
       value={formatCurrency(monthlyTotal, currencyCode)}
       /* Hueso, no clay: es lo que se VA a gastar, no lo que ya se gastó. */
       valueColor={COLORS.ink}
-      support={[`${activas}.`, pausadas].filter(Boolean).join(" ")}
+      support={[`${activas}.`, pausadas, sinConversion].filter(Boolean).join(" ")}
       help={{
         title: "Gasto mensual en suscripciones",
         description: "Suma de tus suscripciones activas llevada a su equivalente mensual.",

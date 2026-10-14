@@ -22,7 +22,7 @@ function parseYmd(ymd: string): Date {
 
 export function SubscriptionDetailHeader({ subscription, occurrences }: Props) {
   const monthly = getMonthlySubscriptionAmount(subscription);
-  const showMonthly = subscription.frequency !== "monthly" && Math.abs(monthly - subscription.amount) > 0.001;
+  const showMonthly = Math.abs(monthly - subscription.amount) > 0.001;
   const standing = subscriptionStanding({
     subscription,
     today: todayPeru(),

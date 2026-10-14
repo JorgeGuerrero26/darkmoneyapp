@@ -123,7 +123,8 @@ export function subscriptionFrequencyListLabel(
 }
 
 /**
- * Costo anual estimado desde el monto del plan (paridad con web: custom/quarterly en default → ×12).
+ * Costo anual estimado desde el monto del plan. La cadencia personalizada avanza por días,
+ * igual que el calendario.
  */
 export function getSubscriptionAnnualCost(
   amount: number,
@@ -144,7 +145,7 @@ export function getSubscriptionAnnualCost(
       return amount / n;
     case "custom":
     default:
-      return amount * 12;
+      return amount * (365 / n);
   }
 }
 

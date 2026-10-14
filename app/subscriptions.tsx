@@ -34,7 +34,7 @@ import {
 } from "../features/subscriptions/lib/subscriptionDueDateFilters";
 import {
   filterSubscriptions,
-  getMonthlySubscriptionAmount,
+  summarizeSubscriptionsMonthly,
   SUBSCRIPTION_FILTERS,
   subscriptionFilterLabel,
   type ActiveSubscriptionFilter,
@@ -170,18 +170,14 @@ function SubscriptionsScreen() {
   }, [activeFilters, dueDateRange, searchText]);
 
   const summary = useMemo(() => {
-    return filteredSubscriptions.reduce(
-      (acc, subscription) => {
-        if (subscription.status === "active") {
-          acc.activeCount += 1;
-          acc.monthlyTotal += getMonthlySubscriptionAmount(subscription, true);
-        }
-        if (subscription.status === "paused") acc.pausedCount += 1;
-        return acc;
-      },
-      { monthlyTotal: 0, activeCount: 0, pausedCount: 0 },
-    );
-  }, [filteredSubscriptions]);
+    const monthly = summarizeSubscriptionsMonthly(filteredSubscriptions, baseCurrencyCode);
+    return {
+      monthlyTotal: monthly.total,
+      unconvertedCount: monthly.unconvertedCount,
+      activeCount: filteredSubscriptions.filter((subscription) => subscription.status === "active").length,
+      pausedCount: filteredSubscriptions.filter((subscription) => subscription.status === "paused").length,
+    };
+  }, [filteredSubscriptions, baseCurrencyCode]);
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
@@ -456,6 +452,7 @@ function SubscriptionsScreen() {
         !selectMode && filteredSubscriptions.length > 0 ? (
           <SubscriptionSummaryBar
             monthlyTotal={summary.monthlyTotal}
+            unconvertedCount={summary.unconvertedCount}
             activeCount={summary.activeCount}
             pausedCount={summary.pausedCount}
             currencyCode={baseCurrencyCode}
