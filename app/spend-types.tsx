@@ -14,7 +14,6 @@ import { SpendTypeFilterSheet } from "../features/spend-types/components/SpendTy
 import { buildCategorySpendTotals, buildSpendTypeSections, filterSpendTypes, SPEND_TYPE_STATUSES, type SpendTypeStatus } from "../features/spend-types/lib/spendTypeList";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
-import { OfflineContextSlot } from "../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
@@ -129,7 +128,6 @@ function SpendTypesScreen() {
         ...(search.trim() ? [{ key: "search", label: search.trim(), onRemove: () => setSearch("") }] : []),
         ...(status !== "active" ? [{ key: "status", label: SPEND_TYPE_STATUSES.find((item) => item.value === status)?.label ?? "Estado", onRemove: () => setStatus("active") }] : []),
       ]} onClear={() => { setSearch(""); setStatus("active"); }} />}
-      context={<OfflineContextSlot from="spend-types" />}
       summary={spendTypes.length > 0 ? <MetricSummaryBar support={`${visibleTypes.length} tipos · ${gastoCategorias.filter((category) => visibleTypes.some((type) => type.id === category.defaultSpendTypeId)).length} categorías asignadas`} /> : null}
       list={
         <ResourceSectionList<SpendType, Section>

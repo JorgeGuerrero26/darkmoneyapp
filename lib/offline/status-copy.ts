@@ -12,57 +12,6 @@ export const ONLINE_ONLY_COMPOUND_NOTICE = "Necesitas internet para registrar es
 
 export const ONLINE_ONLY_OBLIGATION_NOTICE = "Necesitas internet para registrar el movimiento de apertura de esta deuda o préstamo. Conéctate y vuelve a intentarlo; no se guardó ningún cambio.";
 
-export type OfflineNotice = {
-  title: string;
-  body: string;
-  tone: "info" | "attention";
-  busy: boolean;
-};
-
-/** El aviso de la lista de movimientos. null = todo al día, no se muestra nada. */
-export function describeOfflineNotice(state: OfflineState): OfflineNotice | null {
-  if (state.availability !== "ready") return null;
-
-  if (state.rejected > 0) {
-    return {
-      title: `${state.rejected} ${plural(state.rejected, "cambio no se pudo guardar", "cambios no se pudieron guardar")}`,
-      body: "Toca para ver qué pasó y qué hacer.",
-      tone: "attention",
-      busy: false,
-    };
-  }
-  if (!state.online) {
-    return {
-      title: "Sin conexión",
-      body:
-        state.pending > 0
-          ? `${state.pending} ${plural(state.pending, "cambio guardado", "cambios guardados")} en tu teléfono. Se enviarán solos cuando vuelva internet.`
-          : "Puedes seguir registrando: se guarda en tu teléfono y se envía solo cuando vuelva internet.",
-      tone: "info",
-      busy: false,
-    };
-  }
-  if (state.pending > 0) {
-    return {
-      title: state.syncing
-        ? `Enviando ${state.pending} ${plural(state.pending, "cambio", "cambios")}…`
-        : `${state.pending} ${plural(state.pending, "cambio sin enviar", "cambios sin enviar")}`,
-      body: state.syncing ? "Ya están guardados en tu teléfono." : "Ya están guardados en tu teléfono; se reintentará solo.",
-      tone: "info",
-      busy: state.syncing,
-    };
-  }
-  if (state.review > 0) {
-    return {
-      title: `${state.review} ${plural(state.review, "cambio para revisar", "cambios para revisar")}`,
-      body: "Se guardaron, pero otra persona había cambiado el mismo monto.",
-      tone: "attention",
-      busy: false,
-    };
-  }
-  return null;
-}
-
 export type SyncLine = {
   kind: "offline" | "pending" | "sending" | "review";
   text: string;

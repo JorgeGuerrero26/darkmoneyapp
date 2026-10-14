@@ -17,7 +17,6 @@ import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
-import { OfflineContextSlot } from "../../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
@@ -521,7 +520,7 @@ function BudgetsScreen() {
           <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />
         ) : null
       }
-      context={<OfflineContextSlot from="budgets">{!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}</OfflineContextSlot>}
+      context={!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}
       summary={
         !selectMode && currentBudgets.length > 0 ? (
           <MetricSummaryBar

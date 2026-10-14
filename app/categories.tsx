@@ -15,7 +15,6 @@ import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
-import { OfflineContextSlot } from "../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
@@ -336,7 +335,7 @@ function CategoriesScreen() {
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={<OfflineContextSlot from="categories">{!selectMode && hasFilters && categories.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}</OfflineContextSlot>}
+      context={!selectMode && hasFilters && categories.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
         !selectMode && filteredCategories.length > 0 ? (
           <CategorySummaryBar
