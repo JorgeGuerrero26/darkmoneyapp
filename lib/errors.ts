@@ -2,10 +2,10 @@
  * Maps Supabase/PostgreSQL error codes and common error messages
  * to human-readable Spanish strings.
  */
-import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE } from "./offline/status-copy";
+import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE } from "./offline/status-copy";
 
 /** Avisos de "necesitas internet" del modo sin conexión: ya vienen redactados para la persona y son largos. */
-const OFFLINE_NOTICES = new Set([ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE]);
+const OFFLINE_NOTICES = new Set([ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE]);
 
 /** Lo que se dice cuando no hay nada útil que traducir. */
 const GENERIC_ERROR = "Algo salió mal. Inténtalo de nuevo";

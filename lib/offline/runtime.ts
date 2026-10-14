@@ -19,7 +19,7 @@ import { listRowsLocal } from "./resource-store";
 import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-writes";
 import type { MirroredTable, WritableResourceTable } from "./schema";
 import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pending";
-import { ONLINE_ONLY_COMPOUND_NOTICE } from "./status-copy";
+import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
 
@@ -476,7 +476,7 @@ export class OfflineRuntime {
     const context = await this.resourceContext(workspaceId, table);
     if (!context) return false;
     if (table === "subscriptions" && await context.db.get("select 1 from movements where workspace_id=? and json_extract(data, '$.subscription_id')=? limit 1", [workspaceId, id])) {
-      this.assertCompoundOnline();
+      this.assertCompoundOnline(ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE);
       return false; // Con red, conservar el borrado online de la suscripción y sus pagos.
     }
     const done = await deleteRowLocal(context.db, { workspaceId, table, userId: context.userId, id, nowIso: new Date(this.now()).toISOString() });
