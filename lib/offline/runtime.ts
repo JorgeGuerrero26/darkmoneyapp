@@ -58,7 +58,7 @@ export type RuntimeHooks = {
   /** Cambió algo que la UI muestra (una escritura local o datos recién descargados). */
   onDataChanged?: (tables: string[]) => void | Promise<void>;
   /** Terminó un ciclo que envió cambios: el momento de refrescar lo que solo el servidor calcula. */
-  onPushed?: (report: SyncReport) => void | Promise<void>;
+  onPushed?: (report: SyncReport, reason: SyncReason) => void | Promise<void>;
 };
 
 const INITIAL_STATE: OfflineState = {
@@ -270,7 +270,7 @@ export class OfflineRuntime {
       });
       await this.refreshCounts();
     }
-    if (report && report.pushed > 0 && !report.error) void this.hooks.onPushed?.(report);
+    if (report && report.pushed > 0 && !report.error) void this.hooks.onPushed?.(report, reason);
     return report;
   }
 

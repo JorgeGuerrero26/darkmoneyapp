@@ -6,6 +6,8 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { overlayBalancesOnAccounts } from "../lib/offline/account-balances";
 import { offlineRuntime } from "../lib/offline/instance";
 import { useOfflineFlag } from "../lib/offline/react";
+import { describePushedNotice } from "../lib/offline/pushed-notice";
+import { useUiStore } from "../store/ui-store";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
 import { BUDGET_INPUT_TABLES } from "../services/queries/offline-budgets";
 import { applyLocalObligationsToCache } from "../services/queries/offline-obligations";
@@ -71,7 +73,10 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
       },
       // El servidor acaba de aceptar cambios: ahora sí se pueden pedir los números que solo él
       // calcula (presupuestos, historial por categoría, analíticas).
-      onPushed: () => {
+      onPushed: (report, reason) => {
+        // "3 cambios enviados" (Revisión 40): al volver el internet o al enviar varios juntos.
+        const notice = describePushedNotice(report, reason);
+        if (notice) useUiStore.getState().showToast(notice, "success");
         const wsId = latest.current.workspaceId;
         if (wsId == null) return;
         scheduleCoalescedTask(queryClient, `movement-snapshot:${wsId}`, () =>
