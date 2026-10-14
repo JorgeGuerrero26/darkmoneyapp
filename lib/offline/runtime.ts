@@ -341,6 +341,17 @@ export class OfflineRuntime {
     return Number(row?.n ?? 0);
   }
 
+  /** ¿Hay cambios sin enviar en alguna de estas tablas? Decide si un número del servidor puede estar desfasado. */
+  async hasPendingOps(workspaceId: number, tables: string[]): Promise<boolean> {
+    if (!this.canReadLocal(workspaceId) || !this.db || tables.length === 0) return false;
+    const marks = tables.map(() => "?").join(",");
+    const row = await this.db.get<{ n: number }>(
+      `select count(*) as n from outbox where workspace_id = ? and table_name in (${marks})`,
+      [workspaceId, ...tables],
+    );
+    return Number(row?.n ?? 0) > 0;
+  }
+
   async createRow(workspaceId: number, table: WritableResourceTable, fields: Record<string, unknown>) {
     const context = await this.resourceContext(workspaceId, table);
     if (!context) return null;

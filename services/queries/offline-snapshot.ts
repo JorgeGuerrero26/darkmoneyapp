@@ -1,15 +1,18 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import { offlineRuntime } from "../../lib/offline/instance";
+import { BUDGET_INPUT_TABLES, computeLocalBudgetRows } from "./offline-budgets";
 import { isCoreSnapshot } from "./snapshot-cache";
 import {
   FREQUENCY_LABELS,
   applyBaseCurrencyToAccounts,
   buildAccountSummaries,
   buildCategorySummaries,
+  mapBudget,
   mapCounterpartyFromRow,
   mapRecurringIncome,
   mapSubscription,
+  type WorkspaceDeferred,
   type WorkspaceSnapshot,
 } from "./workspace-data";
 
@@ -101,6 +104,28 @@ export async function applyLocalCatalogsToCache(queryClient: QueryClient, worksp
   queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot", workspaceId] }, (old: unknown) => {
     if (!isCoreSnapshot(old)) return old;
     return { ...old, accounts, categories, counterparties, subscriptions, recurringIncome };
+  });
+  return true;
+}
+
+/**
+ * Sin red no hay refetch: tras escribir un presupuesto o un gasto, la parte diferida del snapshot
+ * (presupuestos) se rehace desde la base local. Solo si hay cambios sin enviar; si no, el servidor ya es exacto.
+ */
+export async function applyLocalBudgetsToCache(queryClient: QueryClient, workspaceId: number): Promise<boolean> {
+  const entries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot", workspaceId] }).map(([, data]) => data);
+  const core = entries.find(isCoreSnapshot) as WorkspaceSnapshot | undefined;
+  if (!core) return false;
+  if (!(await offlineRuntime.hasPendingOps(workspaceId, BUDGET_INPUT_TABLES))) return false;
+  const rows = await computeLocalBudgetRows(
+    workspaceId,
+    core.exchangeRates.map((rate) => ({ from_currency_code: rate.fromCurrencyCode, to_currency_code: rate.toCurrencyCode, rate: rate.rate })),
+  );
+  if (!rows) return false;
+  const budgets = rows.map((row) => mapBudget(row as never));
+  queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot", workspaceId] }, (old: unknown) => {
+    if (!old || isCoreSnapshot(old)) return old;
+    return { ...(old as WorkspaceDeferred), budgets };
   });
   return true;
 }

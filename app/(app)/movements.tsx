@@ -240,8 +240,8 @@ function MovementsScreen() {
   const [duplicateSource, setDuplicateSource] = useState<MovementDuplicateSource | null>(null);
   const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
   const movementTemplates = useMovementTemplatesQuery(activeWorkspaceId, quickAddSheetVisible).data ?? [];
-  const deleteTemplate = useDeleteMovementTemplateMutation();
-  const renameTemplate = useRenameMovementTemplateMutation();
+  const deleteTemplate = useDeleteMovementTemplateMutation(activeWorkspaceId);
+  const renameTemplate = useRenameMovementTemplateMutation(activeWorkspaceId);
   const [renameTemplateTarget, setRenameTemplateTarget] = useState<MovementTemplate | null>(null);
   const [formDefaultType, setFormDefaultType] = useState<MovementType>("expense");
 

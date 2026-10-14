@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
 import { runBackgroundQueryRefresh } from "./_shared";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 
 export type SpendType = {
   id: number;
@@ -38,9 +40,18 @@ function mapRow(row: Record<string, unknown>): SpendType {
 }
 
 export function useSpendTypesQuery(workspaceId: number | null) {
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useQuery({
     queryKey: ["spend-types", workspaceId],
+    networkMode,
     queryFn: async (): Promise<SpendType[]> => {
+      // Modo sin conexión (beta): con la copia local lista se lee de ella (misma ordenación que abajo).
+      const local = workspaceId ? await offlineRuntime.listRows(workspaceId, "spend_types").catch(() => null) : null;
+      if (local) {
+        return [...local]
+          .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) || String(a.name ?? "").localeCompare(String(b.name ?? "")))
+          .map((row) => mapRow(row));
+      }
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { data, error } = await supabase
         .from("spend_types")
@@ -58,11 +69,13 @@ export function useSpendTypesQuery(workspaceId: number | null) {
 
 export function useCreateSpendTypeMutation(workspaceId: number | null, userId?: string | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-spend-type"],
+    networkMode,
     mutationFn: async (input: SpendTypeInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error } = await supabase.from("spend_types").insert({
+      const payload = {
         workspace_id: workspaceId,
         created_by_user_id: userId ?? null,
         name: input.name.trim(),
@@ -70,7 +83,15 @@ export function useCreateSpendTypeMutation(workspaceId: number | null, userId?: 
         icon: input.icon ?? null,
         sort_order: input.sortOrder ?? 0,
         excluded_from_typical: input.excludedFromTypical ?? false,
-      });
+      };
+      // Modo sin conexión (beta): el nombre es único por espacio; se comprueba contra la copia local
+      // con las mismas palabras que el rechazo del servidor.
+      const existing = await offlineRuntime.listRows(workspaceId, "spend_types").catch(() => null);
+      if (existing?.some((row) => String(row.name ?? "").trim().toLowerCase() === payload.name.toLowerCase())) {
+        throw new Error("Ya tienes un tipo con ese nombre.");
+      }
+      if (await localCreate(workspaceId, "spend_types", payload)) return;
+      const { error } = await supabase.from("spend_types").insert(payload);
       // 23505 = ya existe uno con ese nombre en este espacio. Se dice con palabras.
       if (error) {
         throw new Error(
@@ -88,8 +109,10 @@ export function useCreateSpendTypeMutation(workspaceId: number | null, userId?: 
 
 export function useUpdateSpendTypeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-spend-type"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<SpendTypeInput> & { isActive?: boolean } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -99,6 +122,7 @@ export function useUpdateSpendTypeMutation(workspaceId: number | null) {
       if (input.sortOrder !== undefined) payload.sort_order = input.sortOrder;
       if (input.isActive !== undefined) payload.is_active = input.isActive;
       if (input.excludedFromTypical !== undefined) payload.excluded_from_typical = input.excludedFromTypical;
+      if (await localUpdate(workspaceId, "spend_types", id, payload)) return;
       const { error } = await supabase
         .from("spend_types")
         .update(payload)
@@ -115,10 +139,13 @@ export function useUpdateSpendTypeMutation(workspaceId: number | null) {
 
 export function useDeleteSpendTypeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-spend-type"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localDelete(workspaceId, "spend_types", id)) return;
       const { error } = await supabase
         .from("spend_types")
         .delete()
@@ -138,10 +165,13 @@ export function useDeleteSpendTypeMutation(workspaceId: number | null) {
 /** El defecto de una categoría: lo que rellena el formulario al elegirla. */
 export function useSetCategoryDefaultSpendTypeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["set-category-default-spend-type"],
+    networkMode,
     mutationFn: async ({ categoryId, spendTypeId }: { categoryId: number; spendTypeId: number | null }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "categories", categoryId, { default_spend_type_id: spendTypeId })) return;
       const { error } = await supabase
         .from("categories")
         .update({ default_spend_type_id: spendTypeId })

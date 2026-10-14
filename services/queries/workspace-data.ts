@@ -26,6 +26,7 @@ import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
 import { offlineRuntime } from "../../lib/offline/instance";
 import { withLocalBalanceRows } from "../../lib/offline/local-balances";
 import { withLocalRows } from "../../lib/offline/local-rows";
+import { withLocalBudgetRows } from "./offline-budgets";
 import { useOfflineLocalReady, useOfflineFlag } from "../../lib/offline/react";
 import {
   mirrorObligationEventAttachmentsToMovement,
@@ -561,7 +562,7 @@ function mapWorkspace(row: WorkspaceRow, memberRow: WorkspaceMemberRow): Workspa
   };
 }
 
-function mapBudget(row: BudgetProgressRow): BudgetOverview {
+export function mapBudget(row: BudgetProgressRow): BudgetOverview {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
@@ -1199,7 +1200,15 @@ export async function fetchWorkspaceDeferred(
     obligationEventRows = (evData ?? []) as ObligationEventRow[];
   }
 
-  const budgets: BudgetOverview[] = (budgetsResult.data ?? []).map((row: any) =>
+  // Modo sin conexión (beta): con gastos o presupuestos sin enviar, el avance se calcula en el teléfono.
+  const budgetRows = await withLocalBudgetRows(activeWorkspaceId, budgetsResult.data ?? [], async () => {
+    const { data, error } = await supabase!
+      .from("v_latest_exchange_rates")
+      .select("from_currency_code, to_currency_code, rate");
+    if (error) throw error;
+    return (data ?? []) as Array<{ from_currency_code: string; to_currency_code: string; rate: number | string }>;
+  });
+  const budgets: BudgetOverview[] = budgetRows.map((row: any) =>
     mapBudget(row as BudgetProgressRow),
   );
 
@@ -1256,7 +1265,11 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
 
   if (catRes.error) throw new Error(catRes.error.message ?? "Error al cargar categorías");
 
-  const rows = (catRes.data ?? []) as {
+  // Modo sin conexión (beta): categorías y suscripciones de la copia local cuando está lista.
+  const localCategories = await withLocalRows(workspaceId, "categories", catRes.data ?? []);
+  const localSubscriptions = await withLocalRows(workspaceId, "subscriptions", (subRes.data ?? []) as Array<Record<string, unknown>>);
+  const subscriptionRows = (localSubscriptions as Array<Record<string, unknown>>).filter((row) => row.category_id != null);
+  const rows = localCategories as unknown as {
     id: number;
     workspace_id: number;
     name: string;
@@ -1290,8 +1303,8 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
   const subscriptionCount = new Map<number, number>();
   const subscriptionLast = new Map<number, string>();
   if (!subRes.error) {
-    for (const s of subRes.data ?? []) {
-      const row = s as { category_id: number; updated_at: string };
+    for (const s of subscriptionRows) {
+      const row = s as unknown as { category_id: number; updated_at: string };
       const cid = row.category_id;
       subscriptionCount.set(cid, (subscriptionCount.get(cid) ?? 0) + 1);
       const prev = subscriptionLast.get(cid);
@@ -1327,8 +1340,10 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
 }
 
 export function useCategoriesOverviewQuery(profile: AppProfile | null, workspaceId: number | null) {
+  const localReady = useOfflineLocalReady(workspaceId);
   return useQuery({
     queryKey: ["categories-overview", workspaceId, profile?.id],
+    networkMode: localReady ? "always" : "online",
     queryFn: () => fetchCategoriesOverview(workspaceId!),
     enabled: Boolean(profile?.id && workspaceId),
     staleTime: STALE.medium,
@@ -1582,7 +1597,14 @@ export async function refreshSnapshotDomains(
     let budgetsPatch: BudgetOverview[] | null = null;
     if (budgetsRes) {
       if (budgetsRes.error) throw budgetsRes.error;
-      budgetsPatch = (budgetsRes.data ?? []).map((row: any) => mapBudget(row as BudgetProgressRow));
+      const budgetRows = await withLocalBudgetRows(workspaceId, budgetsRes.data ?? [], async () =>
+        current.exchangeRates.map((rate) => ({
+          from_currency_code: rate.fromCurrencyCode,
+          to_currency_code: rate.toCurrencyCode,
+          rate: rate.rate,
+        })),
+      );
+      budgetsPatch = budgetRows.map((row: any) => mapBudget(row as BudgetProgressRow));
     }
     if (catMovsRes || subMovsRes || contactMovsRes) {
       const accountsForCurrency = patch.accounts ?? current.accounts;

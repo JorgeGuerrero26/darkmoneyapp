@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabase";
 import { groupBudgetsIntoRules } from "../../features/budgets/lib/budgetRules";
 import { nextBudgetPeriod, type BudgetRecurrence } from "../../features/budgets/lib/budgetRecurrence";
 import { runBackgroundQueryRefresh } from "./_shared";
+import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 import { isCoreSnapshot } from "./snapshot-cache";
 import type { WorkspaceDeferred } from "./workspace-data";
 import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
@@ -30,27 +31,34 @@ export type BudgetUpdateInput = Partial<BudgetFormInput>;
 
 export function useCreateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-budget"],
+    networkMode,
     mutationFn: async (input: BudgetFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const payload = {
+        workspace_id: workspaceId,
+        name: input.name,
+        period_start: input.periodStart,
+        period_end: input.periodEnd,
+        limit_amount: input.limitAmount,
+        alert_percent: input.alertPercent,
+        currency_code: input.currencyCode,
+        category_id: input.categoryId ?? null,
+        account_id: input.accountId ?? null,
+        spend_type_id: input.spendTypeId ?? null,
+        rollover_enabled: input.rolloverEnabled ?? false,
+        recurrence: input.recurrence ?? "none",
+        notes: input.notes ?? null,
+      };
+      // Modo sin conexión (beta): los valores por defecto del servidor (activo, sin fijar) se escriben
+      // explícitos, porque el avance local los necesita desde el primer momento.
+      const local = await localCreate(workspaceId, "budgets", { ...payload, is_active: true, is_pinned: false });
+      if (local) return local;
       const { data, error } = await supabase
         .from("budgets")
-        .insert({
-          workspace_id: workspaceId,
-          name: input.name,
-          period_start: input.periodStart,
-          period_end: input.periodEnd,
-          limit_amount: input.limitAmount,
-          alert_percent: input.alertPercent,
-          currency_code: input.currencyCode,
-          category_id: input.categoryId ?? null,
-          account_id: input.accountId ?? null,
-          spend_type_id: input.spendTypeId ?? null,
-          rollover_enabled: input.rolloverEnabled ?? false,
-          recurrence: input.recurrence ?? "none",
-          notes: input.notes ?? null,
-        })
+        .insert(payload)
         .select("id")
         .single();
       if (error) throw new Error(error.message ?? "Error de base de datos");
@@ -64,8 +72,10 @@ export function useCreateBudgetMutation(workspaceId: number | null) {
 
 export function useUpdateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-budget"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: BudgetUpdateInput }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -84,6 +94,7 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
          crear, porque la fase 36 la añadió al insert y no al update. */
       if (input.recurrence !== undefined) payload.recurrence = input.recurrence;
       if (input.notes !== undefined) payload.notes = input.notes;
+      if (await localUpdate(workspaceId, "budgets", id, payload)) return;
       const { error } = await supabase
         .from("budgets")
         .update(payload)
@@ -99,10 +110,13 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
 
 export function useTogglePinBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["toggle-pin-budget"],
+    networkMode,
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "budgets", id, { is_pinned: isPinned })) return;
       const { error } = await supabase
         .from("budgets")
         .update({ is_pinned: isPinned })
@@ -137,26 +151,31 @@ export function useTogglePinBudgetMutation(workspaceId: number | null) {
 
 export function useDuplicateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["duplicate-budget"],
+    networkMode,
     mutationFn: async (source: BudgetOverview) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { periodStart, periodEnd } = nextPeriodFor(source.periodStart, source.periodEnd);
+      const payload = {
+        workspace_id: workspaceId,
+        name: source.name,
+        period_start: periodStart,
+        period_end: periodEnd,
+        limit_amount: source.limitAmount,
+        alert_percent: source.alertPercent,
+        currency_code: source.currencyCode,
+        category_id: source.categoryId ?? null,
+        account_id: source.accountId ?? null,
+        rollover_enabled: source.rolloverEnabled,
+        notes: source.notes ?? null,
+      };
+      const local = await localCreate(workspaceId, "budgets", { ...payload, is_active: true, is_pinned: false, recurrence: "none" });
+      if (local) return local;
       const { data, error } = await supabase
         .from("budgets")
-        .insert({
-          workspace_id: workspaceId,
-          name: source.name,
-          period_start: periodStart,
-          period_end: periodEnd,
-          limit_amount: source.limitAmount,
-          alert_percent: source.alertPercent,
-          currency_code: source.currencyCode,
-          category_id: source.categoryId ?? null,
-          account_id: source.accountId ?? null,
-          rollover_enabled: source.rolloverEnabled,
-          notes: source.notes ?? null,
-        })
+        .insert(payload)
         .select("id")
         .single();
       if (error) throw new Error(error.message ?? "Error de base de datos");
@@ -170,10 +189,13 @@ export function useDuplicateBudgetMutation(workspaceId: number | null) {
 
 export function useDeleteBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-budget"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localDelete(workspaceId, "budgets", id)) return;
       const { error } = await supabase
         .from("budgets")
         .delete()

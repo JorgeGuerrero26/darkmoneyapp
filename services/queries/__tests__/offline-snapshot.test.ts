@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 
 const mockRows: Record<string, Record<string, unknown>[] | null> = {};
+let mockPending = true;
 let mockBalances: Array<{ accountId: number; currentBalance: number }> | null = [];
 
 jest.mock("../../../lib/supabase", () => ({ supabase: null }));
@@ -13,11 +14,12 @@ jest.mock("../../../lib/offline/instance", () => ({
   offlineRuntime: {
     listRows: async (_ws: number, table: string) => mockRows[table] ?? null,
     accountBalances: async () => mockBalances,
+    hasPendingOps: async () => mockPending,
   },
 }));
 
 // eslint-disable-next-line import/first
-import { applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../offline-snapshot";
+import { applyLocalBudgetsToCache, applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../offline-snapshot";
 
 const KEY = ["workspace-snapshot", 1, "core"];
 
@@ -47,6 +49,7 @@ describe("applyLocalCatalogsToCache", () => {
       subscriptions: [], recurring_income: [],
     });
     mockBalances = [{ accountId: 1, currentBalance: 48.8 }];
+    mockPending = true;
   });
 
   it("rehace cuentas y categorías desde la copia local, con el saldo local", async () => {
@@ -90,5 +93,52 @@ describe("applyLocalCatalogsToCache", () => {
     expect(touchesSnapshotCatalogs(["categories"])).toBe(true);
     expect(touchesSnapshotCatalogs(["movements"])).toBe(false);
     expect(touchesSnapshotCatalogs(["budgets", "spend_types"])).toBe(false);
+  });
+
+  describe("presupuestos", () => {
+    const seedBudgets = () => {
+      Object.assign(mockRows, {
+        budgets: [{
+          id: 10, workspace_id: 1, name: "Comida mensual", period_start: "2026-10-01", period_end: "2026-10-31", currency_code: "PEN",
+          category_id: 2, account_id: null, spend_type_id: null, limit_amount: 100, alert_percent: 80, rollover_enabled: false,
+          recurrence: "none", notes: null, is_active: true, is_pinned: false, created_by_user_id: "u1", updated_by_user_id: "u1",
+          created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z",
+        }],
+        movements: [{
+          id: 77, workspace_id: 1, status: "posted", movement_type: "expense", occurred_at: "2026-10-13T12:00:00.000Z",
+          source_amount: 30, destination_amount: null, source_account_id: 1, category_id: 2, spend_type_id: null,
+        }],
+        spend_types: [],
+      });
+    };
+
+    const deferredKey = ["workspace-snapshot", 1, "u1", "deferred"];
+    const seedDeferred = (queryClient: QueryClient) => queryClient.setQueryData(deferredKey, { budgets: [], obligations: [] });
+
+    it("un gasto sin enviar se refleja en el avance del presupuesto", async () => {
+      seedBudgets();
+      const queryClient = seed();
+      seedDeferred(queryClient);
+      expect(await applyLocalBudgetsToCache(queryClient, 1)).toBe(true);
+      const budgets = (queryClient.getQueryData(deferredKey) as { budgets: Array<Record<string, unknown>> }).budgets;
+      expect(budgets).toHaveLength(1);
+      expect(budgets[0]).toMatchObject({ id: 10, spentAmount: 30, remainingAmount: 70, movementCount: 1, scopeKind: "category" });
+    });
+
+    it("sin cambios pendientes no toca nada: el servidor ya es exacto", async () => {
+      seedBudgets();
+      mockPending = false;
+      const queryClient = seed();
+      seedDeferred(queryClient);
+      expect(await applyLocalBudgetsToCache(queryClient, 1)).toBe(false);
+    });
+
+    it("si falta una tabla por descargar conserva lo del servidor", async () => {
+      seedBudgets();
+      mockRows.movements = null;
+      const queryClient = seed();
+      seedDeferred(queryClient);
+      expect(await applyLocalBudgetsToCache(queryClient, 1)).toBe(false);
+    });
   });
 });

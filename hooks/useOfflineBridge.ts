@@ -7,7 +7,8 @@ import { overlayBalancesOnAccounts } from "../lib/offline/account-balances";
 import { offlineRuntime } from "../lib/offline/instance";
 import { useOfflineFlag } from "../lib/offline/react";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
-import { applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../services/queries/offline-snapshot";
+import { BUDGET_INPUT_TABLES } from "../services/queries/offline-budgets";
+import { applyLocalBudgetsToCache, applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../services/queries/offline-snapshot";
 import { isCoreSnapshot } from "../services/queries/snapshot-cache";
 import { refreshSnapshotDomains } from "../services/queries/workspace-data";
 
@@ -55,6 +56,10 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
         // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.
         if (wsId != null && (tables.length === 0 || touchesSnapshotCatalogs(tables))) {
           await applyLocalCatalogsToCache(queryClient, wsId).catch(() => false);
+        }
+        // Presupuestos: el avance cambia con presupuestos, gastos, cuentas, categorías y tipos de gasto.
+        if (wsId != null && (tables.length === 0 || tables.some((table) => BUDGET_INPUT_TABLES.includes(table)))) {
+          await applyLocalBudgetsToCache(queryClient, wsId).catch(() => false);
         }
       },
       // El servidor acaba de aceptar cambios: ahora sí se pueden pedir los números que solo él
