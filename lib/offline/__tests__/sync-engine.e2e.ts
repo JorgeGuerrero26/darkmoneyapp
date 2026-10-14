@@ -13,7 +13,7 @@ import { expect } from "./helpers/expect";
 import { countInbox, countOutbox, listInbox, listSendable } from "../outbox";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
-import { createRowLocal, deleteRowLocal } from "../resource-writes";
+import { createRowLocal, deleteRowLocal, updateRowLocal } from "../resource-writes";
 import { upsertMirrorRows } from "../movement-store";
 import { poolSize } from "../id-pool";
 import { SyncEngine } from "../sync-engine";
@@ -533,5 +533,110 @@ describe("descarga a escala", () => {
     await a.engine.syncNow(WS);
     const again = await a.engine.syncNow(WS);
     expect(again.pulledRows).toBe(0);
+  });
+});
+
+describe("catálogos sin conexión de punta a punta (Fase 3.6)", () => {
+  const named = (d: Device, table: "categories" | "counterparties" | "budgets" | "spend_types" | "movement_templates", name: string) =>
+    createRowLocal(d.db, { workspaceId: WS, userId: d.userId, table, fields: { name }, nowIso: new Date(clock).toISOString() });
+  const serverCount = async (table: string, name: string) =>
+    Number((await server.admin.query<{ n: string }>(`select count(*)::text n from ${table} where name = $1`, [name])).rows[0].n);
+
+  it("varios catálogos creados sin red llegan al servidor una sola vez y otro dispositivo los baja", async () => {
+    const a = device(USER_A);
+    const b = device(USER_B);
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+
+    await named(a, "categories", "Mascotas");
+    await named(a, "counterparties", "Veterinaria");
+    await named(a, "budgets", "Tope mensual");
+    await named(a, "spend_types", "Deseo");
+    await named(a, "movement_templates", "Croquetas");
+    expect(await countOutbox(a.db)).toBe(5);
+
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(0);
+    expect(report.applied).toBe(5);
+    expect(await countOutbox(a.db)).toBe(0);
+    for (const [table, name] of [
+      ["categories", "Mascotas"], ["counterparties", "Veterinaria"], ["budgets", "Tope mensual"],
+      ["spend_types", "Deseo"], ["movement_templates", "Croquetas"],
+    ] as const) expect(await serverCount(table, name)).toBe(1);
+
+    await b.engine.syncNow(WS);
+    const seen = async (table: "categories" | "counterparties" | "budgets" | "spend_types" | "movement_templates") =>
+      (await b.db.all<{ data: string }>(`select data from ${table} where workspace_id = ?`, [WS])).map((row) => JSON.parse(row.data).name);
+    expect(await seen("categories")).toContain("Mascotas");
+    expect(await seen("counterparties")).toContain("Veterinaria");
+    expect(await seen("budgets")).toContain("Tope mensual");
+    expect(await seen("spend_types")).toContain("Deseo");
+    expect(await seen("movement_templates")).toContain("Croquetas");
+  });
+
+  it("si la respuesta se pierde, el reintento de un catálogo no lo duplica", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    let lose = true;
+    const transport = (a.engine as unknown as { transport: SyncTransport }).transport;
+    const realPush = transport.pushBatch.bind(transport);
+    transport.pushBatch = async (ops) => {
+      const results = await realPush(ops);
+      if (lose) throw new Error("Network request failed");
+      return results;
+    };
+    await named(a, "categories", "Viajes");
+    expect((await a.engine.syncNow(WS)).error).not.toBeNull();
+    expect(await serverCount("categories", "Viajes")).toBe(1);
+
+    lose = false;
+    tick(10 * 60_000);
+    expect((await a.engine.syncNow(WS)).error).toBeNull();
+    expect(await countOutbox(a.db)).toBe(0);
+    expect(await serverCount("categories", "Viajes")).toBe(1);
+  });
+
+  it("renombrar lo que otra persona ya borró: se rechaza, se avisa y deja de verse en local", async () => {
+    const a = device(USER_A);
+    const b = device(USER_B);
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+    const category = (await named(a, "categories", "Efímera"))!;
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+
+    await deleteRowLocal(b.db, { workspaceId: WS, userId: USER_B, table: "categories", id: category.id });
+    await b.engine.syncNow(WS);
+    await updateRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", id: category.id, fields: { name: "Renombrada tarde" } });
+    const report = await a.engine.syncNow(WS);
+
+    expect(report.rejected).toBe(1);
+    expect((await listInbox(a.db))[0]).toMatchObject({ status: "rejected", code: "row_not_found" });
+    expect(await getServerShapedRow(a.db, "categories", category.id)).toBeNull();
+    expect(await countOutbox(a.db)).toBe(0);
+  });
+
+  it("dos personas renombran lo mismo: gana el último en llegar y nadie se queda con datos distintos", async () => {
+    const a = device(USER_A);
+    const b = device(USER_B);
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+    const category = (await named(a, "categories", "Original"))!;
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+
+    await updateRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", id: category.id, fields: { name: "De A" } });
+    await updateRowLocal(b.db, { workspaceId: WS, userId: USER_B, table: "categories", id: category.id, fields: { name: "De B" } });
+    await a.engine.syncNow(WS);
+    tick(60_000);
+    await b.engine.syncNow(WS);
+    tick(60_000);
+    await a.engine.syncNow(WS);
+
+    const onServer = (await server.admin.query<{ name: string }>("select name from categories where id = $1", [category.id])).rows[0].name;
+    expect(onServer).toBe("De B");
+    expect((await getServerShapedRow(a.db, "categories", category.id))?.name).toBe("De B");
+    expect((await getServerShapedRow(b.db, "categories", category.id))?.name).toBe("De B");
+    expect(await countInbox(a.db)).toEqual({ rejected: 0, review: 0 }); // catálogos: sin revisión de montos
   });
 });

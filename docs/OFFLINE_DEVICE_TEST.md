@@ -77,41 +77,28 @@ teléfono y se enviarán al volver a encenderlo.
 
 ## 8. Casos de Fase 3 y Fase 4 — pendientes de dispositivo e integración
 
-**Estado 2026-10-13: pendientes.** P1/P2 resueltas; etapas 3.1–3.3 verificadas en automático.
-La migración no está aplicada y los CRUD/lecturas de módulos no están integrados (3.4–3.5).
-No intentar esos CRUD como si ya estuvieran disponibles en la app. Las pruebas PGlite/Jest
-no verifican `expo-sqlite` en iPhone ni sus gestos/red real.
+**Estado 2026-10-13: 3.4–3.6 integradas en la rama `offline-fase3-4` y verdes en automático; prueba en
+dispositivo PENDIENTE.** Cuentas, categorías, contactos, tipos de gasto, plantillas, presupuestos y las
+definiciones de suscripciones e ingresos recurrentes se escriben por la base local (con el interruptor
+encendido); metas y roles de contacto no tienen pantalla en la app. Pagos de suscripciones y llegadas de
+ingresos siguen en línea. Antes de probar, el servidor necesita la migración `202610130001` (no aplicada:
+la aplica el dueño). Las pruebas PGlite/Jest no verifican `expo-sqlite` en iPhone ni gestos/red real.
 
-Tras integrar y desplegar las etapas correspondientes, probar:
+### Guía corta de la Fase 3 (con modo avión)
 
-1. Crear sin red una cuenta, categoría y contraparte; registrar un movimiento con esos IDs;
-   cerrar y abrir la app sin red; comprobar que nombres, referencias y centavos se conservan.
-2. Borrar una cuenta/categoría con movimientos: verificar `SET NULL` y saldos después del envío.
-   Borrar una contraparte con obligaciones: comprobar el rechazo por `RESTRICT` y el aviso.
-3. Crear/editar presupuesto, suscripción, ingreso fijo, plantilla y meta sin red; comprobar
-   persistencia, envío único y separación de la meta por usuario y workspace.
-4. Fase 3: pagar una suscripción o confirmar una llegada sin red muestra el aviso de internet
-   **sin movimiento, ocurrencia ni avance de fecha**. También editar/anular/borrar pagos
-   vinculados; comprobar cero operaciones nuevas y que el formulario conserva los cambios.
-   Repetir con beta apagada y con red para verificar el camino anterior.
-5. Interrumpir la red después de que el servidor confirme el envío y antes de recibir respuesta;
-   reintentar y comprobar que no se dupliquen dinero, ocurrencias ni avances de fecha.
-6. Una ocurrencia de ingreso con cuatro decimales conserva el monto exacto y solo se lee.
-   Una definición con fracción de centavo, incluso en descuentos, no puede editarse/borrarse
-   offline. Los historiales de suscripciones no ofrecen escrituras ni consumen IDs.
-7. Dos usuarios editando/pagando en un workspace compartido, pérdida de permiso y borrados:
-   saldo final, revisión de conflictos y aislamiento entre workspaces/usuarios.
-8. Viewers de obligaciones: solo lectura, antigüedad del caché y ausencia total de operaciones
-   en el outbox. Cambiar de usuario no debe mostrar el caché del anterior.
-9. Con la beta apagada, repetir creación/edición/borrado y pagos online: mismas firmas,
-   textos y comportamiento. Repetir también la prueba de swipe de la sección 5.
-10. Actualizar una instalación con SQLite v1 y datos pendientes a v2; abrir/cerrar sin red,
-    comprobar cuentas, IDs y outbox intactos. Alternar usuarios y workspaces sin datos ajenos.
-11. Comparar progreso del presupuesto antes y después del envío con moneda propia/convertida,
-    categoría/tipo de gasto, límite superado y fechas en el borde del período. Comprobar respaldo
-    del servidor si falta una tasa completa, paridad o quedan efectos de triggers pendientes.
-12. Revisar suscripciones activas, pausadas, canceladas, meses saltados y ancla 31. Editar la
-    definición offline no debe generar historial ni anunciar una fecha definitiva antes del pull.
-    Borrar una suscripción con pagos requiere el camino online existente.
+A. **Catálogo nuevo y de inmediato usado:** en modo avión crea una categoría desde *Categorías* y una cuenta
+   desde *Cuentas*; sin cerrar nada, registra un movimiento con ambas. Esperado: la categoría y la cuenta
+   aparecen al instante en el formulario y en su lista, el saldo de la cuenta nueva cambia, y arriba de cada
+   lista aparece el aviso "Sin conexión · N cambios guardados".
+B. **Persistencia:** mata la app del todo, ábrela sin internet: todo sigue ahí. Quita el modo avión: el aviso
+   pasa a "Todo al día"; en la web aparecen una sola vez (sin duplicados).
+C. **Borrado con comprobación:** borrar una categoría con movimientos debe decir, sin red, "No se puede
+   eliminar: hay movimientos que usan esta categoría" (igual que en línea). Una sin uso se borra al instante.
+D. **Presupuesto:** crea un presupuesto sin red, registra un gasto de su categoría y comprueba que el avance
+   sube al instante. Al sincronizar, el avance debe seguir igual (si cambia, anotar los dos valores).
+E. **Suscripción / ingreso recurrente:** crear y editar la definición sin red funciona; marcar como pagada o
+   confirmar la llegada sin red muestra el aviso de que necesita internet (sin cambios a medias).
+F. **Interruptor apagado:** repetir A–E con el modo apagado: debe comportarse exactamente como antes.
 
-**Resultado en iPhone/Android: pendiente.** No se publicó OTA/EAS ni se hizo prueba nativa.
+### Casos extendidos
+
