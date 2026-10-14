@@ -58,4 +58,12 @@ describe("buildSubscriptionAnalytics", () => {
     expect(analysis.monthlyEstimate).toBeNull();
     expect(analysis.paymentCount).toBe(0);
   });
+  it("asigna pagos al mes de Perú, no al del timestamp UTC", () => {
+    const analysis = buildSubscriptionAnalytics(subscription, [
+      payment(1, "2026-10-01T04:59:59Z", 20, "PEN", 20),
+      payment(2, "2026-10-01T05:00:00Z", 10, "PEN", 10),
+    ], "PEN", new Date("2026-10-02T12:00:00Z"));
+    expect(analysis.months.find(month=>month.key==="2026-09")?.total).toBe(20);
+    expect(analysis.months.find(month=>month.key==="2026-10")?.total).toBe(10);
+  });
 });

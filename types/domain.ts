@@ -475,6 +475,8 @@ export type ObligationShareInviteDetails = {
 /** Movimientos publicados vinculados a suscripciones (snapshot, sin APIs extra). */
 export type SubscriptionPostedMovement = {
   id: number;
+  /** Read-only receipt membership; the head ID still opens its original ledger row. */
+  receiptPartIds?: number[];
   subscriptionId: number;
   occurredAt: string;
   sourceAmount: number | null;

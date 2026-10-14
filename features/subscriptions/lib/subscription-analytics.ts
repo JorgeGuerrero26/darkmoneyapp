@@ -1,8 +1,9 @@
-import { format, subMonths } from "date-fns";
+import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { getSubscriptionAnnualCost, movementAmountForSubscriptionAnalytics } from "../../../lib/subscription-helpers";
 import type { SubscriptionPostedMovement, SubscriptionSummary } from "../../../types/domain";
+import { analyticsMonthKey, analyticsMonthKeys } from "../../../lib/catalog-money";
 
 export type SubscriptionAnalyticsMonth = { key: string; label: string; total: number };
 export type SubscriptionAnalyticsCurrency = { code: string; total: number; count: number };
@@ -29,9 +30,9 @@ export function buildSubscriptionAnalytics(
     .filter((movement) => movement.subscriptionId === subscription.id)
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   const currencies = new Map<string, SubscriptionAnalyticsCurrency>();
-  const months = Array.from({ length: 12 }, (_, index) => {
-    const date = subMonths(new Date(today.getFullYear(), today.getMonth(), 1), 11 - index);
-    return { key: format(date, "yyyy-MM"), label: format(date, "MMM yy", { locale: es }), total: 0 };
+  const months = analyticsMonthKeys(today).map(key => {
+    const date = new Date(`${key}-15T12:00:00-05:00`);
+    return { key, label: format(date, "MMM yy", { locale: es }), total: 0 };
   });
   const monthByKey = new Map(months.map((month) => [month.key, month]));
   let comparableCount = 0;
@@ -53,7 +54,7 @@ export function buildSubscriptionAnalytics(
     if (comparable == null) continue;
     comparableTotal += comparable;
     comparableCount += 1;
-    const month = monthByKey.get(payment.occurredAt.slice(0, 7));
+    const month = monthByKey.get(analyticsMonthKey(payment.occurredAt));
     if (month) month.total += comparable;
   }
 

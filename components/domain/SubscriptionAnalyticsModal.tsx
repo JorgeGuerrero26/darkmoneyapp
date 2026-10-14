@@ -19,9 +19,11 @@ type Props = {
   subscription: SubscriptionSummary | null;
   movements: SubscriptionPostedMovement[];
   baseCurrencyCode: string;
+  historyError?: string;
+  onRetry?: () => void;
 };
 
-export function SubscriptionAnalyticsModal({ visible, onClose, subscription, movements, baseCurrencyCode }: Props) {
+export function SubscriptionAnalyticsModal({ visible, onClose, subscription, movements, baseCurrencyCode, historyError, onRetry }: Props) {
   const router = useRouter();
   const [showAllMonths, setShowAllMonths] = useState(false);
   const [calculationOpen, setCalculationOpen] = useState(false);
@@ -83,11 +85,12 @@ export function SubscriptionAnalyticsModal({ visible, onClose, subscription, mov
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Pagos anotados</Text>
         <Text style={styles.sectionSubtitle}>
-          {analysis.paymentCount === 0
+          {historyError ? "Historial sin confirmar" : analysis.paymentCount === 0
             ? "Aún no hay pagos para analizar"
             : `${analysis.paymentCount} ${analysis.paymentCount === 1 ? "pago" : "pagos"} en el historial`}
         </Text>
-        {analysis.currencies.map((row, index) => (
+        {historyError ? <View accessibilityRole="alert"><Text style={styles.note}>{historyError}</Text>{onRetry ? <Pressable onPress={onRetry} style={styles.expand} accessibilityRole="button"><Text style={styles.expandLabel}>Reintentar historial</Text></Pressable> : null}</View> : null}
+        {!historyError && analysis.currencies.map((row, index) => (
           <AnalyticsRow
             key={row.code}
             label={`Total en ${row.code}`}
@@ -96,7 +99,7 @@ export function SubscriptionAnalyticsModal({ visible, onClose, subscription, mov
             last={index === analysis.currencies.length - 1 && !analysis.latestPayment && !showComparableTotal}
           />
         ))}
-        {showComparableTotal ? (
+        {!historyError && showComparableTotal ? (
           <AnalyticsRow
             label={`Total comparable en ${baseCurrencyCode}`}
             detail={`${analysis.comparableCount} de ${analysis.paymentCount} pagos`}
@@ -104,7 +107,7 @@ export function SubscriptionAnalyticsModal({ visible, onClose, subscription, mov
             last={!analysis.latestPayment}
           />
         ) : null}
-        {analysis.latestPayment ? (
+        {!historyError && analysis.latestPayment ? (
           <AnalyticsRow
             label="Último pago"
             detail={format(new Date(analysis.latestPayment.occurredAt), "d MMM yyyy", { locale: es })}
@@ -121,7 +124,7 @@ export function SubscriptionAnalyticsModal({ visible, onClose, subscription, mov
         ) : null}
       </View>
 
-      {analysis.comparableCount > 0 ? (
+      {!historyError && analysis.comparableCount > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Mes a mes</Text>
           <Text style={styles.sectionSubtitle}>
@@ -150,7 +153,7 @@ export function SubscriptionAnalyticsModal({ visible, onClose, subscription, mov
             </Pressable>
           ) : null}
         </View>
-      ) : analysis.paymentCount > 0 ? (
+      ) : !historyError && analysis.paymentCount > 0 ? (
         <Text style={styles.note}>Los pagos no tienen un importe comparable en {baseCurrencyCode}; por eso no se muestra un total entre monedas.</Text>
       ) : null}
 

@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { offlineRuntime } from "../../lib/offline/instance";
 import { BUDGET_INPUT_TABLES, computeLocalBudgetRows } from "./offline-budgets";
 import { isCoreSnapshot } from "./snapshot-cache";
+import { collapseSubscriptionPaymentRows } from "./subscription-payment-rows";
 import {
   FREQUENCY_LABELS,
   applyBaseCurrencyToAccounts,
@@ -164,11 +165,23 @@ export async function applyLocalMovementHistoriesToCache(queryClient: QueryClien
     );
 
   const categoryPostedMovements = history("categoryId", "category_id");
-  const subscriptionPostedMovements = history("subscriptionId", "subscription_id");
+  let subscriptionPostedMovements: WorkspaceSnapshot["subscriptionPostedMovements"] = [];
+  let subscriptionHistoryError: string | undefined;
+  try {
+    subscriptionPostedMovements = buildPostedAnalyticsMovements(
+      collapseSubscriptionPaymentRows(movements, workspaceId), "subscriptionId", "subscription_id",
+      accountCurrency, baseCurrency, current.exchangeRates,
+    );
+  } catch (error) {
+    subscriptionHistoryError = error instanceof Error ? error.message : "No se pudo confirmar el historial de suscripciones.";
+  }
   const counterpartyPostedMovements = history("counterpartyId", "counterparty_id");
   queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot", workspaceId] }, (old: unknown) => {
     if (!isCoreSnapshot(old)) return old;
-    return { ...old, categoryPostedMovements, subscriptionPostedMovements, counterpartyPostedMovements };
+    const catalogHistoryErrors = { ...old.catalogHistoryErrors };
+    if (subscriptionHistoryError) catalogHistoryErrors.subscriptions = subscriptionHistoryError;
+    else delete catalogHistoryErrors.subscriptions;
+    return { ...old, categoryPostedMovements, subscriptionPostedMovements, counterpartyPostedMovements, catalogHistoryErrors };
   });
   return true;
 }

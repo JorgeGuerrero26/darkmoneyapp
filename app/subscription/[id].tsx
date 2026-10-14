@@ -68,7 +68,7 @@ function SubscriptionDetailScreen() {
   const [accountPickerOpen, setAccountPickerOpen] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
 
-  const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
@@ -248,6 +248,8 @@ function SubscriptionDetailScreen() {
               subscriptionId={subscription.id}
               currencyCode={subscription.currencyCode}
               allPostedMovements={postedMovements}
+              historyError={snapshot?.catalogHistoryErrors?.subscriptions}
+              onRetry={() => { void refetch(); }}
             />
 
           </ScrollView>
@@ -279,6 +281,8 @@ function SubscriptionDetailScreen() {
             subscription={subscription}
             movements={postedMovements}
             baseCurrencyCode={baseCurrencyCode}
+            historyError={snapshot?.catalogHistoryErrors?.subscriptions}
+            onRetry={() => { void refetch(); }}
           />
           <ConfirmDialog
             visible={cancelConfirmVisible && Boolean(subscription)}

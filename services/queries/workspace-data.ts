@@ -878,6 +878,7 @@ export function buildPostedAnalyticsMovements<K extends "categoryId" | "subscrip
         : accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency;
     return Object.assign({
       id: row.id as number,
+      receiptPartIds: Array.isArray(row.receipt_part_ids) ? row.receipt_part_ids as number[] : undefined,
       occurredAt: row.occurred_at as string,
       sourceAmount,
       destinationAmount,

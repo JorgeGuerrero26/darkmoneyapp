@@ -15,12 +15,16 @@ type Props = {
   subscriptionId: number;
   currencyCode: string;
   allPostedMovements: SubscriptionPostedMovement[];
+  historyError?: string;
+  onRetry?: () => void;
 };
 
 export function SubscriptionDetailMovements({
   subscriptionId,
   currencyCode,
   allPostedMovements,
+  historyError,
+  onRetry,
 }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -31,16 +35,17 @@ export function SubscriptionDetailMovements({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.title}>Pagos anotados · {movements.length}</Text>
-      {movements.length === 0 ? (
+      <Text style={styles.title}>Pagos anotados{historyError ? " · sin confirmar" : ` · ${movements.length}`}</Text>
+      {historyError ? <View accessibilityRole="alert"><Text style={styles.empty}>{historyError}</Text>{onRetry ? <Pressable onPress={onRetry} accessibilityRole="button" style={styles.toggle}><Text style={styles.toggleText}>Reintentar historial</Text></Pressable> : null}</View> : null}
+      {!historyError && movements.length === 0 ? (
         <Text style={styles.empty}>Aún no hay pagos anotados.</Text>
-      ) : (
+      ) : !historyError ? (
         <>
           {visible.map((movement, index) => (
             <DetailFieldRow
               key={movement.id}
               action
-              label={format(new Date(movement.occurredAt), "d MMM yyyy", { locale: es })}
+              label={format(new Date(movement.occurredAt), "d MMM yyyy", { locale: es }) + (movement.receiptPartIds && movement.receiptPartIds.length>1 ? ` · ${movement.receiptPartIds.length} partes` : "")}
               value={formatCurrency(
                 Number(movement.sourceAmount ?? movement.destinationAmount ?? 0),
                 movement.amountCurrencyCode ?? currencyCode,
@@ -61,7 +66,7 @@ export function SubscriptionDetailMovements({
             </Pressable>
           ) : null}
         </>
-      )}
+      ) : null}
     </View>
   );
 }
