@@ -81,8 +81,8 @@ teléfono y se enviarán al volver a encenderlo.
 dispositivo PENDIENTE.** Cuentas, categorías, contactos, tipos de gasto, plantillas, presupuestos y las
 definiciones de suscripciones e ingresos recurrentes se escriben por la base local (con el interruptor
 encendido); metas y roles de contacto no tienen pantalla en la app. Pagos de suscripciones y llegadas de
-ingresos siguen en línea. Antes de probar, el servidor necesita la migración `202610130001` (no aplicada:
-la aplica el dueño). Las pruebas PGlite/Jest no verifican `expo-sqlite` en iPhone ni gestos/red real.
+ingresos siguen en línea. Las migraciones de servidor `202610130001` y `202610140001` ya están aplicadas en producción
+(2026-10-14); el cliente con este código todavía no se publicó (OTA/IPA). Las pruebas PGlite/Jest no verifican `expo-sqlite` en iPhone ni gestos/red real.
 
 ### Guía corta de la Fase 3 (con modo avión)
 

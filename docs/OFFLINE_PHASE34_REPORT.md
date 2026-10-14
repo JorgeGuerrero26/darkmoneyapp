@@ -1,5 +1,12 @@
 # Fases 3 y 4 del modo sin conexión — informe de cierre
 
+> **Actualización 2026-10-14 (posterior al informe):** por indicación del dueño, las migraciones `202610130001` y
+> `202610140001` **se aplicaron a producción** (ensayo completo con rollback y 14 comprobaciones en verde antes de aplicar;
+> registradas en `supabase_migrations.schema_migrations`; `sync_tables` pasó de 11 a 13 filas; conteos de negocio idénticos) y la
+> rama se **mezcló en `main` y se subió** (`7b04ed29..2febb666`). El motor completo se volvió a correr contra el servidor ya
+> migrado (12/12). Respaldo de la función reemplazada: `.tmp/offline-fixtures/pull_changes_before.sql` (local). Lo que sigue sin
+> hacer: OTA/IPA con este código y la prueba en el iPhone. Donde abajo diga "sin aplicar" o "rama local", léase con esta nota.
+
 2026-10-14. Rama local **`offline-fase3-4`** (17 commits sobre `main` en `7b04ed29`). Sin push, sin migraciones a
 producción, sin OTA/EAS, sin lanzar el workflow del IPA. **Nada de esto se probó en un teléfono.**
 
