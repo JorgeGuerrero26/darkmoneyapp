@@ -74,3 +74,44 @@ teléfono y se enviarán al volver a encenderlo.
 - El paso exacto y la hora aproximada.
 - Si hubo un aviso en *Para revisar*, su texto.
 - Si la app se cerró sola: ¿en qué pantalla?
+
+## 8. Casos de Fase 3 y Fase 4 — pendientes de dispositivo e integración
+
+**Estado 2026-10-13: pendientes.** P1/P2 resueltas; etapas 3.1–3.3 verificadas en automático.
+La migración no está aplicada y los CRUD/lecturas de módulos no están integrados (3.4–3.5).
+No intentar esos CRUD como si ya estuvieran disponibles en la app. Las pruebas PGlite/Jest
+no verifican `expo-sqlite` en iPhone ni sus gestos/red real.
+
+Tras integrar y desplegar las etapas correspondientes, probar:
+
+1. Crear sin red una cuenta, categoría y contraparte; registrar un movimiento con esos IDs;
+   cerrar y abrir la app sin red; comprobar que nombres, referencias y centavos se conservan.
+2. Borrar una cuenta/categoría con movimientos: verificar `SET NULL` y saldos después del envío.
+   Borrar una contraparte con obligaciones: comprobar el rechazo por `RESTRICT` y el aviso.
+3. Crear/editar presupuesto, suscripción, ingreso fijo, plantilla y meta sin red; comprobar
+   persistencia, envío único y separación de la meta por usuario y workspace.
+4. Fase 3: pagar una suscripción o confirmar una llegada sin red muestra el aviso de internet
+   **sin movimiento, ocurrencia ni avance de fecha**. También editar/anular/borrar pagos
+   vinculados; comprobar cero operaciones nuevas y que el formulario conserva los cambios.
+   Repetir con beta apagada y con red para verificar el camino anterior.
+5. Interrumpir la red después de que el servidor confirme el envío y antes de recibir respuesta;
+   reintentar y comprobar que no se dupliquen dinero, ocurrencias ni avances de fecha.
+6. Una ocurrencia de ingreso con cuatro decimales conserva el monto exacto y solo se lee.
+   Una definición con fracción de centavo, incluso en descuentos, no puede editarse/borrarse
+   offline. Los historiales de suscripciones no ofrecen escrituras ni consumen IDs.
+7. Dos usuarios editando/pagando en un workspace compartido, pérdida de permiso y borrados:
+   saldo final, revisión de conflictos y aislamiento entre workspaces/usuarios.
+8. Viewers de obligaciones: solo lectura, antigüedad del caché y ausencia total de operaciones
+   en el outbox. Cambiar de usuario no debe mostrar el caché del anterior.
+9. Con la beta apagada, repetir creación/edición/borrado y pagos online: mismas firmas,
+   textos y comportamiento. Repetir también la prueba de swipe de la sección 5.
+10. Actualizar una instalación con SQLite v1 y datos pendientes a v2; abrir/cerrar sin red,
+    comprobar cuentas, IDs y outbox intactos. Alternar usuarios y workspaces sin datos ajenos.
+11. Comparar progreso del presupuesto antes y después del envío con moneda propia/convertida,
+    categoría/tipo de gasto, límite superado y fechas en el borde del período. Comprobar respaldo
+    del servidor si falta una tasa completa, paridad o quedan efectos de triggers pendientes.
+12. Revisar suscripciones activas, pausadas, canceladas, meses saltados y ancla 31. Editar la
+    definición offline no debe generar historial ni anunciar una fecha definitiva antes del pull.
+    Borrar una suscripción con pagos requiere el camino online existente.
+
+**Resultado en iPhone/Android: pendiente.** No se publicó OTA/EAS ni se hizo prueba nativa.

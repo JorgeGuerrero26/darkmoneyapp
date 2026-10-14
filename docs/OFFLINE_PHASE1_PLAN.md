@@ -1,6 +1,8 @@
 # Motor offline — Fase 1: servidor (plan, implementación y contrato)
 
-Estado: **escrita y probada, SIN aplicar a producción** (2026-10-12). Diseño general en
+Estado: **ya en producción** (contexto del dueño y lectura de verificación del 2026-10-13).
+Se confirmaron las 11 entradas de `sync_tables` y los cinco RPC del contrato en una
+transacción READ ONLY terminada en ROLLBACK. No se reaplicó ninguna migración. Diseño general en
 [OFFLINE_ENGINE_DESIGN.md](OFFLINE_ENGINE_DESIGN.md).
 
 ## 1. Alcance
@@ -96,7 +98,10 @@ Ejecutar la batería local: `npm i --no-save @electric-sql/pglite` y
 y el rendimiento del plan Nano bajo `push_batch` de 200 operaciones. Se mide en la Fase 2 con el
 motor real.
 
-## 5. Para llevarlo a producción (pendiente de la decisión del dueño)
+## 5. Procedimiento histórico para llevarlo a producción (ya aplicado)
+
+La Fase 1 ya está desplegada. Los pasos siguientes se conservan como referencia; no deben
+ejecutarse de nuevo durante las Fases 3 y 4. Sus migraciones publicadas son inmutables.
 
 1. Revisar el diff de las 3 migraciones.
 2. Respaldo: ya existe `.github/workflows/db-backup.yml` (sin commit aún) y

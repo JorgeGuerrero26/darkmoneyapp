@@ -1,6 +1,12 @@
 # Motor offline propio — diseño (Fase 0)
 
-Estado: **borrador de Fase 0, 2026-10-12.** Nada de esto está implementado.
+Estado: **diseño original de Fase 0, 2026-10-12**. Las Fases 0–2 ya se ejecutaron;
+Fase 1 está en producción y Fase 2 está probada en automático, pendiente de dispositivo.
+Los contratos vigentes están en `OFFLINE_PHASE1_PLAN.md` y `OFFLINE_PHASE2_PLAN.md`:
+las propuestas iniciales de abajo no sustituyen esas decisiones (por ejemplo, no se usan
+IDs negativos ni tombstones). Fase 3 tiene 3.0–3.3 implementadas y verificadas el 2026-10-13;
+3.4–3.6 y Fase 4 no se iniciaron. P1/P2 están resueltas en `OFFLINE_PHASE3_PLAN.md`, §8.
+Las definiciones tienen núcleo offline, todavía sin integración con los módulos ni despliegue.
 Decisiones ya tomadas por el dueño: offline **completo** (opción C), **motor propio** (no
 PowerSync), conflictos en workspaces compartidos = **último escritor gana por campo**, salvo
 montos de movimientos ya confirmados, que se marcan para revisión. Sincronización **continua y
