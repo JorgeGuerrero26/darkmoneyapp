@@ -219,17 +219,19 @@ function ObligationsScreen() {
       delete next[id];
       return next;
     });
-    setPendingDeleteIds((prev) => {
+    // La fila sigue oculta hasta que la lista ya refleje el borrado: si se muestra antes, reaparece un instante.
+    const release = () => setPendingDeleteIds((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
-    if (!pending) return;
+    if (!pending) { release(); return; }
     deleteMutation.mutate(pending.id, {
       onError: (e) => showErrorToast("No se pudo eliminar la obligación", e),
+      onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }).finally(release); },
     });
-  }, [deleteMutation, showToast]);
+  }, [deleteMutation, queryClient, showToast]);
 
   function startUndoDelete(ob: ObligationSummary) {
     const deadline = Date.now() + UNDO_DELETE_MS;

@@ -101,17 +101,19 @@ function ContactsScreen() {
     deleteTimers.current.delete(id);
     pendingDeleteRuns.current.delete(id);
     pendingDeleteItems.current.delete(id);
-    setPendingDeleteIds((prev) => {
+    // La fila sigue oculta hasta que la lista ya refleje el borrado: si se muestra antes, reaparece un instante.
+    const release = () => setPendingDeleteIds((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
-    if (!pending) return;
+    if (!pending) { release(); return; }
     deleteMutation.mutate(pending.id, {
       onError: (err) => showErrorToast("No se pudo eliminar el contacto", err),
+      onSettled: () => { void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }).finally(release); },
     });
-  }, [deleteMutation, showToast]);
+  }, [deleteMutation, queryClient, showToast]);
 
   const startUndoDelete = useCallback((contact: CounterpartyOverview) => {
     pendingDeleteItems.current.set(contact.id, contact);
