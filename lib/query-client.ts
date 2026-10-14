@@ -12,6 +12,7 @@ import { isBackendWarmingUp } from "./idempotency";
 import { errorLogMessage } from "./errors";
 import { resolveNetworkTransport } from "./network-transport";
 import { runBounded } from "./bounded-concurrency";
+import { isOfflineFlagEnabled } from "./offline/flag";
 
 /**
  * Tiers estandarizados de staleTime para React Query.
@@ -163,6 +164,17 @@ const PERSISTED_QUERY_ROOTS = new Set([
 ]);
 
 /**
+ * Obligaciones que otras personas comparten contigo: solo lectura. Se guardan en disco únicamente con el
+ * modo sin conexión encendido, para verlas sin internet tras cerrar la app (duran lo que `PERSIST_MAX_AGE_MS`).
+ * Con el modo apagado no se persiste nada más que antes.
+ */
+export function shouldPersistQueryRoot(rootKey: unknown): boolean {
+  if (typeof rootKey !== "string") return false;
+  if (PERSISTED_QUERY_ROOTS.has(rootKey)) return true;
+  return rootKey === "shared-obligations" && isOfflineFlagEnabled();
+}
+
+/**
  * De una lista infinita se persiste **solo la primera pagina**.
  *
  * React Query guarda `{ pages, pageParams }` entero, asi que Movimientos escribia a disco
@@ -210,8 +222,7 @@ export const queryPersistOptions: Omit<PersistQueryClientOptions, "queryClient">
     serializeData: persistFirstPageOnly,
     shouldDehydrateQuery: (query) => {
       if (query.state.status !== "success") return false;
-      const rootKey = query.queryKey[0];
-      return typeof rootKey === "string" && PERSISTED_QUERY_ROOTS.has(rootKey);
+      return shouldPersistQueryRoot(query.queryKey[0]);
     },
   },
 };
