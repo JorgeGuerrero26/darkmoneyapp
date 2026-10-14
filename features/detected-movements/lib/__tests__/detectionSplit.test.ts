@@ -37,15 +37,23 @@ describe('atomic detected split contract (local fixtures only)', () => {
   it.each(['2026-02-30T00:00:00Z', '2026-10-13T24:00:00Z', '2026-10-13T00:00:00', 'infinity'])('rejects invalid version %s', date => {
     expect(() => validateDetectedSplit({ ...input, expectedUpdatedAt: date })).toThrow('Revisa');
   });
-  it('does not pretend linked occurrences are supported in phase 1', async () => {
+  it('rejects invalid link direction, conflicting metadata and obligation events before I/O', async () => {
     const rpc = jest.fn();
     const headers: DetectedSplitInput['header'][] = [
-      { ...input.header, subscriptionId: 7 }, { ...input.header, recurringIncomeId: 7 },
+      { ...input.header, movementType: 'income', subscriptionId: 7 }, { ...input.header, recurringIncomeId: 7 },
       { ...input.header, metadata: { recurring_income_id: 7 } },
       { ...input.header, metadata: { obligation_event_id: 7 } },
     ];
-    for (const header of headers) await expect(requestDetectedSplit({ rpc }, { ...input, header })).rejects.toThrow('agrupado');
+    for (const header of headers) await expect(requestDetectedSplit({ rpc }, { ...input, header })).rejects.toThrow(/vínculo|obligación/);
     expect(rpc).not.toHaveBeenCalled();
+  });
+  it('sends one grouped request with an expense subscription or income association', async () => {
+    const rpc=jest.fn().mockResolvedValue({data:result,error:null});
+    await requestDetectedSplit({rpc},{...input,header:{...input.header,subscriptionId:7}});
+    await requestDetectedSplit({rpc},{...input,header:{...input.header,movementType:'income',recurringIncomeId:9,metadata:{recurring_income_id:9}}});
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[0][1].p_header.subscriptionId).toBe(7);
+    expect(rpc.mock.calls[1][1].p_header.recurringIncomeId).toBe(9);
   });
   it.each([{ code: 'PGRST202' }, { code: '42883' }, { message: 'denied' }])('never falls back when RPC fails (%s)', async error => {
     const rpc = jest.fn().mockResolvedValue({ data: null, error });

@@ -50,7 +50,7 @@ function json(value: unknown, seen = new Set<object>(), depth = 0): boolean {
   return valid;
 }
 
-/** Phase 1 deliberately refuses recurring/subscription links until aggregate occurrences are implemented. */
+/** Link identity/kind is local validation; active references and original currency are enforced by the atomic RPC. */
 export function validateDetectedSplit(input: DetectedSplitInput): void {
   if (!object(input) || !id(input.workspaceId) || !id(input.suggestionId) || !timestamp(input.expectedUpdatedAt) ||
       !object(input.header) || !Array.isArray(input.parts) || input.parts.length < 2 || input.parts.length > 100) throw new Error(invalid);
@@ -63,9 +63,14 @@ export function validateDetectedSplit(input: DetectedSplitInput): void {
       (h.notes != null && typeof h.notes !== "string") || (h.counterpartyId != null && !id(h.counterpartyId)) ||
       (h.metadata != null && (!object(h.metadata) || !json(h.metadata)))) throw new Error(invalid);
   const meta = h.metadata ?? {};
-  if (h.subscriptionId != null || h.recurringIncomeId != null || meta.recurring_income_id != null || meta.subscriptionId != null ||
-      "obligation_event_id" in meta || "obligationEventId" in meta) {
-    throw new Error("La división vinculada requiere el contrato de cobro agrupado. No se envió ningún registro.");
+  if ("obligation_event_id" in meta || "obligationEventId" in meta) {
+    throw new Error("Una división no puede registrar un evento de obligación. No se envió ningún registro.");
+  }
+  if ((h.subscriptionId != null && (!id(h.subscriptionId) || h.movementType !== "expense" || h.recurringIncomeId != null)) ||
+      (h.recurringIncomeId != null && (!id(h.recurringIncomeId) || h.movementType !== "income")) ||
+      (meta.subscriptionId != null && meta.subscriptionId !== h.subscriptionId) ||
+      (meta.recurring_income_id != null && meta.recurring_income_id !== h.recurringIncomeId)) {
+    throw new Error("El vínculo no coincide con el tipo y encabezado del movimiento. No se envió ningún registro.");
   }
   const total = cents(h.amount), categories = new Set<number>();
   let sum = 0;
