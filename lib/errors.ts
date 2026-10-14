@@ -2,6 +2,11 @@
  * Maps Supabase/PostgreSQL error codes and common error messages
  * to human-readable Spanish strings.
  */
+import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE } from "./offline/status-copy";
+
+/** Avisos de "necesitas internet" del modo sin conexión: ya vienen redactados para la persona y son largos. */
+const OFFLINE_NOTICES = new Set([ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE]);
+
 /** Lo que se dice cuando no hay nada útil que traducir. */
 const GENERIC_ERROR = "Algo salió mal. Inténtalo de nuevo";
 
@@ -20,6 +25,7 @@ export function humanizeError(err: unknown): string {
           : "";
 
   if (!msg) return GENERIC_ERROR;
+  if (OFFLINE_NOTICES.has(msg)) return msg;
   const lowerMsg = msg.toLowerCase();
 
   // Un fallo interno de la app no le dice nada al usuario. "Cannot read property 'map' of

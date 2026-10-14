@@ -43,3 +43,13 @@ describe("humanizeError", () => {
     );
   });
 });
+
+describe("avisos de modo sin conexión", () => {
+  it("los avisos de 'necesitas internet' llegan completos aunque sean largos", () => {
+    const { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE } = require("../offline/status-copy");
+    for (const notice of [ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE, ONLINE_ONLY_DELETE_OBLIGATION_NOTICE]) {
+      expect(humanizeError(new Error(notice))).toBe(notice);
+    }
+    expect(ONLINE_ONLY_DELETE_OBLIGATION_NOTICE.length).toBeGreaterThan(120); // el caso que antes se perdía
+  });
+});
