@@ -143,8 +143,25 @@ describe("subscriptionStanding", () => {
           { dueDate: "2026-08-04", status: "paid", expectedAmount: 60.07 },
         ],
       });
-      expect(result.tone).toBe("later");
       expect(result.missedCharges).toBe(0);
+      // Estado, fecha y dias hablan de lo mismo: la fecha anunciada no esta en el pasado.
+      expect(result.daysUntilDue).toBe(2);
+      expect(result.detail).toContain("Próximo cobro el 04 09, en 2 días");
+      expect(result.detail).not.toContain("04 06");
+    });
+
+    it("con puntero atrasado y proximo cobro lejano, queda Al dia con la fecha futura", () => {
+      const result = subscriptionStanding({
+        subscription: build({ nextDueDate: "2026-08-20" }),
+        today: "2026-09-02",
+        formatAmount: money,
+        formatDate: day,
+        occurrences: [{ dueDate: "2026-08-20", status: "paid", expectedAmount: 60.07 }],
+      });
+      expect(result.label).toBe("Al día");
+      expect(result.tone).toBe("later");
+      expect(result.daysUntilDue).toBe(18);
+      expect(result.detail).toContain("el 20 09");
     });
   });
 

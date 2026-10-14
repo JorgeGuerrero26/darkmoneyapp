@@ -1,5 +1,5 @@
 import { DUE_SOON_DAYS } from "../../../lib/due-tone";
-import { computeNextRecurringDate } from "../../../lib/subscription-helpers";
+import { computeNextRecurringDate, rollDueDateForward } from "../../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../../types/domain";
 
 export type SubscriptionStandingTone = "overdue" | "soon" | "later" | "paused" | "cancelled";
@@ -130,14 +130,26 @@ export function subscriptionStanding({
       ? pending.reduce((total, occurrence) => total + occurrence.expectedAmount, 0)
       : missedCharges * subscription.amount;
     if (missedCharges === 0) {
-      // El historial dice que no debe nada aunque el puntero se haya quedado atrás.
+      // El historial dice que no debe nada aunque el puntero se haya quedado atrás: se anuncia
+      // la siguiente fecha real, no una ya pasada que contradiría "Al día".
+      const upcoming = rollDueDateForward(
+        subscription.nextDueDate,
+        subscription.frequency,
+        subscription.intervalCount,
+        today,
+        subscription.dayOfMonth,
+      );
+      const upcomingDays = daysBetween(upcoming, today);
+      const when = upcomingDays === 0
+        ? "hoy"
+        : `el ${formatDate(upcoming)}, en ${upcomingDays} ${upcomingDays === 1 ? "día" : "días"}`;
       return {
-        tone: "later",
-        label: "Al día",
-        detail: `Próximo cobro el ${formatDate(subscription.nextDueDate)}, ${formatAmount(subscription.amount)}.`,
+        tone: upcomingDays === 0 || upcomingDays <= DUE_SOON_DAYS ? "soon" : "later",
+        label: upcomingDays === 0 ? "Se cobra hoy" : upcomingDays <= DUE_SOON_DAYS ? "Por cobrar" : "Al día",
+        detail: `Sin cobros pendientes. Próximo cobro ${when}, ${formatAmount(subscription.amount)}.`,
         missedCharges: 0,
         missedAmount: 0,
-        daysUntilDue,
+        daysUntilDue: upcomingDays,
       };
     }
     const late = Math.abs(daysUntilDue);
