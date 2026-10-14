@@ -1,4 +1,5 @@
 import { offlineRuntime } from "../../lib/offline/instance";
+import { localCreate, localDelete, localReferences, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 import { useOfflineFlag } from "../../lib/offline/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -67,10 +68,38 @@ export type RecurringIncomeFormInput = {
 
 export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-recurring-income"],
+    networkMode,
     mutationFn: async (input: RecurringIncomeFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // Modo sin conexión (beta): solo la definición. Las ocurrencias y fechas las genera el servidor al sincronizar.
+      const localCreated = await localCreate(workspaceId, "recurring_income", {
+        workspace_id: workspaceId,
+        name: input.name,
+        payer_party_id: input.payerPartyId ?? null,
+        account_id: input.accountId ?? null,
+        category_id: input.categoryId ?? null,
+        amount: input.amount,
+        currency_code: input.currencyCode.trim().toUpperCase(),
+        frequency: input.frequency,
+        interval_count: input.intervalCount,
+        day_of_month: input.dayOfMonth ?? null,
+        day_of_week: input.dayOfWeek ?? null,
+        start_date: input.startDate,
+        next_expected_date: input.nextExpectedDate,
+        end_date: input.endDate ?? null,
+        remind_days_before: input.remindDaysBefore,
+        gross_amount: input.grossAmount ?? null,
+        deductions: input.deductions ?? [],
+        scheduled_changes: toScheduledChangesRows(input.scheduledChanges),
+        description: input.description ?? null,
+        notes: input.notes ?? null,
+        status: "active",
+        is_pinned: false,
+      });
+      if (localCreated) return localCreated;
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id;
@@ -116,8 +145,10 @@ export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
 
 export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-recurring-income"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<RecurringIncomeFormInput> & { status?: RecurringIncomeStatus } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -142,6 +173,7 @@ export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.status !== undefined) payload.status = input.status;
+      if (await localUpdate(workspaceId, "recurring_income", id, payload)) return;
       const { error } = await supabase
         .from("recurring_income")
         .update(payload)
@@ -158,10 +190,13 @@ export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
 
 export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-recurring-income"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localDelete(workspaceId, "recurring_income", id)) return;
       const { error: occErr } = await supabase
         .from("recurring_income_occurrences")
         .delete()
@@ -208,12 +243,38 @@ export function useRecurringIncomeOccurrencesQuery(
   workspaceId: number | null,
   recurringIncomeId: number | null | undefined,
 ) {
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useQuery({
     queryKey: ["recurring-income-occurrences", workspaceId ?? null, recurringIncomeId ?? null],
     enabled: Boolean(supabase && workspaceId && recurringIncomeId),
+    networkMode,
     staleTime: STALE.short,
     queryFn: async (): Promise<RecurringIncomeOccurrenceSummary[]> => {
       if (!supabase || !workspaceId || !recurringIncomeId) return [];
+      // Modo sin conexión (beta): historial de solo lectura desde la copia local (mismo orden que abajo).
+      const local = await offlineRuntime.listRows(workspaceId, "recurring_income_occurrences").catch(() => null);
+      if (local) {
+        return local
+          .filter((row) => Number(row.recurring_income_id) === recurringIncomeId)
+          .sort(
+            (a, b) =>
+              String(b.actual_date ?? "").localeCompare(String(a.actual_date ?? "")) ||
+              String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
+          )
+          .map((row) => ({
+            id: Number(row.id),
+            workspaceId: Number(row.workspace_id),
+            recurringIncomeId: Number(row.recurring_income_id),
+            expectedDate: String(row.expected_date ?? ""),
+            actualDate: String(row.actual_date ?? ""),
+            amount: toNum(row.amount as NumericLike),
+            currencyCode: String(row.currency_code ?? ""),
+            movementId: row.movement_id != null ? Number(row.movement_id) : null,
+            status: row.status === "late" ? ("late" as const) : ("on_time" as const),
+            notes: typeof row.notes === "string" ? row.notes : null,
+            createdAt: typeof row.created_at === "string" ? row.created_at : null,
+          }));
+      }
       const { data, error } = await supabase
         .from("recurring_income_occurrences")
         .select("id, workspace_id, recurring_income_id, expected_date, actual_date, amount, currency_code, movement_id, status, notes, created_at")
@@ -241,10 +302,36 @@ export function useRecurringIncomeOccurrencesQuery(
 
 export function useCreateSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-subscription"],
+    networkMode,
     mutationFn: async (input: SubscriptionFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // Modo sin conexión (beta): solo la definición. Los cargos pendientes los materializa el servidor al sincronizar.
+      const localCreated = await localCreate(workspaceId, "subscriptions", {
+        workspace_id: workspaceId,
+        name: input.name,
+        vendor_party_id: input.vendorPartyId ?? null,
+        account_id: input.accountId ?? null,
+        category_id: input.categoryId ?? null,
+        amount: input.amount,
+        currency_code: input.currencyCode.trim().toUpperCase(),
+        frequency: input.frequency,
+        interval_count: input.intervalCount,
+        day_of_month: input.dayOfMonth ?? null,
+        day_of_week: input.dayOfWeek ?? null,
+        start_date: input.startDate,
+        next_due_date: input.nextDueDate,
+        end_date: input.endDate ?? null,
+        remind_days_before: input.remindDaysBefore,
+        auto_create_movement: input.autoCreateMovement,
+        description: input.description ?? null,
+        notes: input.notes ?? null,
+        status: "active",
+        is_pinned: false,
+      });
+      if (localCreated) return localCreated;
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id;
@@ -287,8 +374,10 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
 
 export function useUpdateSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-subscription"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<SubscriptionFormInput> & { status?: string } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -310,6 +399,7 @@ export function useUpdateSubscriptionMutation(workspaceId: number | null) {
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.status !== undefined) payload.status = input.status;
+      if (await localUpdate(workspaceId, "subscriptions", id, payload)) return;
       const { error } = await supabase
         .from("subscriptions")
         .update(payload)
@@ -325,10 +415,20 @@ export function useUpdateSubscriptionMutation(workspaceId: number | null) {
 
 export function useDeleteSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-subscription"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+
+      // Modo sin conexión (beta): misma comprobación que abajo sobre la copia local; si no hay movimientos
+      // vinculados se encola el borrado (las ocurrencias caen en cascada en el servidor).
+      const localLinked = await localReferences(workspaceId, "movements", "subscription_id", id);
+      if (localLinked != null) {
+        if (localLinked > 0) throw new Error("No se puede eliminar: hay movimientos vinculados a esta suscripción.");
+        if (await localDelete(workspaceId, "subscriptions", id)) return;
+      }
 
       const { count, error: countErr } = await supabase
         .from("movements")
@@ -384,10 +484,13 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
 
 export function useToggleSubscriptionPinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["toggle-subscription-pin"],
+    networkMode,
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "subscriptions", id, { is_pinned: isPinned })) return;
       const { error } = await supabase
         .from("subscriptions")
         .update({ is_pinned: isPinned })
@@ -487,10 +590,13 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
 
 export function useToggleRecurringIncomePinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["toggle-recurring-income-pin"],
+    networkMode,
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "recurring_income", id, { is_pinned: isPinned })) return;
       const { error } = await supabase
         .from("recurring_income")
         .update({ is_pinned: isPinned })
