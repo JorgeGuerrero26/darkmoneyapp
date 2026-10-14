@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
+import { localCreate, localDelete, localMaxSortOrder, localReferences, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 
 type NumericLike = number | string | null;
 
@@ -35,10 +36,33 @@ export type CategoryFormInput = {
 
 export function useCreateCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-category"],
+    networkMode,
     mutationFn: async (input: CategoryFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // Modo sin conexión (beta): mismo cálculo de orden y mismos campos, pero sobre la copia local.
+      const localMax = await localMaxSortOrder(workspaceId, "categories");
+      if (localMax != null) {
+        const clientSortLocal = input.sortOrder;
+        const created = await localCreate(workspaceId, "categories", {
+          workspace_id: workspaceId,
+          name: input.name.trim(),
+          kind: input.kind,
+          parent_id: input.parentId ?? null,
+          color: input.color?.trim() ? input.color.trim() : null,
+          icon: input.icon?.trim() ? input.icon.trim() : null,
+          is_active: input.isActive !== false,
+          is_system: false,
+          sort_order:
+            clientSortLocal !== undefined && Number.isFinite(clientSortLocal) && clientSortLocal > 0
+              ? Math.floor(clientSortLocal)
+              : localMax + 10,
+          default_spend_type_id: input.defaultSpendTypeId ?? null,
+        });
+        if (created) return created;
+      }
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id;
@@ -89,13 +113,25 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
 
 export function useUpdateCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-category"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<CategoryFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       if (input.parentId !== undefined && input.parentId === id) {
         throw new Error("La categoría no puede ser su propia categoría padre.");
       }
+      const localFields: Record<string, unknown> = {};
+      if (input.name !== undefined) localFields.name = input.name.trim();
+      if (input.kind !== undefined) localFields.kind = input.kind;
+      if (input.parentId !== undefined) localFields.parent_id = input.parentId;
+      if (input.color !== undefined) localFields.color = input.color?.trim() ? input.color.trim() : null;
+      if (input.icon !== undefined) localFields.icon = input.icon?.trim() ? input.icon.trim() : null;
+      if (input.sortOrder !== undefined) localFields.sort_order = input.sortOrder;
+      if (input.isActive !== undefined) localFields.is_active = input.isActive;
+      if (input.defaultSpendTypeId !== undefined) localFields.default_spend_type_id = input.defaultSpendTypeId;
+      if (await localUpdate(workspaceId, "categories", id, localFields)) return;
 
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
@@ -131,10 +167,13 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
 /** Solo activar / desactivar (toggle rápido en lista). */
 export function useToggleCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["toggle-category"],
+    networkMode,
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "categories", id, { is_active: isActive })) return;
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id ?? null;
@@ -153,10 +192,28 @@ export function useToggleCategoryMutation(workspaceId: number | null) {
 
 export function useDeleteCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-category"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+
+      // Modo sin conexión (beta): las mismas comprobaciones de abajo, sobre la copia local, y el borrado
+      // se encola. Si algo no está descargado, sigue el camino online completo.
+      const [localMovements, localSubscriptions, localChildren] = await Promise.all([
+        localReferences(workspaceId, "movements", "category_id", id),
+        localReferences(workspaceId, "subscriptions", "category_id", id),
+        localReferences(workspaceId, "categories", "parent_id", id),
+      ]);
+      if (localMovements != null && localSubscriptions != null && localChildren != null) {
+        if (localMovements > 0) throw new Error("No se puede eliminar: hay movimientos que usan esta categoría.");
+        if (localSubscriptions > 0) throw new Error("No se puede eliminar: hay suscripciones que usan esta categoría.");
+        if (localChildren > 0) {
+          throw new Error("No se puede eliminar: existen subcategorías. Reasígnalas o elimínalas primero.");
+        }
+        if (await localDelete(workspaceId, "categories", id)) return;
+      }
 
       const { data: catRow, error: catErr } = await supabase
         .from("categories")
@@ -222,22 +279,27 @@ export type CounterpartyFormInput = {
 
 export function useCreateCounterpartyMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-counterparty"],
+    networkMode,
     mutationFn: async (input: CounterpartyFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const payload = {
+        workspace_id: workspaceId,
+        name: input.name,
+        type: input.type,
+        phone: input.phone ?? null,
+        email: input.email ?? null,
+        document_number: input.documentNumber ?? null,
+        notes: input.notes ?? null,
+        is_archived: false,
+      };
+      const local = await localCreate(workspaceId, "counterparties", payload);
+      if (local) return local;
       const { data, error } = await supabase
         .from("counterparties")
-        .insert({
-          workspace_id: workspaceId,
-          name: input.name,
-          type: input.type,
-          phone: input.phone ?? null,
-          email: input.email ?? null,
-          document_number: input.documentNumber ?? null,
-          notes: input.notes ?? null,
-          is_archived: false,
-        })
+        .insert(payload)
         .select("id")
         .single();
       if (error) throw new Error(error.message ?? "Error de base de datos");
@@ -252,8 +314,10 @@ export function useCreateCounterpartyMutation(workspaceId: number | null) {
 
 export function useUpdateCounterpartyMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-counterparty"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<CounterpartyFormInput> & { isArchived?: boolean } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -264,6 +328,7 @@ export function useUpdateCounterpartyMutation(workspaceId: number | null) {
       if (input.documentNumber !== undefined) payload.document_number = input.documentNumber;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.isArchived !== undefined) payload.is_archived = input.isArchived;
+      if (await localUpdate(workspaceId, "counterparties", id, payload)) return;
       const { error } = await supabase
         .from("counterparties")
         .update(payload)
@@ -280,10 +345,13 @@ export function useUpdateCounterpartyMutation(workspaceId: number | null) {
 
 export function useToggleCounterpartyPinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["toggle-counterparty-pin"],
+    networkMode,
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "counterparties", id, { is_pinned: isPinned })) return;
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
       const uid = authData.user?.id ?? null;
@@ -345,10 +413,13 @@ export function useDeleteCounterpartyMutation(workspaceId: number | null) {
 
 export function useToggleCategoryPinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["toggle-category-pin"],
+    networkMode,
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "categories", id, { is_pinned: isPinned })) return;
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id ?? null;

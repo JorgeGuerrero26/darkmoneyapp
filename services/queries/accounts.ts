@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabase";
 import { displayCategoryName } from "../../lib/category-display-name";
 import { withTimeout } from "../../lib/promise-utils";
 import { formatSupabaseError, runBackgroundQueryRefresh } from "./_shared";
+import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 import { isCoreSnapshot } from "./snapshot-cache";
 import type { WorkspaceSnapshot } from "./workspace-data";
 
@@ -32,29 +33,35 @@ export type AccountFormInput = {
 
 export function useCreateAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-account"],
+    networkMode,
     mutationFn: async (input: AccountFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const payload = {
+        workspace_id: workspaceId,
+        name: input.name,
+        type: input.type,
+        currency_code: input.currencyCode,
+        opening_balance: input.openingBalance,
+        include_in_net_worth: input.includeInNetWorth,
+        color: input.color,
+        icon: input.icon,
+        sort_order: 0,
+        is_archived: false,
+        institution_code: input.institutionCode ?? null,
+        statement_day: input.statementDay ?? null,
+        payment_day: input.paymentDay ?? null,
+        credit_limit: input.creditLimit ?? null,
+      };
+      // Modo sin conexión (beta): se guarda en el teléfono al instante; si no está listo, camino de siempre.
+      const local = await localCreate(workspaceId, "accounts", payload);
+      if (local) return local;
       const { data, error } = await withTimeout(
         supabase
           .from("accounts")
-          .insert({
-            workspace_id: workspaceId,
-            name: input.name,
-            type: input.type,
-            currency_code: input.currencyCode,
-            opening_balance: input.openingBalance,
-            include_in_net_worth: input.includeInNetWorth,
-            color: input.color,
-            icon: input.icon,
-            sort_order: 0,
-            is_archived: false,
-            institution_code: input.institutionCode ?? null,
-            statement_day: input.statementDay ?? null,
-            payment_day: input.paymentDay ?? null,
-            credit_limit: input.creditLimit ?? null,
-          })
+          .insert(payload)
           .select("id")
           .single(),
         ACCOUNT_WRITE_TIMEOUT_MS,
@@ -71,28 +78,32 @@ export function useCreateAccountMutation(workspaceId: number | null) {
 
 export function useUpdateAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-account"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<AccountFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const payload = {
+        name: input.name,
+        type: input.type,
+        currency_code: input.currencyCode,
+        opening_balance: input.openingBalance,
+        include_in_net_worth: input.includeInNetWorth,
+        color: input.color,
+        icon: input.icon,
+        ...("institutionCode" in input ? { institution_code: input.institutionCode ?? null } : {}),
+        // Cada uno con su propia condicion: `null` es un valor valido —limpiar el ciclo al
+        // dejar de ser tarjeta— y no puede confundirse con "no lo mandes".
+        ...("statementDay" in input ? { statement_day: input.statementDay ?? null } : {}),
+        ...("paymentDay" in input ? { payment_day: input.paymentDay ?? null } : {}),
+        ...("creditLimit" in input ? { credit_limit: input.creditLimit ?? null } : {}),
+      };
+      if (await localUpdate(workspaceId, "accounts", id, payload)) return;
       const { error } = await withTimeout(
         supabase
           .from("accounts")
-          .update({
-            name: input.name,
-            type: input.type,
-            currency_code: input.currencyCode,
-            opening_balance: input.openingBalance,
-            include_in_net_worth: input.includeInNetWorth,
-            color: input.color,
-            icon: input.icon,
-            ...("institutionCode" in input ? { institution_code: input.institutionCode ?? null } : {}),
-            // Cada uno con su propia condicion: `null` es un valor valido —limpiar el ciclo al
-            // dejar de ser tarjeta— y no puede confundirse con "no lo mandes".
-            ...("statementDay" in input ? { statement_day: input.statementDay ?? null } : {}),
-            ...("paymentDay" in input ? { payment_day: input.paymentDay ?? null } : {}),
-            ...("creditLimit" in input ? { credit_limit: input.creditLimit ?? null } : {}),
-          })
+          .update(payload)
           .eq("id", id)
           .eq("workspace_id", workspaceId),
         ACCOUNT_WRITE_TIMEOUT_MS,
@@ -108,10 +119,13 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
 
 export function useArchiveAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["archive-account"],
+    networkMode,
     mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localUpdate(workspaceId, "accounts", id, { is_archived: archived })) return;
       const { error } = await supabase
         .from("accounts")
         .update({ is_archived: archived })
@@ -146,10 +160,13 @@ export function useArchiveAccountMutation(workspaceId: number | null) {
 
 export function useDeleteAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-account"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      if (await localDelete(workspaceId, "accounts", id)) return;
       const { error } = await supabase
         .from("accounts")
         .delete()

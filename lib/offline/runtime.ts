@@ -327,6 +327,20 @@ export class OfflineRuntime {
     return context ? listRowsLocal(context.db, table, workspaceId, context.userId) : null;
   }
 
+  /**
+   * Cuántas filas de `table` apuntan a `id` por `column` (p. ej. movimientos de una categoría). Sirve para
+   * repetir en local las comprobaciones previas al borrado. null = tabla aún sin descargar.
+   */
+  async countReferences(workspaceId: number, table: MirroredTable, column: string, id: number): Promise<number | null> {
+    const context = await this.resourceContext(workspaceId, table);
+    if (!context || !/^[a-z_]+$/.test(column)) return null;
+    const row = await context.db.get<{ n: number }>(
+      `select count(*) as n from ${table} where workspace_id = ? and json_extract(data, '$.${column}') = ?`,
+      [workspaceId, id],
+    );
+    return Number(row?.n ?? 0);
+  }
+
   async createRow(workspaceId: number, table: WritableResourceTable, fields: Record<string, unknown>) {
     const context = await this.resourceContext(workspaceId, table);
     if (!context) return null;
