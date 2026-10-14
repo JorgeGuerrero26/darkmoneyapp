@@ -40,10 +40,11 @@ export const NOTIFICATION_KIND_GROUPS: Array<{ label: string; value: Notificatio
 
 export function getNotificationKindGroup(kind: string): NotificationKindGroup {
   if (kind === "detected_movement_suggestion") return "detected_movements";
+  // Antes que el prefijo obligation_: la invitación para compartir es una invitación.
+  if (kind === "workspace_invite" || kind === "obligation_share_invite") return "invites";
   if (kind.startsWith("obligation_")) return "obligations";
   if (kind.startsWith("subscription_") || kind === "multiple_subscriptions_due") return "subscriptions";
   if (kind === "low_balance" || kind === "negative_balance") return "balance";
-  if (kind === "workspace_invite" || kind === "obligation_share_invite") return "invites";
   if (kind === "daily_ai_digest" || kind === "weekly_ai_digest") return "digest";
   return "other";
 }

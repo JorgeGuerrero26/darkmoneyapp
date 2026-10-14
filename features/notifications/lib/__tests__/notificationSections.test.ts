@@ -1,5 +1,5 @@
 import type { NotificationItem, PendingObligationShareInviteItem } from "../../../../types/domain";
-import { buildNotificationSections } from "../notificationSections";
+import { buildNotificationSections, getNotificationKindGroup } from "../notificationSections";
 
 const today = new Date().toISOString();
 
@@ -29,5 +29,11 @@ describe("secciones de notificaciones", () => {
 
     const missing = buildNotificationSections(notifications, invites, "all", false, "invites", "otra persona");
     expect(missing).toHaveLength(0);
+  });
+
+  it("clasifica la invitación a compartir una obligación como invitación", () => {
+    expect(getNotificationKindGroup("obligation_share_invite")).toBe("invites");
+    expect(getNotificationKindGroup("workspace_invite")).toBe("invites");
+    expect(getNotificationKindGroup("obligation_due")).toBe("obligations");
   });
 });
