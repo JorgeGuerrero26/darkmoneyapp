@@ -1,6 +1,7 @@
 # Motor offline — Fase 4: obligaciones y workspaces compartidos
 
-Estado: **plan (borrador, sin ejecutar)**. Depende de que la Fase 2 esté validada en el iPhone y de
+Estado: **ejecutada en la rama local `offline-fase3-4` con el alcance de la sección 6; prueba en dispositivo
+PENDIENTE**. Depende de que la Fase 2 esté validada en el iPhone y de
 que la Fase 3 haya dejado el patrón genérico (almacén/escritor por tabla). Puede cambiar después de
 esas pruebas. Contexto: `docs/OFFLINE_ENGINE_DESIGN.md`, `OFFLINE_PHASE1_PLAN.md`,
 `OFFLINE_PHASE2_PLAN.md`, `OFFLINE_PHASE3_PLAN.md`.
@@ -8,7 +9,8 @@ esas pruebas. Contexto: `docs/OFFLINE_ENGINE_DESIGN.md`, `OFFLINE_PHASE1_PLAN.md
 **Decisión del dueño, 2026-10-13:** los flujos compuestos quedan solo online en Fase 3.
 Fase 4 requiere una operación atómica de grupo en servidor: todo o nada, rollback de todas
 las partes, reintento idempotente y bandeja con el resultado del grupo. No basta ordenar por
-`seq`. **No se diseña ni implementa ese contrato en 3.1–3.3.** Esta fase sigue sin iniciarse.
+`seq`. **No se diseña ni implementa ese contrato aquí:** los pagos, intereses, ajustes y cualquier flujo
+que combine evento + movimiento siguen siendo solo en línea (ver sección 6).
 
 ## 1. Objetivo y alcance
 
@@ -112,3 +114,35 @@ servidor primero (compatible hacia atrás) y cliente después; OTA solo con auto
 - **R4** Roles/permisos que cambian mientras el dispositivo está offline.
 - **R5** `v_obligation_summary` es la réplica más delicada del proyecto; sin paridad, no se oculta
   el valor del servidor.
+
+## 6. Resultado de la ejecución (2026-10-13/14, rama `offline-fase3-4`)
+
+Decisión del dueño aplicada: pagos y flujos compuestos **solo en línea**; la operación atómica de grupo **no se implementa**
+y queda como requisito de una fase posterior. Lo hecho se probó en automático (Jest, PGlite con las migraciones reales y
+SQLite en memoria); **nada se probó en un teléfono** y la migración de servidor **no está aplicada**.
+
+| Etapa | Estado | Qué quedó |
+|---|---|---|
+| 4.0 verificación en producción | hecha (solo lectura + ROLLBACK) | `obligations` encaja en el motor genérico (identity, `workspace_id`, `updated_at`, RLS por miembro). `obligation_events` NO tiene `workspace_id` y su trigger decide sobrepagos: no puede ir por el lote genérico. Diccionario local actualizado. |
+| 4.1 servidor | escrita y probada en PGlite, **sin aplicar** | `202610140001_sync_obligations.sql`: índice de descarga, trigger `updated_at` asegurado y registro de `obligations` en `sync_tables` (escribible, revisión de `principal_amount`/`counterparty_id`/`currency_code` mientras esté activa). |
+| 4.2 varios espacios | hecha | El runtime sincroniza **todos** los espacios del usuario (primero el abierto) y envía lo pendiente de un espacio aunque ya esté en otro. Corrige un fallo de la Fase 2: lo guardado en el espacio A quedaba sin enviar al pasar al B. Cambiar de espacio ya encuentra la copia lista. |
+| 4.3 núcleo de obligaciones | hecha (definiciones) | SQLite v3 (`obligations`), escritura genérica con cola, aviso al borrar un contacto con obligaciones (RESTRICT) y SET NULL de la cuenta de liquidación. |
+| 4.4 réplicas de cálculo | **no aplica** | No se replica `v_obligation_summary`: lo que se crea sin red se muestra con el resumen mínimo exacto de una obligación sin pagos (pendiente = principal, avance 0) y se reemplaza por el del servidor al sincronizar. Lo editado conserva todo lo que calcula el servidor. |
+| 4.5 integración | hecha (crear, editar, archivar) | Hooks con la base local primero; con movimiento de apertura: aviso de internet y nada guardado. Contactos: comprobación local de movimientos y obligaciones. Aviso de sincronización en Obligaciones. |
+| 4.6 invitados (solo lectura) | hecha | `shared-obligations` se guarda en disco **solo con el modo sin conexión encendido** (24 h máximo). Nunca entra a la cola. |
+| 4.7 pruebas | hecha en automático | 5 escenarios e2e con dos dispositivos (alta, fusión de ediciones, revisión de conflicto, contacto con obligaciones, SET NULL) + pruebas de la lista fusionada, del runtime con dos espacios y de la persistencia. |
+
+**Fuera de esta ejecución, a propósito (siguen en línea):** borrar una obligación (no se conocen sus eventos sin
+reflejarlos), registrar pagos/intereses/ajustes, editar o borrar eventos, compartir (invitaciones, solicitudes de pago,
+vínculos de invitado) y la operación atómica de grupo.
+
+### Preguntas abiertas
+
+1. **Operación atómica de grupo** (pago = evento + movimiento, y apertura de obligación = obligación + movimiento): contrato de
+   servidor nuevo con rollback, reintento idempotente y bandeja con el resultado del grupo. Sin ella, esos flujos no pueden
+   ofrecerse sin conexión. Lo decide el dueño cuando haya prueba en dispositivo.
+2. **Espejar `obligation_events` de solo lectura** (lectura por el padre, como las ocurrencias de suscripciones) permitiría
+   borrar obligaciones y replicar `v_obligation_summary` con paridad. Es la réplica más delicada del proyecto: no se hizo
+   sin paridad contra datos reales.
+3. **Pool de IDs y volumen:** cada espacio nuevo reserva ~200 IDs por tabla escribible (12 tablas) y descarga su copia
+   completa. Medir en dispositivo con un usuario con varios espacios.
