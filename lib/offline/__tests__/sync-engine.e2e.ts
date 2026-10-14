@@ -78,12 +78,13 @@ describe("núcleo de recursos (Fase 3.2)", () => {
   });
 
   it("un borrado RESTRICT rechazado restaura también los hijos que habían perdido la referencia", async () => {
-    await server.admin.exec(`create table obligations(id bigint primary key,counterparty_id bigint references counterparties(id) on delete restrict);
-      insert into obligations values(1,1);
-      insert into movements(workspace_id,movement_type,status,occurred_at,description,source_account_id,source_amount,counterparty_id)
+    await server.admin.exec(`insert into movements(workspace_id,movement_type,status,occurred_at,description,source_account_id,source_amount,counterparty_id)
       values(1,'expense','posted',now(),'Con contacto',1,5,1);
       update movements set updated_at=now()-interval '1 day';`);
     const a = device(USER_A); await a.engine.syncNow(WS);
+    // Otra persona crea la obligación DESPUÉS de que este teléfono se descargó: no la conoce, así que la
+    // comprobación local no la ve y el rechazo lo da el servidor (RESTRICT).
+    await server.admin.exec("insert into obligations(workspace_id,title,counterparty_id) values(1,'Deuda con Juan',1)");
     await deleteRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "counterparties", id: 1 });
     expect((await localList(a))[0].counterpartyId).toBeNull();
     const report = await a.engine.syncNow(WS);
@@ -638,5 +639,102 @@ describe("catálogos sin conexión de punta a punta (Fase 3.6)", () => {
     expect((await getServerShapedRow(a.db, "categories", category.id))?.name).toBe("De B");
     expect((await getServerShapedRow(b.db, "categories", category.id))?.name).toBe("De B");
     expect(await countInbox(a.db)).toEqual({ rejected: 0, review: 0 }); // catálogos: sin revisión de montos
+  });
+});
+
+describe("obligaciones sin conexión de punta a punta (Fase 4)", () => {
+  const obligation = (d: Device, fields: Record<string, unknown> = {}) =>
+    createRowLocal(d.db, {
+      workspaceId: WS, userId: d.userId, table: "obligations", nowIso: new Date(clock).toISOString(),
+      fields: {
+        workspace_id: WS, title: "Préstamo a Juan", direction: "receivable", origin_type: "manual", status: "active",
+        counterparty_id: 1, currency_code: "PEN", principal_amount: 150, start_date: "2026-10-13", ...fields,
+      },
+    });
+  const serverObligations = async () =>
+    (await server.admin.query<{ id: string; title: string; status: string; principal_amount: string; counterparty_id: string; created_by_user_id: string | null; due_date: string | null }>(
+      "select id::text, title, status, principal_amount::text, counterparty_id::text, created_by_user_id, due_date::text from obligations order by id",
+    )).rows;
+
+  it("una obligación creada sin red llega al servidor una sola vez y otro dispositivo la baja", async () => {
+    const a = device(USER_A);
+    const b = device(USER_B);
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+    const created = (await obligation(a))!;
+    expect(created.id).toBeGreaterThan(0);
+
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(0);
+    expect(report.applied).toBe(1);
+    const onServer = await serverObligations();
+    expect(onServer).toHaveLength(1);
+    expect(onServer[0]).toMatchObject({ title: "Préstamo a Juan", principal_amount: "150.00", created_by_user_id: USER_A });
+
+    await b.engine.syncNow(WS);
+    const seen = await b.db.all<{ data: string }>("select data from obligations where workspace_id = ?", [WS]);
+    expect(seen.map((row) => JSON.parse(row.data).title)).toEqual(["Préstamo a Juan"]);
+  });
+
+  it("editar la fecha y archivar sin red viajan fusionadas con el alta en una sola operación", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const created = (await obligation(a))!;
+    await updateRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "obligations", id: created.id, fields: { due_date: "2026-12-31" } });
+    await updateRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "obligations", id: created.id, fields: { status: "cancelled" } });
+    expect(await countOutbox(a.db)).toBe(1);
+
+    const report = await a.engine.syncNow(WS);
+    expect(report.applied).toBe(1);
+    expect((await serverObligations())[0]).toMatchObject({ due_date: "2026-12-31", status: "cancelled" });
+  });
+
+  it("cambiar la contraparte de lo que otra persona ya cambió: se aplica y queda para revisar", async () => {
+    await server.admin.exec("insert into counterparties (workspace_id, name) values (1, 'Ana'), (1, 'Luis')");
+    const a = device(USER_A);
+    const b = device(USER_B);
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+    const created = (await obligation(a))!;
+    await a.engine.syncNow(WS);
+    await b.engine.syncNow(WS);
+
+    tick(1000);
+    await updateRowLocal(b.db, { workspaceId: WS, userId: USER_B, table: "obligations", id: created.id, fields: { counterparty_id: 2 } });
+    await b.engine.syncNow(WS);
+    await updateRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "obligations", id: created.id, fields: { counterparty_id: 3 } });
+    const report = await a.engine.syncNow(WS);
+
+    expect(report.review).toBe(1);
+    expect((await serverObligations())[0].counterparty_id).toBe("3"); // se aplicó
+    expect((await listInbox(a.db))[0]).toMatchObject({ status: "review", kind: "update" });
+  });
+
+  it("un contacto con obligaciones no se puede borrar: se avisa antes de guardar nada", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    await obligation(a);
+    await a.engine.syncNow(WS);
+    const pending = await countOutbox(a.db);
+    let message = "";
+    try {
+      await deleteRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "counterparties", id: 1 });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("créditos/deudas asociados");
+    expect(await countOutbox(a.db)).toBe(pending); // nada quedó en la cola
+    expect(await getServerShapedRow(a.db, "counterparties", 1)).not.toBeNull();
+  });
+
+  it("cuentas de liquidación borradas dejan la obligación sin cuenta (SET NULL) en ambos lados", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const created = (await obligation(a, { settlement_account_id: 2 }))!;
+    await a.engine.syncNow(WS);
+    await deleteRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "accounts", id: 2 });
+    expect((await getServerShapedRow(a.db, "obligations", created.id))?.settlement_account_id).toBeNull();
+    await a.engine.syncNow(WS);
+    expect((await server.admin.query<{ s: string | null }>("select settlement_account_id::text s from obligations where id = $1", [created.id])).rows[0].s).toBeNull();
   });
 });

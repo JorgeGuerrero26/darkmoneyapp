@@ -7,6 +7,10 @@ import { isWritableResourceTable, type WritableResourceTable } from "./schema";
 import type { SqlDriver } from "./sql-driver";
 import { ONLINE_ONLY_COMPOUND_NOTICE } from "./status-copy";
 
+/** Mismas palabras que el camino online de `useDeleteCounterpartyMutation`. */
+export const HAS_OBLIGATIONS_NOTICE =
+  "No puedes eliminar este contacto porque tiene movimientos o créditos/deudas asociados. Archívalo en su lugar.";
+
 type Context = { workspaceId: number; userId: string; table: WritableResourceTable; nowIso?: string };
 function writable(table: string) {
   if (!isWritableResourceTable(table)) throw new Error("Este historial es de solo lectura sin conexión.");
@@ -59,6 +63,11 @@ export async function deleteRowLocal(db: SqlDriver, input: Context & { id: numbe
       const payment = await tx.get("select 1 from movements where workspace_id = ? and json_extract(data, '$.subscription_id') = ? limit 1", [input.workspaceId, input.id]);
       // El camino online borra también movimientos vinculados: no convertirlo en un borrado distinto.
       if (payment) throw new Error(ONLINE_ONLY_COMPOUND_NOTICE);
+    }
+    if (input.table === "counterparties") {
+      // obligations -> counterparties es RESTRICT en el servidor: se avisa antes de guardar un borrado que fallaría.
+      const linked = await tx.get("select 1 from obligations where workspace_id = ? and json_extract(data, '$.counterparty_id') = ? limit 1", [input.workspaceId, input.id]);
+      if (linked) throw new Error(HAS_OBLIGATIONS_NOTICE);
     }
     await deleteMirrorRows(tx, input.table, [input.id]);
     await enqueueOp(tx, { table: input.table, workspaceId: input.workspaceId, rowId: input.id, kind: "delete",

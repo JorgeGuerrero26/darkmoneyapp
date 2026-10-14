@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { createTestDriver } from "./helpers/node-sqlite-driver";
-import { migrate, WRITABLE_RESOURCE_TABLES } from "../schema";
+import { migrate, SCHEMA_VERSION, WRITABLE_RESOURCE_TABLES } from "../schema";
 import { addPoolIds, poolSize } from "../id-pool";
 import { createRowLocal, updateRowLocal, deleteRowLocal } from "../resource-writes";
 import { listRowsLocal, getRowLocal } from "../resource-store";
@@ -127,7 +127,7 @@ it("migra una base v1 con datos a v2 sin cambiar el SQL publicado", async () => 
     await legacy.exec(v1); await legacy.exec("pragma user_version=1");
     await legacy.run("insert into accounts(id,workspace_id,updated_at,data) values(1,1,'2026-01-01',?)", [JSON.stringify(row(1, { name: "Existente", opening_balance: 10 }))]);
     await migrate(legacy);
-    expect((await legacy.get<{ user_version: number }>("pragma user_version"))?.user_version).toBe(2);
+    expect((await legacy.get<{ user_version: number }>("pragma user_version"))?.user_version).toBe(SCHEMA_VERSION);
     expect((await getServerShapedRow(legacy, "accounts", 1))?.name).toBe("Existente");
     expect((await getServerShapedRow(legacy, "accounts", 1))?.opening_balance).toBe("10");
     expect((await legacy.get<{ money_cents: number }>("select money_cents from accounts where id=1"))?.money_cents).toBe(1000);

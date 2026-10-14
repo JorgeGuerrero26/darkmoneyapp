@@ -34,7 +34,7 @@ const REFERENCES: Array<[MirroredTable, string, MirroredTable, "null" | "cascade
   ["recurring_income", "payer_party_id", "counterparties", "null"], ["subscriptions", "account_id", "accounts", "null"],
   ["subscriptions", "category_id", "categories", "null"], ["subscriptions", "vendor_party_id", "counterparties", "null"],
   ["recurring_income_occurrences", "recurring_income_id", "recurring_income", "cascade"],
-  ["subscription_occurrences", "subscription_id", "subscriptions", "cascade"],
+  ["subscription_occurrences", "subscription_id", "subscriptions", "cascade"], ["obligations", "settlement_account_id", "accounts", "null"],
   ["recurring_income_occurrences", "movement_id", "movements", "null"], ["subscription_occurrences", "movement_id", "movements", "null"],
 ];
 

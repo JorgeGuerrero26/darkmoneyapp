@@ -18,7 +18,7 @@ export function exactCents(value: unknown): number | null {
   return Number.isSafeInteger(result) ? result : null;
 }
 
-const MONEY_FIELDS = ["opening_balance", "credit_limit", "amount", "expected_amount", "gross_amount", "limit_amount",
+const MONEY_FIELDS = ["opening_balance", "credit_limit", "amount", "expected_amount", "gross_amount", "limit_amount", "principal_amount", "installment_amount",
   "monthly_savings_target", "source_amount", "destination_amount"];
 
 export function mirrorMoney(row: Record<string, unknown>): Record<string, unknown> {

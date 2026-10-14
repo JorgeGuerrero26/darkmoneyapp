@@ -3,7 +3,7 @@ import { exactCents, mirrorMoney } from "./money";
 
 /** Tablas del servidor que se reflejan en local. Lista cerrada: se interpola en SQL. */
 export const WRITABLE_RESOURCE_TABLES = ["accounts", "categories", "counterparties", "counterparty_roles", "spend_types",
-  "budgets", "subscriptions", "recurring_income", "movement_templates", "workspace_financial_goals"] as const;
+  "budgets", "subscriptions", "recurring_income", "movement_templates", "workspace_financial_goals", "obligations"] as const;
 export type WritableResourceTable = (typeof WRITABLE_RESOURCE_TABLES)[number];
 export const DIRECT_MIRRORED_TABLES = ["movements", ...WRITABLE_RESOURCE_TABLES, "recurring_income_occurrences"] as const;
 export const MIRRORED_TABLES = [...DIRECT_MIRRORED_TABLES, "subscription_occurrences"] as const;
@@ -125,6 +125,12 @@ const MIGRATIONS: string[] = [
   create table subscription_occurrences (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
   create index subscription_occurrences_ws_idx on subscription_occurrences (workspace_id, updated_at, id);
   create index sub_occ_parent_idx on subscription_occurrences (json_extract(data, '$.subscription_id'));
+  `,
+  `
+  -- v3 (Fase 4): obligaciones como definiciones sincronizables. Los eventos/pagos no se reflejan.
+  create table obligations (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index obligations_ws_idx on obligations (workspace_id, updated_at, id);
+  create index obligations_counterparty_idx on obligations (json_extract(data, '$.counterparty_id'));
   `,
 ];
 

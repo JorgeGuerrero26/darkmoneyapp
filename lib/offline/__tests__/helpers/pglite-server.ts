@@ -14,12 +14,13 @@ const MIGRATIONS = [
   "202610120003_sync_push_batch.sql",
 ];
 const PHASE3_MIGRATION = "202610130001_sync_readonly_occurrences.sql";
+const PHASE4_MIGRATION = "202610140001_sync_obligations.sql";
 // Los scripts npm corren desde la raíz del repo (el archivo se ejecuta ya compilado en .tmp).
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
 export type TestServer = Awaited<ReturnType<typeof createTestServer>>;
 
-export async function createTestServer(options: { phase3?: boolean } = {}) {
+export async function createTestServer(options: { phase3?: boolean; phase4?: boolean } = {}) {
   const db = new PGlite();
   await db.exec(`
     create role authenticated nologin; create role anon nologin;
@@ -71,6 +72,18 @@ export async function createTestServer(options: { phase3?: boolean } = {}) {
        counterparty_id bigint references public.counterparties(id) on delete set null,
        obligation_id bigint, subscription_id bigint, metadata jsonb not null default '{}', client_dedupe_key text`,
   );
+  // Obligaciones como en producción: contactos RESTRICT, cuenta de liquidación SET NULL, enums como texto.
+  await table(
+    "obligations",
+    `, title text not null default '', direction text not null default 'receivable', origin_type text not null default 'manual',
+       status text not null default 'active',
+       counterparty_id bigint not null references public.counterparties(id) on delete restrict,
+       settlement_account_id bigint references public.accounts(id) on delete set null,
+       currency_code text not null default 'PEN', principal_amount numeric(18,2) not null default 0,
+       start_date date not null default current_date, due_date date, installment_amount numeric(18,2), installment_count integer,
+       interest_rate numeric, description text, notes text, client_dedupe_key text, payment_plan jsonb`,
+  );
+  await db.exec(`create unique index obligations_dedupe_uq on public.obligations(workspace_id, client_dedupe_key) where client_dedupe_key is not null`);
   await db.exec("create unique index movements_dedupe_uq on public.movements(workspace_id, client_dedupe_key) where client_dedupe_key is not null");
   await db.exec("drop trigger trg_spend_types_updated_at on public.spend_types; drop trigger trg_movement_templates_updated_at on public.movement_templates;");
   await db.exec(`
@@ -97,6 +110,7 @@ export async function createTestServer(options: { phase3?: boolean } = {}) {
   `);
   for (const file of MIGRATIONS) await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
   if (options.phase3 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE3_MIGRATION), "utf8"));
+  if (options.phase4 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE4_MIGRATION), "utf8"));
 
   // Una sola conexión: cada llamada fija usuario + rol y los restablece, bajo un candado.
   let tail: Promise<unknown> = Promise.resolve();
