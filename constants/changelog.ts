@@ -16,6 +16,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Nuevo modo sin conexión, en versión de prueba: actívalo en Ajustes → Modo sin conexión. Con él, lo que registras, editas, anulas o borras en Movimientos se guarda al instante en tu teléfono —aunque no tengas internet— y se envía solo cuando vuelve la conexión. Ya no hace falta esperar a que cada movimiento se guarde para anotar el siguiente.",
       "Si otra persona de tu espacio cambió el monto de un movimiento mientras tú estabas sin conexión, tu cambio se guarda igual y te avisamos para que revises que quedó como esperabas.",
       "Con el modo sin conexión encendido, también puedes crear y editar sin internet tus cuentas, categorías, contactos, presupuestos, suscripciones, ingresos fijos y créditos o deudas. Se guardan al instante y se envían solos cuando vuelve la conexión. Registrar un pago o una llegada sigue necesitando internet.",
+      "Cuando registras un movimiento detectado dividido en varias categorías, ahora se guarda completo o no se guarda nada: ya no puede quedar a medias si se corta el internet.",
+      "En Suscripciones, el total mensual ya tiene en cuenta cada cuántos días o meses se cobra, y solo suma las que están en la misma moneda. Y una suscripción sin cobros pendientes te dice cuándo toca el próximo.",
     ],
   },
   {
