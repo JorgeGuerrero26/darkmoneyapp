@@ -25,6 +25,7 @@ import { notificationDetection } from "../../lib/notification-detection-native";
 import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
 import { offlineRuntime } from "../../lib/offline/instance";
 import { withLocalBalanceRows } from "../../lib/offline/local-balances";
+import { withLocalRows } from "../../lib/offline/local-rows";
 import { useOfflineLocalReady, useOfflineFlag } from "../../lib/offline/react";
 import {
   mirrorObligationEventAttachmentsToMovement,
@@ -596,7 +597,7 @@ function mapBudget(row: BudgetProgressRow): BudgetOverview {
   };
 }
 
-function mapSubscription(
+export function mapSubscription(
   row: SubscriptionRow,
   categoryMap: Map<number, string>,
   counterpartyMap: Map<number, string>,
@@ -666,7 +667,7 @@ type CounterpartyFinancialRow = {
 };
 
 /** Same persisted summary source used by the web contact overview; no placeholder financial metrics. */
-function mapCounterpartyFromRow(row: CounterpartyDbRow, summary?: CounterpartyFinancialRow): CounterpartyOverview {
+export function mapCounterpartyFromRow(row: CounterpartyDbRow, summary?: CounterpartyFinancialRow): CounterpartyOverview {
   return {
     id: row.id,
     name: row.name,
@@ -694,7 +695,7 @@ function mapCounterpartyFromRow(row: CounterpartyDbRow, summary?: CounterpartyFi
   };
 }
 
-const FREQUENCY_LABELS: Record<SubscriptionFrequency, string> = {
+export const FREQUENCY_LABELS: Record<SubscriptionFrequency, string> = {
   daily: "Diario",
   weekly: "Semanal",
   monthly: "Mensual",
@@ -796,7 +797,7 @@ export function useUserEntitlementQuery(userId?: string | null, email?: string |
 // Extraídos del fetch monolítico para poder refrescar dominios individuales
 // (refreshSnapshotDomains) reutilizando exactamente el mismo mapeo.
 
-function buildAccountSummaries(
+export function buildAccountSummaries(
   accountRows: any[],
   balanceRows: AccountBalanceRow[],
 ): AccountSummary[] {
@@ -828,7 +829,7 @@ function buildAccountSummaries(
   });
 }
 
-function applyBaseCurrencyToAccounts(
+export function applyBaseCurrencyToAccounts(
   accounts: AccountSummary[],
   baseCurrency: string,
   exchangeRates: ExchangeRateSummary[],
@@ -884,6 +885,27 @@ function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId"
       amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
     }, { [outKey]: row[rowKey] as number } as Record<K, number>);
   });
+}
+
+/** Catálogo de categorías tal como lo arma el snapshot; lo comparte la copia local (modo sin conexión). */
+export function buildCategorySummaries(rows: any[]): CategorySummary[] {
+  const names = new Map<number, string>();
+  for (const row of rows) names.set(row.id, displayCategoryName(row.name));
+  return rows.map((row) => ({
+    id: row.id,
+    name: displayCategoryName(row.name),
+    kind: row.kind,
+    isActive: row.is_active,
+    workspaceId: row.workspace_id,
+    parentId: row.parent_id,
+    defaultSpendTypeId: row.default_spend_type_id ?? null,
+    parentName: row.parent_id != null ? names.get(row.parent_id) ?? null : null,
+    color: row.color,
+    icon: row.icon,
+    sortOrder: row.sort_order ?? 0,
+    isSystem: row.is_system ?? false,
+    isPinned: row.is_pinned ?? false,
+  }));
 }
 
 export async function fetchWorkspaceSnapshot(
@@ -988,7 +1010,7 @@ export async function fetchWorkspaceSnapshot(
       return mapWorkspace(w, member);
     });
 
-  const categoryRowsRaw = (categoriesResult.data ?? []) as {
+  const categoryRowsRaw = (await withLocalRows(activeWorkspaceId, "categories", categoriesResult.data ?? [])) as {
     id: number;
     workspace_id: number;
     name: string;
@@ -1006,32 +1028,18 @@ export async function fetchWorkspaceSnapshot(
   const categoryIdToName = new Map<number, string>();
   for (const row of categoryRowsRaw) categoryIdToName.set(row.id, displayCategoryName(row.name));
   const categoryMap = categoryIdToName;
-  const categories: CategorySummary[] = categoryRowsRaw.map((row) => ({
-    id: row.id,
-    name: displayCategoryName(row.name),
-    kind: row.kind,
-    isActive: row.is_active,
-    workspaceId: row.workspace_id,
-    parentId: row.parent_id,
-    defaultSpendTypeId: (row as { default_spend_type_id?: number | null }).default_spend_type_id ?? null,
-    parentName: row.parent_id != null ? categoryIdToName.get(row.parent_id) ?? null : null,
-    color: row.color,
-    icon: row.icon,
-    sortOrder: row.sort_order ?? 0,
-    isSystem: row.is_system ?? false,
-    isPinned: row.is_pinned ?? false,
-  }));
+  const categories: CategorySummary[] = buildCategorySummaries(categoryRowsRaw);
 
   const counterpartyMap = new Map<number, string>();
   const counterpartyFinancialById = new Map(((counterpartyFinancialResult.data ?? []) as CounterpartyFinancialRow[]).map((row) => [row.counterparty_id, row]));
-  const counterparties: CounterpartyOverview[] = (counterpartiesResult.data ?? []).map((row: any) => {
+  const counterparties: CounterpartyOverview[] = (await withLocalRows(activeWorkspaceId, "counterparties", counterpartiesResult.data ?? [])).map((row: any) => {
     const mapped = mapCounterpartyFromRow(row as CounterpartyDbRow, counterpartyFinancialById.get(row.id));
     counterpartyMap.set(mapped.id, mapped.name);
     return mapped;
   });
 
   const accounts: AccountSummary[] = buildAccountSummaries(
-    (accountsResult.data ?? []) as any[],
+    (await withLocalRows(activeWorkspaceId, "accounts", accountsResult.data ?? [])) as any[],
     await withLocalBalanceRows(activeWorkspaceId, (accountBalancesResult.data ?? []) as AccountBalanceRow[]),
   );
 
@@ -1082,7 +1090,7 @@ export async function fetchWorkspaceSnapshot(
     accountCurrencyMap, baseCurrency, exchangeRates,
   );
 
-  const subscriptions: SubscriptionSummary[] = (subscriptionsResult.data ?? []).map(
+  const subscriptions: SubscriptionSummary[] = (await withLocalRows(activeWorkspaceId, "subscriptions", subscriptionsResult.data ?? [])).map(
     (row: any) =>
       mapSubscription(
         row as SubscriptionRow,
@@ -1094,7 +1102,7 @@ export async function fetchWorkspaceSnapshot(
         exchangeRates,
       ),
   );
-  const recurringIncome: RecurringIncomeSummary[] = (recurringIncomeResult.data ?? []).map(
+  const recurringIncome: RecurringIncomeSummary[] = (await withLocalRows(activeWorkspaceId, "recurring_income", recurringIncomeResult.data ?? [])).map(
     (row: any) =>
       mapRecurringIncome(
         row as RecurringIncomeRow,
@@ -1564,7 +1572,7 @@ export async function refreshSnapshotDomains(
       if (accountsRes.error) throw accountsRes.error;
       if (balancesRes.error) throw balancesRes.error;
       const accounts = buildAccountSummaries(
-        (accountsRes.data ?? []) as any[],
+        (await withLocalRows(workspaceId, "accounts", accountsRes.data ?? [])) as any[],
         await withLocalBalanceRows(workspaceId, (balancesRes.data ?? []) as AccountBalanceRow[]),
       );
       applyBaseCurrencyToAccounts(accounts, baseCurrency, current.exchangeRates);
@@ -3826,7 +3834,7 @@ export {
 // ─── Obligation Event Viewer Links ────────────────────────────────────────────
 
 /** Links ya creados por el viewer para esta obligación (qué eventos ya vinculó a sus cuentas). */
-function mapRecurringIncome(
+export function mapRecurringIncome(
   row: RecurringIncomeRow,
   categoryMap: Map<number, string>,
   counterpartyMap: Map<number, string>,

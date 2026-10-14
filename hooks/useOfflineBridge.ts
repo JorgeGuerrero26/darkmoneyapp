@@ -7,6 +7,7 @@ import { overlayBalancesOnAccounts } from "../lib/offline/account-balances";
 import { offlineRuntime } from "../lib/offline/instance";
 import { useOfflineFlag } from "../lib/offline/react";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
+import { applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../services/queries/offline-snapshot";
 import { isCoreSnapshot } from "../services/queries/snapshot-cache";
 import { refreshSnapshotDomains } from "../services/queries/workspace-data";
 
@@ -51,6 +52,10 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
           void queryClient.invalidateQueries({ queryKey: ["movement"] });
         }
         if (wsId != null) await applyLocalBalancesToCache(queryClient, wsId);
+        // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.
+        if (wsId != null && (tables.length === 0 || touchesSnapshotCatalogs(tables))) {
+          await applyLocalCatalogsToCache(queryClient, wsId).catch(() => false);
+        }
       },
       // El servidor acaba de aceptar cambios: ahora sí se pueden pedir los números que solo él
       // calcula (presupuestos, historial por categoría, analíticas).
