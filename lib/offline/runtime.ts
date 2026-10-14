@@ -435,6 +435,16 @@ export class OfflineRuntime {
     return rows.map((row) => Number(row.row_id));
   }
 
+  /** ¿Esta fila se creó en el teléfono y todavía no llegó al servidor? (solo entonces se sabe que no tiene nada colgando) */
+  async hasPendingInsert(workspaceId: number, table: string, rowId: number): Promise<boolean> {
+    if (!this.db) return false;
+    const row = await this.db.get<{ x: number }>(
+      "select 1 as x from outbox where workspace_id = ? and table_name = ? and row_id = ? and kind = 'insert' and status in ('pending','sending') limit 1",
+      [workspaceId, table, rowId],
+    );
+    return Boolean(row);
+  }
+
   /** ¿Hay cambios sin enviar en alguna de estas tablas? Decide si un número del servidor puede estar desfasado. */
   async hasPendingOps(workspaceId: number, tables: string[]): Promise<boolean> {
     if (!this.canReadLocal(workspaceId) || !this.db || tables.length === 0) return false;

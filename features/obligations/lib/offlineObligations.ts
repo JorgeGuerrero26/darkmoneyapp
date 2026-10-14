@@ -90,7 +90,11 @@ export function mergePendingObligations(
 ): ObligationSummary[] {
   if (pendingIds.size === 0) return serverSummaries;
   const byId = new Map(serverSummaries.map((summary) => [summary.id, summary]));
-  const merged = serverSummaries.map((summary) => {
+  const localIds = new Set(localRows.map((row) => Number(row.id)));
+  // Una obligación con cambios pendientes que ya no está en la copia local se borró aquí (creada y eliminada sin enviar).
+  const merged = serverSummaries
+    .filter((summary) => !(pendingIds.has(summary.id) && !localIds.has(summary.id)))
+    .map((summary) => {
     if (!pendingIds.has(summary.id)) return summary;
     const row = localRows.find((item) => Number(item.id) === summary.id);
     return row ? overlayOfflineObligationDefinition(summary, row, counterpartyNames) : summary;

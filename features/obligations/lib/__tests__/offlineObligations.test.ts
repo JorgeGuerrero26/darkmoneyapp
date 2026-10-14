@@ -57,3 +57,18 @@ describe("obligaciones creadas o editadas sin conexión", () => {
     expect(merged[0].counterpartyId).toBe(99);
   });
 });
+
+describe("obligación creada y eliminada sin enviar", () => {
+  const row = (id: number) => ({ ...localRow(), id });
+
+  it("sale de la lista: tiene operaciones pendientes pero ya no existe en la copia local", () => {
+    const created = buildOfflineObligationSummary(row(10), names); // la que el cache mostraba como nueva
+    const merged = mergePendingObligations([created, serverSummary({ id: 7 })], [], new Set([10]), names);
+    expect(merged.map((item) => item.id)).toEqual([7]);
+  });
+
+  it("las demás, con o sin cambios pendientes, se quedan", () => {
+    const merged = mergePendingObligations([serverSummary({ id: 7 }), serverSummary({ id: 8 })], [row(8)], new Set([8, 10]), names);
+    expect(merged.map((item) => item.id).sort()).toEqual([7, 8]);
+  });
+});

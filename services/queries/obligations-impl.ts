@@ -23,8 +23,8 @@ import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import { offlineRuntime } from "../../lib/offline/instance";
-import { ONLINE_ONLY_OBLIGATION_NOTICE } from "../../lib/offline/status-copy";
-import { localCreate, localUpdate, useOfflineNetworkMode } from "./offline-writes";
+import { ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE } from "../../lib/offline/status-copy";
+import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -2148,10 +2148,19 @@ export type ObligationFormInput = {
 
 export function useDeleteObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-obligation"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // Modo sin conexión (beta): una obligación creada en el teléfono y todavía sin enviar no tiene nada colgando
+      // (eventos, pagos, invitaciones): se borra ahí mismo. Una que ya está en el servidor puede tener pagos que el
+      // teléfono no refleja; borrarla exige internet y se avisa en vez de dejarla esperando en una cola.
+      if (await offlineRuntime.hasPendingInsert(workspaceId, "obligations", id)) {
+        if (await localDelete(workspaceId, "obligations", id)) return;
+      }
+      offlineRuntime.assertCompoundOnline(ONLINE_ONLY_DELETE_OBLIGATION_NOTICE);
       const { count, error: eventsError } = await supabase
         .from("obligation_events")
         .select("id", { head: true, count: "exact" })

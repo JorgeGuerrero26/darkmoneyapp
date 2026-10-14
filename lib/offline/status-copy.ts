@@ -12,6 +12,8 @@ export const ONLINE_ONLY_COMPOUND_NOTICE = "Necesitas internet para registrar es
 
 export const ONLINE_ONLY_OBLIGATION_NOTICE = "Necesitas internet para registrar el movimiento de apertura de esta deuda o préstamo. Conéctate y vuelve a intentarlo; no se guardó ningún cambio.";
 
+export const ONLINE_ONLY_DELETE_OBLIGATION_NOTICE = "Necesitas internet para eliminar esta obligación: el servidor debe confirmar que no tiene pagos. Conéctate y vuelve a intentarlo; no se borró nada.";
+
 export type SyncLine = {
   kind: "offline" | "pending" | "sending" | "review";
   text: string;
