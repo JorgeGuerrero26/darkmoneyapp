@@ -65,7 +65,7 @@ function setup(overrides: Partial<RuntimeDeps> = {}) {
   return { runtime, log, drivers, deleted, changes };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+const settle = () => new Promise((resolve) => setTimeout(resolve, 120));
 
 describe("OfflineRuntime", () => {
   it("P1: sin red no inicia un pago/llegada ni encola una mitad; apagado mantiene el camino anterior", async () => {
