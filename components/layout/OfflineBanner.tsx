@@ -16,6 +16,7 @@ import {
 import { isStartupComplete } from "../../lib/startup-timing";
 import { SafeBlurView } from "../ui/SafeBlurView";
 import { useUiStore } from "../../store/ui-store";
+import { useOfflineStatus } from "../../lib/offline/react";
 
 /** Las queries que ahora mismo dejan al usuario esperando algo que no puede ver. */
 function blockedQueriesNow(queryClient: ReturnType<typeof useQueryClient>) {
@@ -95,7 +96,10 @@ export function OfflineBanner() {
     return () => clearInterval(timer);
   }, [isBlocked, queryClient]);
 
-  const visible = !isConnected || isSlow;
+  // Con el modo sin conexión activo, "sin conexión" lo dice la línea del encabezado (Revisión 54): la píldora central
+  // solo queda para "tardando más de lo normal". Con el modo apagado se comporta exactamente como siempre.
+  const engineReady = useOfflineStatus().availability === "ready";
+  const visible = (!isConnected && !engineReady) || isSlow;
   const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
 
   // El aviso de confirmación comparte esta franja de arriba y se coloca debajo de la píldora.

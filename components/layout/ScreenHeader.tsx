@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { PlanStatusBadge } from "../ui/PlanStatusBadge";
 import { useHaptics } from "../../hooks/useHaptics";
+import { useSyncLine } from "../../hooks/useSyncLine";
+import { SyncStatusLine } from "../offline/SyncStatusLine";
 
 type Props = {
   title: string;
@@ -15,6 +17,8 @@ type Props = {
   showPlanBadge?: boolean;
   compactPlanBadge?: boolean;
   fullWidthMeta?: boolean;
+  /** No mostrar la línea de sincronización (modo sin conexión) en este encabezado. */
+  hideSyncStatus?: boolean;
 };
 
 export function ScreenHeader({
@@ -27,9 +31,13 @@ export function ScreenHeader({
   showPlanBadge = false,
   compactPlanBadge = false,
   fullWidthMeta = false,
+  hideSyncStatus = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
+  // Modo sin conexión (Revisión 54): cuando hay algo que decir, reemplaza a "Actualizado hace…"; si no, el encabezado es el de siempre.
+  const syncLine = useSyncLine();
+  const line = hideSyncStatus ? null : syncLine;
 
   return (
     <View
@@ -54,9 +62,9 @@ export function ScreenHeader({
           <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
-          {!fullWidthMeta && (subtitle || showPlanBadge) ? (
+          {!fullWidthMeta && (subtitle || showPlanBadge || line) ? (
             <View style={styles.metaRow}>
-              {subtitle ? (
+              {line ? <SyncStatusLine line={line} /> : subtitle ? (
                 <Text style={styles.subtitle} numberOfLines={1}>
                   {subtitle}
                 </Text>
@@ -67,9 +75,9 @@ export function ScreenHeader({
         </View>
         {rightAction ? <View style={styles.right}>{rightAction}</View> : null}
       </View>
-      {fullWidthMeta && (subtitle || showPlanBadge) ? (
+      {fullWidthMeta && (subtitle || showPlanBadge || line) ? (
         <View style={styles.metaRow}>
-          {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+          {line ? <SyncStatusLine line={line} /> : subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
           {showPlanBadge ? <PlanStatusBadge compact={compactPlanBadge} /> : null}
         </View>
       ) : null}
