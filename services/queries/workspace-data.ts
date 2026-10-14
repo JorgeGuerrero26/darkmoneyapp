@@ -1247,10 +1247,25 @@ function maxIsoDate(a: string | null | undefined, b: string | null | undefined):
 }
 
 /** Lista enriquecida (conteos, última actividad) — pantalla Categorías. */
-async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOverview[]> {
+export async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOverview[]> {
   if (!supabase) throw new Error("Supabase no está configurado.");
 
-  const [catRes, movRes, subRes] = await Promise.all([
+  // Modo sin conexión (beta): con la copia local lista no se pide nada al servidor (sin red esas consultas
+  // fallan y la pantalla decía "no se pudieron cargar las categorías"). Lo que sigue arma lo mismo con filas locales.
+  const [localCategoryRows, localSubscriptionRows] = await Promise.all([
+    offlineRuntime.listRows(workspaceId, "categories").catch(() => null),
+    offlineRuntime.listRows(workspaceId, "subscriptions").catch(() => null),
+  ]);
+  const movementsAreLocal = Boolean(await offlineRuntime.listRows(workspaceId, "movements").catch(() => null));
+  const useLocalRows = Boolean(localCategoryRows && localSubscriptionRows && movementsAreLocal);
+  const [catRes, movRes, subRes] = (useLocalRows
+    ? await Promise.all([
+        Promise.resolve({ data: localCategoryRows, error: null }),
+        // Con la copia local lista, esta función lee de ella y no usa el cliente de Supabase.
+        fetchCatalogMovementRows(supabase, workspaceId, "category_id", false),
+        Promise.resolve({ data: localSubscriptionRows, error: null }),
+      ])
+    : await Promise.all([
     supabase
       .from("categories")
       .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, default_spend_type_id, created_at, updated_at")
@@ -1263,7 +1278,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
       .select("category_id, updated_at")
       .eq("workspace_id", workspaceId)
       .not("category_id", "is", null),
-  ]);
+  ])) as [any, any, any];
 
   if (catRes.error) throw new Error(catRes.error.message ?? "Error al cargar categorías");
 
