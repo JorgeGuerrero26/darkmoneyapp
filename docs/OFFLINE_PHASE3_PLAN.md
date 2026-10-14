@@ -1,8 +1,8 @@
 # Motor offline — Fase 3: catálogos, presupuestos, suscripciones, ingresos recurrentes, plantillas, metas
 
-Estado: **3.0–3.3 implementadas y verificadas con P1 y P2 resueltas por el dueño (2026-10-13)**.
-Esta entrega no incluye 3.4–3.6 ni la Fase 4. La prueba en dispositivo sigue pendiente
-(`docs/OFFLINE_DEVICE_TEST.md`). Antes de leer esto: `docs/OFFLINE_ENGINE_DESIGN.md` (diseño),
+Estado: **3.0–3.6 ejecutadas en la rama local `offline-fase3-4` (P1 y P2 resueltas por el dueño, 2026-10-13)**.
+La prueba en dispositivo sigue PENDIENTE (`docs/OFFLINE_DEVICE_TEST.md`) y la migración de servidor no está aplicada.
+Resultado real de 3.4–3.6 en la sección 9. Antes de leer esto: `docs/OFFLINE_ENGINE_DESIGN.md` (diseño),
 `docs/OFFLINE_PHASE1_PLAN.md` (servidor) y `docs/OFFLINE_PHASE2_PLAN.md` (cliente de movimientos,
 que es el **patrón a repetir**).
 
@@ -297,3 +297,24 @@ Logs por etapa: `.tmp/phase3-1-*`, `.tmp/phase3-2-*`, `.tmp/phase3-3-*` y `.tmp/
 La suite PGlite comprueba el contrato RPC y relaciones representativas en su harness; no
 sustituye todos los triggers financieros/RLS de producción ni la prueba en dispositivo.
 Informe de archivos, resultados literales, riesgos y prueba manual: `OFFLINE_PHASE3_REPORT.md`.
+
+## 9. Resultado de 3.4–3.6 (2026-10-13/14, rama `offline-fase3-4`)
+
+Con el interruptor encendido, **cuentas, categorías, contactos, tipos de gasto, plantillas, presupuestos y las definiciones de
+suscripciones e ingresos recurrentes** se crean, editan y borran por la base local y se sincronizan solos. Los pagos de
+suscripciones y las llegadas de ingresos siguen en línea (P1). Las metas y los roles de contacto no tienen pantalla en la app.
+
+- **Lectura:** el snapshot (cuentas, categorías, contactos, suscripciones, ingresos) y la pantalla de categorías leen la copia
+  local cuando está lista (`withLocalRows`); tras escribir sin red el cache se rehace desde ella (`applyLocalCatalogsToCache`),
+  conservando lo que solo calcula el servidor (resumen financiero de cada contacto).
+- **Presupuestos:** el avance se calcula en el teléfono (réplica con paridad) solo cuando hay presupuestos, gastos, cuentas,
+  categorías o tipos de gasto sin enviar; si no, manda el servidor. Cualquier duda (zona horaria distinta de UTC, fracción de
+  centavo, tasa ambigua) conserva el valor del servidor.
+- **Escritura:** mismas validaciones que el camino online (nombre único de tipo de gasto, categoría con movimientos/
+  suscripciones/subcategorías, suscripción con pagos). Un monto con fracción de centavo cae al camino online.
+- **Fuera de esta ejecución:** el historial de cada suscripción sigue leyendo del servidor (sin red muestra el último dato
+  guardado); el aviso de sincronización no se agregó a `app/subscriptions.tsx` porque ese archivo tiene cambios sin commitear
+  del dueño.
+- **Pruebas:** e2e con dos dispositivos (varios catálogos, respuesta perdida sin duplicar, edición de lo borrado por otra
+  persona, edición concurrente) y Jest para escritura, cache, presupuestos y el aviso. Guía de dispositivo en
+  `docs/OFFLINE_DEVICE_TEST.md` (secciones A–F).
