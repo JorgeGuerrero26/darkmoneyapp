@@ -85,3 +85,58 @@ describe("pantalla de Categorías sin internet", () => {
     expect(overview.find((category) => category.name === "Prueba borrar")).toMatchObject({ movementCount: 0, subscriptionCount: 0 });
   });
 });
+
+// eslint-disable-next-line import/first
+import { QueryClient } from "@tanstack/react-query";
+// eslint-disable-next-line import/first
+import { reactToLocalDataChange } from "../../../hooks/useOfflineBridge";
+// eslint-disable-next-line import/first
+import { categoryCanDelete } from "../../../features/categories/lib/categoryFilters";
+
+describe("el resumen de Categorías se pone al día al registrar un gasto sin internet", () => {
+  it("'Prueba borrar' deja de poder eliminarse apenas tiene un gasto, y vuelve a poder al borrarlo", async () => {
+    const drivers: Record<string, ReturnType<typeof createTestDriver>> = {};
+    const runtime = new OfflineRuntime({
+      isAvailable: () => true,
+      openDriver: async (userId) => (drivers[userId] ??= createTestDriver()),
+      deleteDatabase: async () => undefined,
+      transport: fakeTransport(),
+      writeDebounceMs: 0,
+    });
+    state.runtime = runtime;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    // Igual que el puente de la app: lo que cambia en la base local avisa a las consultas.
+    runtime.setHooks({ onDataChanged: (tables) => reactToLocalDataChange(queryClient, WS, tables) });
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    runtime.setOnline(false);
+
+    const key = ["categories-overview", WS, "u1"];
+    // staleTime largo, como STALE.medium: sin aviso, la pantalla se quedaría con el primer resultado.
+    const read = () => queryClient.fetchQuery({ queryKey: key, queryFn: () => fetchCategoriesOverview(WS), staleTime: 10 * 60_000 });
+    const refresh = async () => {
+      await settle();
+      return queryClient.fetchQuery({ queryKey: key, queryFn: () => fetchCategoriesOverview(WS), staleTime: 10 * 60_000 });
+    };
+    const find = (list: Awaited<ReturnType<typeof read>>) => list.find((category) => category.name === "Prueba borrar")!;
+
+    const account = await localCreate(WS, "accounts", { workspace_id: WS, name: "Cuenta Principal", type: "bank", currency_code: "PEN", opening_balance: 10, include_in_net_worth: true, color: "#fff", icon: "wallet", sort_order: 0, is_archived: false });
+    const category = await localCreate(WS, "categories", { workspace_id: WS, name: "Prueba borrar", kind: "expense", is_active: true, is_system: false, sort_order: 10 });
+    let list = await refresh();
+    expect(find(list)).toMatchObject({ movementCount: 0 });
+    expect(categoryCanDelete(find(list), list)).toBe(true);
+
+    const movement = await runtime.createMovement(WS, {
+      movementType: "expense", status: "posted", occurredAt: "2026-10-14T17:54:00.000Z", description: "Gasto de prueba",
+      sourceAccountId: account!.id, sourceAmount: 1, destinationAccountId: null, destinationAmount: null, categoryId: category!.id, dedupeKey: "k-del-1",
+    });
+    list = await refresh();
+    expect(find(list)).toMatchObject({ movementCount: 1 });
+    expect(categoryCanDelete(find(list), list)).toBe(false);
+
+    await runtime.deleteMovement(WS, movement!.id);
+    list = await refresh();
+    expect(find(list)).toMatchObject({ movementCount: 0 });
+    expect(categoryCanDelete(find(list), list)).toBe(true);
+  });
+});

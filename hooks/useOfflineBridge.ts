@@ -6,6 +6,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { overlayBalancesOnAccounts } from "../lib/offline/account-balances";
 import { offlineRuntime } from "../lib/offline/instance";
 import { useOfflineFlag } from "../lib/offline/react";
+import { queryRootsToRefresh } from "../lib/offline/invalidation";
 import { describePushedNotice } from "../lib/offline/pushed-notice";
 import { useUiStore } from "../store/ui-store";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
@@ -36,6 +37,30 @@ async function applyLocalBalancesToCache(queryClient: QueryClient, workspaceId: 
 }
 
 /**
+ * Cambió algo en la base local (una escritura sin red o datos recién descargados): se avisa a las consultas que
+ * leen de ella y se rehace el cache del snapshot que solo se podía pedir al servidor. Exportada para probarla.
+ */
+export async function reactToLocalDataChange(queryClient: QueryClient, wsId: number | null, tables: string[]): Promise<void> {
+  // Las consultas que leen de la copia del teléfono guardan su resultado: hay que avisarles de que cambió
+  // (si no, Categorías seguía diciendo "0 movimientos" tras registrar un gasto sin red).
+  for (const root of queryRootsToRefresh(tables)) void queryClient.invalidateQueries({ queryKey: [root] });
+  if (wsId == null) return;
+  await applyLocalBalancesToCache(queryClient, wsId);
+  // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.
+  if (tables.length === 0 || touchesSnapshotCatalogs(tables)) {
+    await applyLocalCatalogsToCache(queryClient, wsId).catch(() => false);
+  }
+  // Obligaciones: las definiciones creadas o editadas sin red se muestran encima de lo del servidor.
+  if (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties")) {
+    await applyLocalObligationsToCache(queryClient, wsId).catch(() => false);
+  }
+  // Presupuestos: el avance cambia con presupuestos, gastos, cuentas, categorías y tipos de gasto.
+  if (tables.length === 0 || tables.some((table) => BUDGET_INPUT_TABLES.includes(table))) {
+    await applyLocalBudgetsToCache(queryClient, wsId).catch(() => false);
+  }
+}
+
+/**
  * Conecta el motor offline con la app: lo enciende según el interruptor, le avisa de la red y del
  * primer plano, y refresca la UI cuando cambian los datos locales. Con el interruptor apagado (el
  * estado por defecto) no hace nada más que dejarlo apagado.
@@ -51,26 +76,7 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
   // Reacciones a cambios de datos.
   useEffect(() => {
     offlineRuntime.setHooks({
-      onDataChanged: async (tables) => {
-        const wsId = latest.current.workspaceId;
-        if (tables.length === 0 || tables.includes("movements")) {
-          void queryClient.invalidateQueries({ queryKey: ["movements"] });
-          void queryClient.invalidateQueries({ queryKey: ["movement"] });
-        }
-        if (wsId != null) await applyLocalBalancesToCache(queryClient, wsId);
-        // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.
-        if (wsId != null && (tables.length === 0 || touchesSnapshotCatalogs(tables))) {
-          await applyLocalCatalogsToCache(queryClient, wsId).catch(() => false);
-        }
-        // Obligaciones: las definiciones creadas o editadas sin red se muestran encima de lo del servidor.
-        if (wsId != null && (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties"))) {
-          await applyLocalObligationsToCache(queryClient, wsId).catch(() => false);
-        }
-        // Presupuestos: el avance cambia con presupuestos, gastos, cuentas, categorías y tipos de gasto.
-        if (wsId != null && (tables.length === 0 || tables.some((table) => BUDGET_INPUT_TABLES.includes(table)))) {
-          await applyLocalBudgetsToCache(queryClient, wsId).catch(() => false);
-        }
-      },
+      onDataChanged: (tables) => reactToLocalDataChange(queryClient, latest.current.workspaceId, tables),
       // El servidor acaba de aceptar cambios: ahora sí se pueden pedir los números que solo él
       // calcula (presupuestos, historial por categoría, analíticas).
       onPushed: (report, reason) => {
