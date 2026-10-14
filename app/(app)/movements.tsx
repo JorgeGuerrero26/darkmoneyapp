@@ -24,12 +24,12 @@ import { MovementSavingNotice } from "../../components/domain/MovementSavingNoti
 import { useDetectionBackgroundSaves } from "../../hooks/useDetectionBackgroundSaves";
 import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
+import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
-import { OfflineSyncNotice } from "../../components/offline/OfflineSyncNotice";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
@@ -186,6 +186,8 @@ function MovementsScreen() {
   // ── Delete / undo ─────────────────────────────────────────────────────────
   const { showToast, showRichToast, showErrorToast } = useToast();
   const deleteMutation = useDeleteMovementMutation(activeWorkspaceId);
+  // Modo sin conexión: qué movimientos siguen sin enviarse ("Por enviar · hora"). Vacío con el modo apagado.
+  const pendingTimes = usePendingRowTimes("movements", activeWorkspaceId);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
@@ -868,6 +870,7 @@ function MovementsScreen() {
       movement={item}
       baseCurrencyCode={baseCurrency}
       attachmentCount={movementAttachmentCounts[item.id] ?? 0}
+      pendingAt={pendingTimes.get(item.id) ?? null}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
       onPress={() => {
@@ -896,7 +899,7 @@ function MovementsScreen() {
           : undefined
       }
     />
-  ), [baseCurrency, movementAttachmentCounts, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
+  ), [baseCurrency, movementAttachmentCounts, pendingTimes, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
 
   return (
     <ResourceModuleTemplate
@@ -959,7 +962,6 @@ function MovementsScreen() {
         context={
           !selectMode ? (
             <View style={{ gap: SPACING.sm }}>
-              <OfflineSyncNotice />
               <MovementSavingNotice savingCount={savingMovementsCount} />
               <DetectionBackgroundSavesNotice
                 pendingSaves={pendingDetectionSaves}

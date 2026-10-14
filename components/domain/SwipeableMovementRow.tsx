@@ -15,6 +15,8 @@ type Props = {
   perspectiveAccountId?: number | null;
   perspectiveCurrencyCode?: string | null;
   attachmentCount?: number;
+  /** ISO de cuándo se guardó en el teléfono, si todavía no se envió. */
+  pendingAt?: string | null;
   onPress?: () => void;
   onLongPress?: () => void;
   onDelete?: () => void;
@@ -30,6 +32,7 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
   perspectiveAccountId,
   perspectiveCurrencyCode,
   attachmentCount,
+  pendingAt,
   onPress,
   onLongPress,
   onDelete,
@@ -45,6 +48,7 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
         perspectiveAccountId={perspectiveAccountId}
         perspectiveCurrencyCode={perspectiveCurrencyCode}
         attachmentCount={attachmentCount}
+          pendingAt={pendingAt}
         selected={selected}
         onPress={onPress}
         onLongPress={onLongPress}
@@ -89,6 +93,7 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
           perspectiveAccountId={perspectiveAccountId}
           perspectiveCurrencyCode={perspectiveCurrencyCode}
           attachmentCount={attachmentCount}
+          pendingAt={pendingAt}
           onPress={() => {
             if (isOpen()) {
               close();
