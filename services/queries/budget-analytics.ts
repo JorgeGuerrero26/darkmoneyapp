@@ -7,6 +7,9 @@ import { supabase } from "../../lib/supabase";
 import { displayCategoryName } from "../../lib/category-display-name";
 import type { BudgetOverview } from "../../types/domain";
 import type { BudgetScopedMovement } from "../../lib/budget-metrics";
+import { buildLocalBudgetScopeMovements } from "../../features/budgets/lib/offlineBudgetScope";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { useOfflineNetworkMode } from "./offline-writes";
 
 const PAGE_SIZE = 500;
 
@@ -26,11 +29,27 @@ function buildBudgetScopeKey(budgets: BudgetOverview[]) {
     .join("|");
 }
 
-async function fetchBudgetScopeMovements(
+export async function fetchBudgetScopeMovements(
   workspaceId: number,
   periodStart: string,
   periodEnd: string,
 ): Promise<BudgetScopedMovement[]> {
+  // Modo sin conexión (beta): con la copia local lista, los movimientos del presupuesto salen de ella, así que
+  // incluyen lo que todavía no se envió y funcionan sin internet. Mismo filtro y mismo orden que la consulta de abajo.
+  const [localMovements, localAccounts, localCategories] = await Promise.all([
+    offlineRuntime.listRows(workspaceId, "movements").catch(() => null),
+    offlineRuntime.listRows(workspaceId, "accounts").catch(() => null),
+    offlineRuntime.listRows(workspaceId, "categories").catch(() => null),
+  ]);
+  if (localMovements && localAccounts && localCategories) {
+    return buildLocalBudgetScopeMovements({
+      movements: localMovements,
+      accounts: localAccounts,
+      categories: localCategories,
+      periodStart,
+      periodEnd,
+    });
+  }
   if (!supabase) throw new Error("Supabase no está configurado.");
 
   const rows: BudgetScopedMovement[] = [];
@@ -109,7 +128,9 @@ export function useBudgetScopeMovementsQuery(
     };
   }, [budgets]);
 
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useQuery({
+    networkMode,
     queryKey: [
       "budget-scope-movements",
       workspaceId,
