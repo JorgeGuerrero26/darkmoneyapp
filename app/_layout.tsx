@@ -286,7 +286,7 @@ function NotificationSetup() {
   // Sin Realtime: los datos se ponen al día al volver a la app y al llegar un push.
   useForegroundDataRefresh(profile?.id ?? null, activeWorkspaceId);
   // Modo sin conexión (beta): apagado por defecto; con el interruptor apagado no hace nada.
-  useOfflineBridge(profile?.id ?? null, activeWorkspaceId);
+  useOfflineBridge(profile?.id ?? null, activeWorkspaceId, (workspaces ?? []).map((workspace) => workspace.id));
 
   const resolvedActiveWorkspace =
     activeWorkspace ??

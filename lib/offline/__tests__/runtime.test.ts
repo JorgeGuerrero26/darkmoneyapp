@@ -11,14 +11,15 @@ const expense = (description: string, amount: number) => ({
 });
 
 /** Servidor falso mínimo: acepta todo y devuelve la fila como la dejaría el servidor real. */
-function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: number }): SyncTransport {
+function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: number; pulledWs?: number[] }): SyncTransport {
   let nextId = 1000;
   return {
     async reserveIds(_ws, _table, count) {
       return Array.from({ length: count }, () => nextId++);
     },
-    async pullChanges(_ws, cursors, tables) {
+    async pullChanges(ws, cursors, tables) {
       log.pulls += 1;
+      log.pulledWs?.push(ws);
       return {
         server_time: "2026-10-12T15:00:00.000Z",
         tables: Object.fromEntries(
@@ -44,7 +45,7 @@ function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: numb
 }
 
 function setup(overrides: Partial<RuntimeDeps> = {}) {
-  const log = { pushed: [] as PushOp[][], failPush: false, pulls: 0 };
+  const log = { pushed: [] as PushOp[][], failPush: false, pulls: 0, pulledWs: [] as number[] };
   const drivers: Record<string, SqlDriver> = {};
   const deleted: string[] = [];
   const runtime = new OfflineRuntime({
@@ -262,6 +263,47 @@ describe("OfflineRuntime", () => {
     await settle();
     expect(Object.keys(drivers).sort()).toEqual(["u1", "u2"]);
     expect((await runtime.listMovements(WS, {}, 0, 30)).data).toHaveLength(0); // no se ven datos de u1
+  });
+
+  it("varios espacios: descarga los demás en segundo plano y al cambiar de espacio ya está lista la copia", async () => {
+    const { runtime, log } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2] });
+    await settle();
+    expect(new Set(log.pulledWs)).toEqual(new Set([1, 2]));
+    expect(runtime.canReadLocal(2)).toBe(false); // todavía no es el espacio abierto
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 2, workspaceIds: [1, 2] });
+    expect(runtime.getState()).toMatchObject({ workspaceId: 2, hydrated: true });
+    expect(runtime.canReadLocal(2)).toBe(true); // sin esperar a ninguna descarga
+  });
+
+  it("un cambio guardado en el espacio A se envía aunque el usuario ya esté en el B", async () => {
+    const { runtime, log } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2] });
+    await settle();
+    runtime.setOnline(false);
+    await runtime.createMovement(1, expense("En el espacio uno", 9));
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 2, workspaceIds: [1, 2] });
+    expect(runtime.getState().pending).toBe(1); // cuenta lo pendiente de todos los espacios
+    runtime.setOnline(true);
+    await settle();
+    expect(runtime.getState().pending).toBe(0);
+    expect(log.pushed.flat().map((op) => op.workspace_id)).toEqual([1]);
+  });
+
+  it("un espacio que falla no tumba el ciclo del espacio abierto, pero deja el motivo", async () => {
+    const { runtime } = setup({
+      transport: {
+        ...fakeTransport({ pushed: [], failPush: false, pulls: 0 }),
+        async pullChanges(ws, cursors, tables) {
+          if (ws === 2) throw new Error("not a workspace member");
+          return fakeTransport({ pushed: [], failPush: false, pulls: 0 }).pullChanges(ws, cursors, tables, 1000);
+        },
+      },
+    });
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2] });
+    await settle();
+    expect(runtime.getState()).toMatchObject({ hydrated: true });
+    expect(runtime.getState().lastError).toContain("not a workspace member");
   });
 
   it("apagar el interruptor suelta la base y vuelve a 'desactivado'", async () => {

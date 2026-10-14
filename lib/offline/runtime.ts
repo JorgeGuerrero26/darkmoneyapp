@@ -71,7 +71,18 @@ const INITIAL_STATE: OfflineState = {
   lastError: null,
 };
 
-export type RuntimeConfig = { enabled: boolean; userId: string | null; workspaceId: number | null };
+export type RuntimeConfig = {
+  enabled: boolean;
+  userId: string | null;
+  /** El espacio que el usuario tiene abierto: se sincroniza primero y es el que se lee/escribe. */
+  workspaceId: number | null;
+  /**
+   * Todos los espacios de los que es miembro. Se mantienen al día en segundo plano para que cambiar de
+   * espacio ya encuentre la copia local lista, y para que lo pendiente de un espacio se envíe aunque el
+   * usuario ya esté en otro. Sin esto, un cambio guardado en el espacio A quedaba sin enviar al pasar al B.
+   */
+  workspaceIds?: number[];
+};
 
 /**
  * Une el motor con la app: abre la base del usuario, decide cuándo sincronizar, expone el estado
@@ -87,7 +98,7 @@ export class OfflineRuntime {
   private engine: SyncEngine | null = null;
   private db: SqlDriver | null = null;
   private userId: string | null = null;
-  private config: RuntimeConfig = { enabled: false, userId: null, workspaceId: null };
+  private config: RuntimeConfig = { enabled: false, userId: null, workspaceId: null, workspaceIds: [] };
   private queue: Promise<unknown> = Promise.resolve();
   private writeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly now: () => number;
@@ -180,7 +191,10 @@ export class OfflineRuntime {
       }
     }
 
-    const workspaceChanged = prev.workspaceId !== next.workspaceId || this.state.workspaceId !== next.workspaceId;
+    const workspaceChanged =
+      prev.workspaceId !== next.workspaceId ||
+      this.state.workspaceId !== next.workspaceId ||
+      (prev.workspaceIds ?? []).join(",") !== (next.workspaceIds ?? []).join(",");
     const hydrated = next.workspaceId != null ? await this.engine!.isHydrated(next.workspaceId) : false;
     this.patch({ availability: "ready", workspaceId: next.workspaceId, hydrated });
     await this.refreshCounts();
@@ -224,15 +238,27 @@ export class OfflineRuntime {
 
     this.patch({ syncing: true });
     let report: SyncReport | null = null;
+    let otherError: string | null = null;
     try {
       report = await engine.syncNow(workspaceId);
+      // Los demás espacios, uno tras otro: mantienen su copia al día y envían lo que quedó pendiente
+      // en ellos. Un fallo aquí no tumba el ciclo del espacio abierto.
+      for (const other of await this.otherWorkspaces(workspaceId)) {
+        if (this.engine !== engine) break;
+        const otherReport = await engine.syncNow(other).catch((error: unknown) => ({
+          error: error instanceof Error ? error.message : String(error),
+          pushed: 0,
+        }));
+        if (otherReport.error && !otherError) otherError = otherReport.error;
+        if (report && otherReport.pushed > 0 && !otherReport.error) report = { ...report, pushed: report.pushed + otherReport.pushed };
+      }
     } finally {
       const hydrated = await engine.isHydrated(workspaceId).catch(() => false);
       this.patch({
         syncing: false,
         hydrated,
         lastSyncAt: report && !report.error ? this.now() : this.state.lastSyncAt,
-        lastError: report?.error ?? null,
+        lastError: report?.error ?? otherError,
       });
       await this.refreshCounts();
     }
@@ -257,12 +283,25 @@ export class OfflineRuntime {
     }, this.writeDebounceMs);
   }
 
+  /** Espacios, además del abierto, que hay que sincronizar: los miembros y cualquiera con cambios sin enviar. */
+  private async otherWorkspaces(active: number): Promise<number[]> {
+    const ids = new Set<number>(this.config.workspaceIds ?? []);
+    if (this.db) {
+      const rows = await this.db.all<{ workspace_id: number }>(
+        "select distinct workspace_id from outbox where status in ('pending','sending')",
+      );
+      for (const row of rows) ids.add(Number(row.workspace_id));
+    }
+    ids.delete(active);
+    return [...ids];
+  }
+
   private async refreshCounts() {
     const db = this.db;
     if (!db) return;
     try {
-      const workspaceId = this.state.workspaceId ?? undefined;
-      const [pending, inbox] = await Promise.all([countOutbox(db, workspaceId), countInbox(db)]);
+      // Total del usuario, no solo del espacio abierto: lo pendiente en otro espacio también cuenta.
+      const [pending, inbox] = await Promise.all([countOutbox(db), countInbox(db)]);
       this.patch({ pending, rejected: inbox.rejected, review: inbox.review });
     } catch {
       // Un conteo fallido no debe romper nada; el siguiente ciclo lo corrige.

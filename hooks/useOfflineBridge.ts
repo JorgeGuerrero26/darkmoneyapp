@@ -37,9 +37,11 @@ async function applyLocalBalancesToCache(queryClient: QueryClient, workspaceId: 
  * primer plano, y refresca la UI cuando cambian los datos locales. Con el interruptor apagado (el
  * estado por defecto) no hace nada más que dejarlo apagado.
  */
-export function useOfflineBridge(userId: string | null, workspaceId: number | null) {
+export function useOfflineBridge(userId: string | null, workspaceId: number | null, memberWorkspaceIds: number[] = []) {
   const queryClient = useQueryClient();
   const { enabled, loaded } = useOfflineFlag();
+  // Clave estable: la lista cambia de identidad en cada render pero casi nunca de contenido.
+  const memberKey = [...new Set(memberWorkspaceIds)].sort((a, b) => a - b).join(",");
   const latest = useRef({ workspaceId });
   latest.current = { workspaceId };
 
@@ -96,8 +98,8 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
   // Encendido / apagado y cambio de usuario o de espacio.
   useEffect(() => {
     if (!loaded) return;
-    void offlineRuntime.configure({ enabled, userId, workspaceId });
-  }, [loaded, enabled, userId, workspaceId]);
+    void offlineRuntime.configure({ enabled, userId, workspaceId, workspaceIds: memberKey ? memberKey.split(",").map(Number) : [] });
+  }, [loaded, enabled, userId, workspaceId, memberKey]);
 
   // Disparadores: red, primer plano y un latido cada 5 minutos con la app abierta.
   useEffect(() => {
