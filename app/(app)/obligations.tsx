@@ -27,6 +27,8 @@ import {
 } from "../../services/queries/obligations";
 import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
 import { useToast } from "../../hooks/useToast";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { ONLINE_ONLY_DELETE_OBLIGATION_NOTICE } from "../../lib/offline/status-copy";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
@@ -294,7 +296,15 @@ function ObligationsScreen() {
 
   function handleObligationRemoveAction(ob: ObligationSummary) {
     if (canDeleteObligation(ob)) {
-      startUndoDelete(ob);
+      // Sin internet, una obligación que ya está en el servidor no se puede eliminar: se avisa antes de ocultarla.
+      void (async () => {
+        if (activeWorkspaceId && !offlineRuntime.getState().online && offlineRuntime.getState().availability === "ready"
+          && !(await offlineRuntime.hasPendingInsert(activeWorkspaceId, "obligations", ob.id))) {
+          showToast(ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, "error");
+          return;
+        }
+        startUndoDelete(ob);
+      })();
       return;
     }
     setArchiveTarget(ob);
