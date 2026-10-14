@@ -11,7 +11,7 @@ const expense = (description: string, amount: number) => ({
 });
 
 /** Servidor falso mínimo: acepta todo y devuelve la fila como la dejaría el servidor real. */
-function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: number; pulledWs?: number[] }): SyncTransport {
+function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: number; pulledWs?: number[]; liveIdsCalls?: number }): SyncTransport {
   let nextId = 1000;
   return {
     async reserveIds(_ws, _table, count) {
@@ -28,6 +28,7 @@ function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: numb
       };
     },
     async liveIds() {
+      if (log.liveIdsCalls != null) log.liveIdsCalls += 1;
       return {};
     },
     async pushBatch(ops) {
@@ -45,7 +46,7 @@ function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: numb
 }
 
 function setup(overrides: Partial<RuntimeDeps> = {}) {
-  const log = { pushed: [] as PushOp[][], failPush: false, pulls: 0, pulledWs: [] as number[] };
+  const log = { pushed: [] as PushOp[][], failPush: false, pulls: 0, pulledWs: [] as number[], liveIdsCalls: 0 };
   const drivers: Record<string, SqlDriver> = {};
   const deleted: string[] = [];
   const runtime = new OfflineRuntime({
@@ -304,6 +305,24 @@ describe("OfflineRuntime", () => {
     await settle();
     expect(runtime.getState()).toMatchObject({ hydrated: true });
     expect(runtime.getState().lastError).toContain("not a workspace member");
+  });
+
+  it("lo que borró el servidor se revisa al volver la red, al volver a la app y con el botón; un guardado normal no lo paga", async () => {
+    const { runtime, log } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    const afterStart = log.liveIdsCalls;
+    await runtime.requestSync("write");
+    await runtime.requestSync("interval");
+    expect(log.liveIdsCalls).toBe(afterStart); // dentro de la ventana de 5 minutos: no se pide
+    await runtime.requestSync("foreground");
+    expect(log.liveIdsCalls).toBe(afterStart + 1);
+    await runtime.requestSync("manual");
+    expect(log.liveIdsCalls).toBe(afterStart + 2);
+    runtime.setOnline(false);
+    runtime.setOnline(true); // "network"
+    await settle();
+    expect(log.liveIdsCalls).toBe(afterStart + 3);
   });
 
   it("apagar el interruptor suelta la base y vuelve a 'desactivado'", async () => {

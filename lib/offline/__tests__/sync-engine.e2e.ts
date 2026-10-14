@@ -738,3 +738,44 @@ describe("obligaciones sin conexión de punta a punta (Fase 4)", () => {
     expect((await server.admin.query<{ s: string | null }>("select settlement_account_id::text s from obligations where id = $1", [created.id])).rows[0].s).toBeNull();
   });
 });
+
+describe("lo que se borra en el servidor desaparece del teléfono", () => {
+  it("al pedirlo (volver a la app, volver la red, botón manual) sin esperar los 5 minutos del ciclo normal", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const category = (await createRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", fields: { name: "Prueba borrar" }, nowIso: new Date(clock).toISOString() }))!;
+    await a.engine.syncNow(WS);
+
+    // Borrado directo en el servidor (otra persona, otro dispositivo o limpieza de datos de prueba).
+    await server.admin.exec(`delete from categories where id = ${category.id}`);
+    tick(30_000);
+    await a.engine.syncNow(WS); // ciclo normal: la comprobación de borrados todavía no toca
+    expect(await getServerShapedRow(a.db, "categories", category.id)).not.toBeNull();
+
+    tick(30_000);
+    await a.engine.syncNow(WS, { forceReconcile: true });
+    expect(await getServerShapedRow(a.db, "categories", category.id)).toBeNull();
+  });
+
+  it("y sin pedirlo, el ciclo normal lo hace pasados los 5 minutos", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const category = (await createRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", fields: { name: "Otra" }, nowIso: new Date(clock).toISOString() }))!;
+    await a.engine.syncNow(WS);
+    await server.admin.exec(`delete from categories where id = ${category.id}`);
+    tick(6 * 60_000);
+    await a.engine.syncNow(WS);
+    expect(await getServerShapedRow(a.db, "categories", category.id)).toBeNull();
+  });
+
+  it("un cambio que el teléfono todavía no envió no se borra por esa comprobación", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const category = (await createRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", fields: { name: "Pendiente" }, nowIso: new Date(clock).toISOString() }))!;
+    // No se sincroniza: la fila solo existe en el teléfono (cola pendiente) y el servidor no la conoce.
+    a.hooks.failPush = () => true;
+    tick(10 * 60_000);
+    await a.engine.syncNow(WS, { forceReconcile: true });
+    expect(await getServerShapedRow(a.db, "categories", category.id)).not.toBeNull();
+  });
+});

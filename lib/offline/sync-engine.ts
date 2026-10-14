@@ -66,6 +66,7 @@ export class SyncEngine {
   private readonly onChange: (change: SyncChange) => void;
   private running: Promise<SyncReport> | null = null;
   private rerun: number | null = null;
+  private forceReconcile = false;
   private starting: Promise<void> | null = null;
 
   constructor(deps: Deps) {
@@ -106,7 +107,9 @@ export class SyncEngine {
    * Reentrante: si se pide mientras corre, se agenda UNA repetición al terminar (nada se pierde y
    * no se acumulan ciclos).
    */
-  syncNow(workspaceId: number): Promise<SyncReport> {
+  syncNow(workspaceId: number, options: { forceReconcile?: boolean } = {}): Promise<SyncReport> {
+    // Se recuerda aunque haya un ciclo en curso: la repetición agendada lo incluirá.
+    if (options.forceReconcile) this.forceReconcile = true;
     if (this.running) {
       this.rerun = workspaceId;
       return this.running;
@@ -123,6 +126,8 @@ export class SyncEngine {
 
   private async runCycle(workspaceId: number): Promise<SyncReport> {
     await this.start();
+    const forceReconcile = this.forceReconcile;
+    this.forceReconcile = false;
     const report: SyncReport = {
       pushed: 0,
       applied: 0,
@@ -143,7 +148,7 @@ export class SyncEngine {
       }
       await this.pull(workspaceId, report);
       await this.pullSubscriptionHistory(workspaceId, report);
-      await this.reconcileDeletions(workspaceId, report);
+      await this.reconcileDeletions(workspaceId, report, forceReconcile);
     } catch (error) {
       report.error = error instanceof Error ? error.message : String(error);
     }
@@ -400,10 +405,14 @@ export class SyncEngine {
 
   // ─── Borrados ───────────────────────────────────────────────────────────────────────────────
 
-  private async reconcileDeletions(workspaceId: number, report: SyncReport): Promise<void> {
+  /**
+   * Quita de la copia local lo que el servidor ya borró. Cuesta una consulta con todos los IDs vigentes, así que
+   * normalmente espera `LIVE_IDS_EVERY_MS`; `force` la hace ya (volver a la app, volver la red, botón manual).
+   */
+  private async reconcileDeletions(workspaceId: number, report: SyncReport, force = false): Promise<void> {
     const hydrated = await this.isHydrated(workspaceId);
     const last = await this.db.get<{ value: string }>(`select value from meta where key = ?`, [`live_ids_at:${workspaceId}`]);
-    const due = !hydrated || !last || this.now() - Number(last.value) >= LIVE_IDS_EVERY_MS || report.rejected > 0;
+    const due = force || !hydrated || !last || this.now() - Number(last.value) >= LIVE_IDS_EVERY_MS || report.rejected > 0;
     if (!due) return;
 
     const live = await this.transport.liveIds(workspaceId, DIRECT_MIRRORED_TABLES);

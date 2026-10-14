@@ -245,12 +245,15 @@ export class OfflineRuntime {
     let report: SyncReport | null = null;
     let otherError: string | null = null;
     try {
-      report = await engine.syncNow(workspaceId);
+      // Al volver a la app, volver la red o pedirlo a mano se revisa también qué borró el servidor (otra persona u otro
+      // dispositivo); en un guardado normal no hace falta y se evita la consulta.
+      const forceReconcile = reason === "manual" || reason === "network" || reason === "foreground";
+      report = await engine.syncNow(workspaceId, { forceReconcile });
       // Los demás espacios, uno tras otro: mantienen su copia al día y envían lo que quedó pendiente
       // en ellos. Un fallo aquí no tumba el ciclo del espacio abierto.
       for (const other of await this.otherWorkspaces(workspaceId)) {
         if (this.engine !== engine) break;
-        const otherReport = await engine.syncNow(other).catch((error: unknown) => ({
+        const otherReport = await engine.syncNow(other, { forceReconcile }).catch((error: unknown) => ({
           error: error instanceof Error ? error.message : String(error),
           pushed: 0,
         }));
