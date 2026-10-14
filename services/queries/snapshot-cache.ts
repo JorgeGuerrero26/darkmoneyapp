@@ -43,6 +43,9 @@ export function patchSnapshotWithCreatedMovement(
   queryClient: QueryClient,
   workspaceId: number,
   movement: CreatedMovementPatch,
+  // `balances: false` cuando el movimiento se guardó en la base local: el motor offline ya dejó en el
+  // cache el saldo exacto (apertura + movimientos, con éste incluido) y sumarlo otra vez lo duplicaba.
+  options: { balances?: boolean } = {},
 ) {
   // Saldos y analíticas solo cuentan movimientos posted.
   if (movement.status !== "posted") return;
@@ -61,7 +64,7 @@ export function patchSnapshotWithCreatedMovement(
         movementType: movement.movementType, amount, amountCurrencyCode: currencyCode,
         amountInBaseCurrency: convertAmountToWorkspaceBase(amount, currencyCode, baseCurrency ?? "PEN", old.exchangeRates),
       };
-      const accounts = old.accounts.map((acc) => {
+      const accounts = options.balances === false ? old.accounts : old.accounts.map((acc) => {
         let delta = 0;
         if (acc.id === movement.sourceAccountId && movement.sourceAmount != null) delta -= movement.sourceAmount;
         if (acc.id === movement.destinationAccountId && movement.destinationAmount != null) delta += movement.destinationAmount;

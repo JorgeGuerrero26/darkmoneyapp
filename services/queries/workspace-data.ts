@@ -25,7 +25,7 @@ import { notificationDetection } from "../../lib/notification-detection-native";
 import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
 import { offlineRuntime } from "../../lib/offline/instance";
 import { withLocalBalanceRows } from "../../lib/offline/local-balances";
-import { useOfflineLocalReady } from "../../lib/offline/react";
+import { useOfflineLocalReady, useOfflineFlag } from "../../lib/offline/react";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -2742,6 +2742,9 @@ export function recordManualMovementFingerprint(
   void notificationDetection.recordManualMovementRegistered(`${prefix} ${amount.toFixed(2)}`);
 }
 
+/** Altas que se guardaron en la base local (el saldo del cache ya las incluye). */
+const savedLocally = new WeakSet<object>();
+
 export function useCreateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   const localReady = useOfflineLocalReady(workspaceId);
@@ -2762,6 +2765,7 @@ export function useCreateMovementMutation(workspaceId: number | null) {
         const local = await offlineRuntime.createMovement(workspaceId, input);
         if (local) {
           recordManualMovementFingerprint(workspaceId, input);
+          savedLocally.add(local);
           return local;
         }
       }
@@ -2784,7 +2788,8 @@ export function useCreateMovementMutation(workspaceId: number | null) {
     onSuccess: (_data) => {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
-      if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);
+      // Guardado en local: el saldo ya viene exacto de la base del teléfono; solo se parchean las listas.
+      if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data, { balances: !savedLocally.has(_data) });
       void queryClient.invalidateQueries({ queryKey: ["detection-learning"] });
       // El trigger concilia también registros manuales, sin metadatos de detección.
       void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
@@ -3156,7 +3161,9 @@ export {
 
 export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const offline = useOfflineFlag();
   return useMutation({
+    networkMode: offline.enabled ? "always" : undefined,
     mutationKey: ["confirm-recurring-income-arrival"],
     mutationFn: async (input: {
       recurringIncomeId: number;
@@ -3179,6 +3186,7 @@ export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | n
       movementId?: number | null;
     }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      offlineRuntime.assertCompoundOnline();
       const actual = input.actualDate.trim();
       const expected = input.expectedDate.trim();
       if (!actual) throw new Error("La fecha real de llegada es obligatoria.");

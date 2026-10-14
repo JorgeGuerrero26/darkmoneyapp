@@ -1,3 +1,5 @@
+import { offlineRuntime } from "../../lib/offline/instance";
+import { useOfflineFlag } from "../../lib/offline/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
@@ -427,10 +429,13 @@ type MarkPaidArgs = {
 
 export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const offline = useOfflineFlag();
   return useMutation({
+    networkMode: offline.enabled ? "always" : undefined,
     mutationKey: ["mark-subscription-paid"],
     mutationFn: async (args: MarkPaidArgs) => {
       if (!workspaceId) throw new Error("Workspace no disponible.");
+      offlineRuntime.assertCompoundOnline();
       return await markSubscriptionPaid({
         subscription: args.subscription,
         workspaceId,
