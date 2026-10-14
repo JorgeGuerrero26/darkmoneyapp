@@ -12,6 +12,8 @@ jest.mock("../../../lib/offline/instance", () => ({
 
 // eslint-disable-next-line import/first
 import { localCreate, localDelete, localMaxSortOrder, localReferences, localUpdate } from "../offline-writes";
+import { withLocalObligations } from "../offline-obligations";
+import type { ObligationSummary } from "../../../types/domain";
 
 const WS = 1;
 
@@ -135,5 +137,59 @@ describe("escrituras de catálogos por la base local", () => {
     await settle();
     expect(pushed.flat().filter((op) => op.table === "counterparties")).toHaveLength(1);
     expect(runtime.getState().pending).toBe(0);
+  });
+
+  describe("obligaciones", () => {
+    const fields = (extra: Record<string, unknown> = {}) => ({
+      workspace_id: WS, title: "Préstamo a Juan", direction: "receivable", origin_type: "manual", status: "active",
+      counterparty_id: 1, currency_code: "PEN", principal_amount: 150, start_date: "2026-10-13", ...extra,
+    });
+    const known = (extra: Partial<ObligationSummary> = {}): ObligationSummary => ({
+      id: 9, workspaceId: WS, title: "Vieja", direction: "payable", originType: "manual", counterparty: "Ana", counterpartyId: 2,
+      status: "active", currencyCode: "PEN", principalAmount: 80, pendingAmount: 40, progressPercent: 50, startDate: "2026-09-01",
+      dueDate: null, paymentCount: 1, installmentLabel: "", events: [], ...extra,
+    });
+
+    it("una obligación creada sin red se ve en la lista con su pendiente y se envía una sola vez", async () => {
+      const { runtime, pushed } = await boot();
+      const created = await localCreate(WS, "obligations", fields());
+      expect(created).toEqual({ id: expect.any(Number) });
+      const names = new Map<number, string>([[1, "Juan"]]);
+
+      const shown = await withLocalObligations(WS, [known()], names);
+      expect(shown.map((item) => item.id)).toEqual([9, created!.id]);
+      expect(shown[1]).toMatchObject({ title: "Préstamo a Juan", counterparty: "Juan", pendingAmount: 150, paymentCount: 0 });
+
+      runtime.setOnline(true);
+      await settle();
+      expect(pushed.flat().filter((op) => op.table === "obligations")).toHaveLength(1);
+      // Ya enviada: el servidor manda y la lista queda tal cual la dio.
+      const afterSync = [known()];
+      expect(await withLocalObligations(WS, afterSync, names)).toBe(afterSync);
+    });
+
+    it("editar una obligación del servidor sin red muestra el cambio sin tocar lo que calcula el servidor", async () => {
+      const { runtime } = await boot();
+      // La fila llega del servidor (ya sincronizada); luego se edita sin red.
+      const created = await localCreate(WS, "obligations", fields({ title: "Original" }));
+      runtime.setOnline(true);
+      await settle();
+      runtime.setOnline(false);
+      expect(await localUpdate(WS, "obligations", created!.id, { title: "Editada", due_date: "2026-12-31" })).toBe(true);
+      const server = known({ id: created!.id, title: "Original", pendingAmount: 60, progressPercent: 60, counterpartyId: 1, counterparty: "Juan" });
+      const shown = await withLocalObligations(WS, [server], new Map([[1, "Juan"]]));
+      expect(shown[0]).toMatchObject({ title: "Editada", dueDate: "2026-12-31", pendingAmount: 60, progressPercent: 60 });
+    });
+
+    it("un contacto con una obligación local no se puede borrar y nada queda en la cola", async () => {
+      const { runtime } = await boot();
+      await localCreate(WS, "counterparties", { workspace_id: WS, name: "Juan", type: "person", is_archived: false });
+      const counterparty = (await runtime.listRows(WS, "counterparties"))![0];
+      await localCreate(WS, "obligations", fields({ counterparty_id: counterparty.id }));
+      const pendingBefore = runtime.getState().pending;
+      expect(await localReferences(WS, "obligations", "counterparty_id", Number(counterparty.id))).toBe(1);
+      await expect(localDelete(WS, "counterparties", Number(counterparty.id))).rejects.toThrow("créditos/deudas asociados");
+      expect(runtime.getState().pending).toBe(pendingBefore);
+    });
   });
 });

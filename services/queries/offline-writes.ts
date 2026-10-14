@@ -67,7 +67,7 @@ export async function localMaxSortOrder(workspaceId: number | null | undefined, 
 /** Filas de `table` que apuntan a `id` por `column` en la copia local; null = sin copia lista. */
 export function localReferences(
   workspaceId: number | null | undefined,
-  table: "movements" | "subscriptions" | "categories" | "budgets" | "movement_templates" | "recurring_income",
+  table: "movements" | "subscriptions" | "categories" | "budgets" | "movement_templates" | "recurring_income" | "obligations",
   column: string,
   id: number,
 ): Promise<number | null> {

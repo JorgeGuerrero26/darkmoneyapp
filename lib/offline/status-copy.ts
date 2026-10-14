@@ -10,6 +10,8 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export const ONLINE_ONLY_COMPOUND_NOTICE = "Necesitas internet para registrar este pago o llegada. Conéctate y vuelve a intentarlo; no se guardó ningún cambio.";
 
+export const ONLINE_ONLY_OBLIGATION_NOTICE = "Necesitas internet para registrar el movimiento de apertura de esta deuda o préstamo. Conéctate y vuelve a intentarlo; no se guardó ningún cambio.";
+
 export type OfflineNotice = {
   title: string;
   body: string;

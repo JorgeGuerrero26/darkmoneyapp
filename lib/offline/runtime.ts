@@ -348,8 +348,8 @@ export class OfflineRuntime {
   }
 
   /** P1: ninguna mitad de un flujo compuesto puede empezar sin internet. Apagado = sin cambios. */
-  assertCompoundOnline(): void {
-    if (this.config.enabled && !this.state.online) throw new Error(ONLINE_ONLY_COMPOUND_NOTICE);
+  assertCompoundOnline(notice: string = ONLINE_ONLY_COMPOUND_NOTICE): void {
+    if (this.config.enabled && !this.state.online) throw new Error(notice);
   }
 
   private async resourceContext(workspaceId: number, table: MirroredTable) {
@@ -378,6 +378,16 @@ export class OfflineRuntime {
       [workspaceId, id],
     );
     return Number(row?.n ?? 0);
+  }
+
+  /** IDs de las filas de una tabla con operaciones sin enviar (para mostrar lo local encima de lo del servidor). */
+  async pendingRowIds(workspaceId: number, table: string): Promise<number[]> {
+    if (!this.canReadLocal(workspaceId) || !this.db) return [];
+    const rows = await this.db.all<{ row_id: number }>(
+      "select distinct row_id from outbox where workspace_id = ? and table_name = ? and status in ('pending','sending')",
+      [workspaceId, table],
+    );
+    return rows.map((row) => Number(row.row_id));
   }
 
   /** ¿Hay cambios sin enviar en alguna de estas tablas? Decide si un número del servidor puede estar desfasado. */

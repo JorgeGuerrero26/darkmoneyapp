@@ -8,6 +8,7 @@ import { offlineRuntime } from "../lib/offline/instance";
 import { useOfflineFlag } from "../lib/offline/react";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
 import { BUDGET_INPUT_TABLES } from "../services/queries/offline-budgets";
+import { applyLocalObligationsToCache } from "../services/queries/offline-obligations";
 import { applyLocalBudgetsToCache, applyLocalCatalogsToCache, touchesSnapshotCatalogs } from "../services/queries/offline-snapshot";
 import { isCoreSnapshot } from "../services/queries/snapshot-cache";
 import { refreshSnapshotDomains } from "../services/queries/workspace-data";
@@ -58,6 +59,10 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
         // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.
         if (wsId != null && (tables.length === 0 || touchesSnapshotCatalogs(tables))) {
           await applyLocalCatalogsToCache(queryClient, wsId).catch(() => false);
+        }
+        // Obligaciones: las definiciones creadas o editadas sin red se muestran encima de lo del servidor.
+        if (wsId != null && (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties"))) {
+          await applyLocalObligationsToCache(queryClient, wsId).catch(() => false);
         }
         // Presupuestos: el avance cambia con presupuestos, gastos, cuentas, categorías y tipos de gasto.
         if (wsId != null && (tables.length === 0 || tables.some((table) => BUDGET_INPUT_TABLES.includes(table)))) {

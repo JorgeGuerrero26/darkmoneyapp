@@ -371,10 +371,25 @@ export function useToggleCounterpartyPinMutation(workspaceId: number | null) {
 
 export function useDeleteCounterpartyMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["delete-counterparty"],
+    networkMode,
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+
+      // Modo sin conexión (beta): las mismas comprobaciones de abajo (movimientos y créditos/deudas) sobre la
+      // copia local; si alguna tabla no está descargada, sigue el camino online completo.
+      const [localMovements, localObligations] = await Promise.all([
+        localReferences(workspaceId, "movements", "counterparty_id", id),
+        localReferences(workspaceId, "obligations", "counterparty_id", id),
+      ]);
+      if (localMovements != null && localObligations != null) {
+        if (localMovements > 0 || localObligations > 0) {
+          throw new Error("No puedes eliminar este contacto porque tiene movimientos o créditos/deudas asociados. Archívalo en su lugar.");
+        }
+        if (await localDelete(workspaceId, "counterparties", id)) return;
+      }
 
       const [{ count: movementCount, error: movementError }, { count: obligationCount, error: obligationError }] =
         await Promise.all([

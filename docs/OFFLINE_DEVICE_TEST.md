@@ -100,4 +100,20 @@ E. **Suscripción / ingreso recurrente:** crear y editar la definición sin red 
    confirmar la llegada sin red muestra el aviso de que necesita internet (sin cambios a medias).
 F. **Interruptor apagado:** repetir A–E con el modo apagado: debe comportarse exactamente como antes.
 
+### Guía corta de la Fase 4 (obligaciones y varios espacios)
+
+G. **Obligación sin red:** en modo avión crea una deuda o préstamo **sin** movimiento de apertura y con contacto.
+   Aparece al instante en *Obligaciones* con pendiente = monto; edita la fecha y archívala. Al volver la red:
+   "Todo al día" y en la web una sola vez, con los cambios.
+H. **Con movimiento de apertura:** en modo avión intenta crear una obligación que registra el dinero entregado o
+   recibido. Debe avisar que necesita internet y **no guardar nada** (ni obligación ni movimiento).
+I. **Contacto con deudas:** borrar un contacto que tiene una obligación debe decir, sin red, que no se puede y
+   sugerir archivarlo.
+J. **Pagos y eventos:** registrar un pago, interés o ajuste sigue exigiendo internet (no se probó atomicidad).
+K. **Varios espacios:** con dos espacios (personal y compartido), registra un movimiento sin red en el primero,
+   cambia al segundo y vuelve la red: el movimiento del primero debe llegar sin volver a abrir el primero.
+   Al cambiar de espacio, sus datos deben estar listos al instante (sin "Preparando tus datos").
+L. **Borrar una obligación** y todo lo de compartir (invitar, solicitudes de pago, vista de invitado) sigue
+   siendo en línea; sin red muestran el último dato guardado.
+
 ### Casos extendidos

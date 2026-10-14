@@ -22,6 +22,9 @@ import { logWarn } from "../../lib/error-logger";
 import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { ONLINE_ONLY_OBLIGATION_NOTICE } from "../../lib/offline/status-copy";
+import { localCreate, localUpdate, useOfflineNetworkMode } from "./offline-writes";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -2176,11 +2179,14 @@ export function useDeleteObligationMutation(workspaceId: number | null) {
 
 export function useArchiveObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["archive-obligation"],
+    networkMode,
     mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const nextStatus: ObligationStatus = archived ? "cancelled" : "active";
+      if (await localUpdate(workspaceId, "obligations", id, { status: nextStatus })) return;
       const { error } = await supabase
         .from("obligations")
         .update({ status: nextStatus })
@@ -2201,11 +2207,42 @@ export function useArchiveObligationMutation(workspaceId: number | null) {
 
 export function useCreateObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-obligation"],
+    networkMode,
     mutationFn: async (input: ObligationFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const dedupeKey = input.clientDedupeKey ?? null;
+      // Modo sin conexión (beta). Con movimiento de apertura son dos escrituras que deben ir juntas: sin
+      // internet no se empieza ninguna mitad. Sin apertura (y con contacto, que el servidor exige) es una
+      // sola fila y se guarda en el teléfono al instante.
+      const needsOpeningMovement = (input.openingImpact ?? "none") !== "none" && Boolean(input.openingAccountId);
+      if (needsOpeningMovement) {
+        offlineRuntime.assertCompoundOnline(ONLINE_ONLY_OBLIGATION_NOTICE);
+      } else if (input.counterpartyId != null) {
+        const local = await localCreate(workspaceId, "obligations", {
+          workspace_id: workspaceId,
+          title: input.title,
+          direction: input.direction,
+          origin_type: input.originType,
+          counterparty_id: input.counterpartyId,
+          settlement_account_id: input.settlementAccountId ?? null,
+          currency_code: input.currencyCode,
+          principal_amount: input.principalAmount,
+          start_date: input.startDate,
+          due_date: input.dueDate ?? null,
+          installment_amount: input.installmentAmount ?? null,
+          payment_plan: input.paymentPlan ?? null,
+          installment_count: input.installmentCount ?? null,
+          interest_rate: input.interestRate ?? null,
+          description: input.description ?? null,
+          notes: input.notes ?? null,
+          status: "active",
+          client_dedupe_key: dedupeKey,
+        });
+        if (local) return local;
+      }
       let { data, error } = await supabase
         .from("obligations")
         .insert({
@@ -2287,8 +2324,10 @@ export function useCreateObligationMutation(workspaceId: number | null) {
 
 export function useUpdateObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["update-obligation"],
+    networkMode,
     mutationFn: async ({ id, input }: { id: number; input: Partial<ObligationFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -2302,6 +2341,7 @@ export function useUpdateObligationMutation(workspaceId: number | null) {
       if (input.interestRate !== undefined) payload.interest_rate = input.interestRate;
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
+      if (await localUpdate(workspaceId, "obligations", id, payload)) return;
       const { error } = await supabase
         .from("obligations")
         .update(payload)

@@ -27,6 +27,7 @@ import { offlineRuntime } from "../../lib/offline/instance";
 import { withLocalBalanceRows } from "../../lib/offline/local-balances";
 import { withLocalRows } from "../../lib/offline/local-rows";
 import { withLocalBudgetRows } from "./offline-budgets";
+import { withLocalObligations } from "./offline-obligations";
 import { useOfflineLocalReady, useOfflineFlag } from "../../lib/offline/react";
 import {
   mirrorObligationEventAttachmentsToMovement,
@@ -1235,7 +1236,8 @@ export async function fetchWorkspaceDeferred(
     };
   });
 
-  return { budgets, obligations };
+  // Modo sin conexión (beta): definiciones de obligaciones creadas o editadas sin enviar.
+  return { budgets, obligations: await withLocalObligations(activeWorkspaceId, obligations, counterpartyMap) };
 }
 
 function maxIsoDate(a: string | null | undefined, b: string | null | undefined): string | null {

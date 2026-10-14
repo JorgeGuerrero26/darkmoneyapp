@@ -48,6 +48,7 @@ import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { OfflineContextSlot } from "../../components/offline/OfflineSyncNotice";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { COLORS } from "../../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
@@ -660,7 +661,7 @@ function ObligationsScreen() {
             <ActiveFilterBar items={activeFilterItems} onClear={clearObligationFilters} />
           ) : null
         }
-        context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
+        context={<OfflineContextSlot from="obligations">{!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}</OfflineContextSlot>}
         summary={
           !selectMode && obligationSections.some((section) => section.data.length > 0) ? (
             <ObligationSummaryBar
