@@ -59,6 +59,8 @@ export type EnqueueInput = {
   /** `updated_at` de la fila tal como la conoce el servidor (null en un insert). */
   baseUpdatedAt?: string | null;
   now?: string;
+  /** Catálogos: conservar padre insertado antes de sus hijos y borrarlo después. */
+  preserveInsertForDelete?: boolean;
 };
 
 /**
@@ -98,7 +100,7 @@ export async function enqueueOp(db: SqlExecutor, input: EnqueueInput): Promise<v
       await db.run(`update outbox set fields = ? where seq = ?`, [JSON.stringify({ ...prev.fields, ...fields }), prev.seq]);
       return;
     }
-    if (input.kind === "delete" && prev.kind === "insert") {
+    if (input.kind === "delete" && prev.kind === "insert" && !input.preserveInsertForDelete) {
       await db.run(`delete from outbox where seq = ?`, [prev.seq]);
       return;
     }

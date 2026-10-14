@@ -2,6 +2,7 @@ import { OfflineRuntime, type RuntimeDeps } from "../runtime";
 import type { PushOp, PushResult, SyncTransport } from "../sync-types";
 import type { SqlDriver } from "../sql-driver";
 import { createTestDriver } from "./helpers/node-sqlite-driver";
+import { upsertMovementRows, upsertMirrorRows } from "../movement-store";
 
 const WS = 1;
 const expense = (description: string, amount: number) => ({
@@ -64,6 +65,53 @@ function setup(overrides: Partial<RuntimeDeps> = {}) {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
 describe("OfflineRuntime", () => {
+  it("P1: sin red no inicia un pago/llegada ni encola una mitad; apagado mantiene el camino anterior", async () => {
+    const { runtime, log } = setup();
+    runtime.setOnline(false);
+    expect(() => runtime.assertCompoundOnline()).not.toThrow();
+    expect(await runtime.createRow(WS, "budgets", { name: "Apagado" })).toBeNull();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    expect(() => runtime.assertCompoundOnline()).toThrow("Necesitas internet");
+    await expect(runtime.createMovement(WS, { ...expense("Llegada", 10), movementType: "income", metadata: { recurring_income_confirmed_arrival: true } })).rejects.toThrow("no se guardó ningún cambio");
+    await expect(runtime.createMovement(WS, { ...expense("Pago vinculado", 10), subscriptionId: 7 })).rejects.toThrow("Necesitas internet");
+    expect(runtime.getState().pending).toBe(0);
+    expect(log.pushed).toEqual([]);
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+    expect(() => runtime.assertCompoundOnline()).not.toThrow();
+  });
+
+  it("P1: editar, anular y borrar un pago vinculado tampoco modifica una mitad offline", async () => {
+    const { runtime, drivers } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle(); runtime.setOnline(false);
+    await upsertMovementRows(drivers.u1, [{ id: 77, workspace_id: WS, updated_at: "2026-10-12T15:00:00Z",
+      occurred_at: "2026-10-12T15:00:00Z", movement_type: "expense", status: "posted", subscription_id: 7, source_amount: 10 }]);
+    await upsertMirrorRows(drivers.u1, "subscriptions", [{ id: 7, workspace_id: WS, updated_at: "2026-10-12T15:00:00Z", amount: 10 }]);
+    await expect(runtime.updateMovement(WS, 77, { sourceAmount: 20 })).rejects.toThrow("Necesitas internet");
+    await expect(runtime.voidMovement(WS, 77)).rejects.toThrow("Necesitas internet");
+    await expect(runtime.deleteMovement(WS, 77)).rejects.toThrow("Necesitas internet");
+    await expect(runtime.deleteRow(WS, "subscriptions", 7)).rejects.toThrow("Necesitas internet");
+    expect((await runtime.getMovement(77))?.sourceAmount).toBe(10);
+    expect(runtime.getState().pending).toBe(0);
+    runtime.setOnline(true);
+    expect(await runtime.updateMovement(WS, 77, { sourceAmount: 20 })).toBe(false);
+    expect(await runtime.deleteRow(WS, "subscriptions", 7)).toBe(false);
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
+
+  it("lee recursos solo tras hidratar su tabla y nunca inventa un historial no descargado", async () => {
+    const { runtime } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    expect(await runtime.listRows(WS, "categories")).toEqual([]);
+    expect(await runtime.listRows(WS, "subscription_occurrences")).toBeNull();
+    runtime.setOnline(false);
+    const created = await runtime.createRow(WS, "budgets", { name: "Local", limit_amount: 12.5 });
+    expect(created?.limit_amount).toBe("12.5");
+    expect((await runtime.listRows(WS, "budgets"))?.map(row => row.name)).toEqual(["Local"]);
+    expect(await runtime.createRow(2, "budgets", { name: "Otro" })).toBeNull();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
   it("apagado: no abre nada", async () => {
     const { runtime, drivers } = setup();
     await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });

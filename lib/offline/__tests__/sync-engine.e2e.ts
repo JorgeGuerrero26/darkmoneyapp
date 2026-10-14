@@ -6,10 +6,15 @@
  * Se ejecuta con node --test (npm run test:offline-e2e), no con Jest: ver helpers/expect.ts.
  */
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect } from "./helpers/expect";
 import { countInbox, countOutbox, listInbox, listSendable } from "../outbox";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
+import { createRowLocal, deleteRowLocal } from "../resource-writes";
+import { upsertMirrorRows } from "../movement-store";
 import { poolSize } from "../id-pool";
 import { SyncEngine } from "../sync-engine";
 import type { PushResult, SyncTransport } from "../sync-types";
@@ -55,6 +60,142 @@ function device(userId: string, hooks: Hooks = {}) {
   return { db, engine, userId, hooks };
 }
 type Device = ReturnType<typeof device>;
+
+describe("núcleo de recursos (Fase 3.2)", () => {
+  it("categoría → movimiento → borrado offline conserva orden y SET NULL en ambos lados", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const category = await createRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", fields: { name: "Temporal" } });
+    expect(category).not.toBeNull();
+    const movement = await create(a, "Con categoría nueva", 12, { category_id: category!.id });
+    await deleteRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "categories", id: category!.id });
+    const report = await a.engine.syncNow(WS);
+    if (report.rejected) throw new Error(JSON.stringify((await listInbox(a.db)).map(entry => ({ code: entry.code, message: entry.message }))));
+    expect(report.rejected).toBe(0);
+    expect(report.applied).toBe(3);
+    expect((await getServerShapedRow(a.db, "movements", movement!.id))?.category_id).toBeNull();
+    expect((await server.admin.query<{ category_id: number | null }>("select category_id from movements where id=$1", [movement!.id])).rows[0].category_id).toBeNull();
+  });
+
+  it("un borrado RESTRICT rechazado restaura también los hijos que habían perdido la referencia", async () => {
+    await server.admin.exec(`create table obligations(id bigint primary key,counterparty_id bigint references counterparties(id) on delete restrict);
+      insert into obligations values(1,1);
+      insert into movements(workspace_id,movement_type,status,occurred_at,description,source_account_id,source_amount,counterparty_id)
+      values(1,'expense','posted',now(),'Con contacto',1,5,1);
+      update movements set updated_at=now()-interval '1 day';`);
+    const a = device(USER_A); await a.engine.syncNow(WS);
+    await deleteRowLocal(a.db, { workspaceId: WS, userId: USER_A, table: "counterparties", id: 1 });
+    expect((await localList(a))[0].counterpartyId).toBeNull();
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(1);
+    expect((await localList(a))[0].counterpartyId).toBe(1);
+    expect((await listInbox(a.db))[0]).toMatchObject({ code: "dependency" });
+  });
+
+  it("servidor anterior: una tabla ausente del contrato no se considera vacía ni lista", async () => {
+    await server.close(); server = await createTestServer({ phase3: false }); await server.addMember(WS, USER_A);
+    const a = device(USER_A); await a.engine.start();
+    await upsertMirrorRows(a.db, "recurring_income_occurrences", [{ id: 77, workspace_id: WS, updated_at: "2026-10-13T00:00:00Z", amount: "1.2345" }]);
+    const result = await a.engine.syncNow(WS);
+    expect(result.error).toBeNull();
+    expect(await a.engine.isTableHydrated(WS, "recurring_income_occurrences")).toBe(false);
+    expect((await getServerShapedRow(a.db, "recurring_income_occurrences", 77))?.amount).toBe("1.2345");
+    expect(await a.engine.isTableHydrated(WS, "subscription_occurrences")).toBe(false);
+  });
+});
+
+describe("servidor de ocurrencias de solo lectura (Fase 3.1)", () => {
+  it("la migración es idempotente y conserva cuatro decimales como texto", async () => {
+    const sql = readFileSync(join(process.cwd(), "supabase/migrations/202610130001_sync_readonly_occurrences.sql"), "utf8");
+    await server.admin.exec(sql);
+    await server.admin.exec(`insert into recurring_income (workspace_id,name) values (1,'Ingreso');
+      insert into recurring_income_occurrences (workspace_id,recurring_income_id,expected_date,amount,currency_code,status)
+      values(1,1,'2026-10-13',90000000000000.1234,'PEN','on_time');`);
+    const transport = server.transportFor(USER_A);
+    const pull = await transport.pullChanges(WS, {}, ["recurring_income_occurrences"], 1);
+    expect(pull.tables.recurring_income_occurrences.rows[0].amount).toBe("90000000000000.1234");
+    const denied = await transport.pushBatch([{ op_id: randomUUID(), table: "recurring_income_occurrences", kind: "delete",
+      workspace_id: WS, row_id: 1, fields: {}, base_updated_at: null }]);
+    expect(denied[0].status).toBe("rejected");
+    expect((await server.admin.query("select id from recurring_income_occurrences")).rows).toHaveLength(1);
+    await server.admin.exec("update recurring_income_occurrences set notes='Cambio', updated_at='2000-01-01';");
+    const touched = (await server.admin.query<{ updated: string }>("select updated_at::text updated from recurring_income_occurrences")).rows[0].updated;
+    expect(touched.startsWith("2000")).toBe(false);
+  });
+
+  it("lee el historial por el padre con paginación, IDs vigentes y aislamiento por workspace", async () => {
+    await server.admin.exec(`insert into subscriptions(workspace_id,name) values(1,'Propia'),(2,'Ajena');
+      insert into subscription_occurrences(subscription_id,due_date,expected_amount)
+      values(1,'2026-10-13',12.50),(1,'2026-11-13',15),(2,'2026-10-13',99);`);
+    const read = (cursor: unknown) => server.asUser(USER_A, async () => (await server.db.query<{ r: any }>(
+      "select pull_subscription_occurrences($1,$2::jsonb,1) r", [WS, JSON.stringify(cursor)],
+    )).rows[0].r);
+    const first = await read({});
+    expect(first.has_more).toBe(true);
+    expect(first.rows[0].expected_amount).toBe("12.50");
+    expect(first.live_ids).toHaveLength(2);
+    const second = await read(first.next);
+    expect(second.has_more).toBe(false);
+    expect(second.rows[0].workspace_id).toBe(WS);
+    const registry = (await server.admin.query("select * from sync_tables where table_name='subscription_occurrences'")).rows;
+    expect(registry).toHaveLength(0);
+    let blocked = false;
+    try { await server.asUser(USER_A, () => server.db.query("select pull_subscription_occurrences(2)")); }
+    catch { blocked = true; }
+    expect(blocked).toBe(true);
+    await server.admin.exec("delete from subscriptions where id=1;");
+    expect((await read({})).live_ids).toHaveLength(0);
+  });
+});
+
+describe("verificación de operaciones compuestas (Fase 3.0)", () => {
+  it("el lote puede aplicar un movimiento aunque rechace la edición anterior del padre", async () => {
+    // El fixture de Fase 1 simplifica los catálogos; aquí se añade el CHECK verificado en producción.
+    // Se prueba el contrato de push_batch, no la paridad de los triggers de suscripciones.
+    await server.admin.exec(`alter table subscriptions add column amount numeric(14,2) check (amount > 0);
+      alter table subscriptions add column next_due_date date;`);
+    const transport = server.transportFor(USER_A);
+    const [subscriptionId] = await transport.reserveIds(WS, "subscriptions", 1);
+    const [movementId] = await transport.reserveIds(WS, "movements", 1);
+    const created = await transport.pushBatch([{ op_id: randomUUID(), table: "subscriptions", kind: "insert",
+      workspace_id: WS, row_id: subscriptionId, fields: { name: "Prueba", amount: 25, next_due_date: "2026-10-13" }, base_updated_at: null }]);
+    expect(created[0].status).toBe("applied");
+    const ops = [
+      { op_id: randomUUID(), table: "subscriptions", kind: "update" as const, workspace_id: WS, row_id: subscriptionId,
+        fields: { amount: -1, next_due_date: "2026-11-13" }, base_updated_at: created[0].row!.updated_at },
+      { op_id: randomUUID(), table: "movements", kind: "insert" as const, workspace_id: WS, row_id: movementId,
+        fields: expense("Pago compuesto", 25, { subscription_id: subscriptionId }), base_updated_at: null },
+    ];
+    const results = await transport.pushBatch(ops);
+    expect(results.map(result => result.status)).toEqual(["rejected", "applied"]);
+    expect(results[0].code).toBe("check_violation");
+    expect((await server.admin.query<{ due: string }>("select next_due_date::text due from subscriptions where id=$1", [subscriptionId])).rows[0].due).toBe("2026-10-13");
+    expect(await serverRows()).toHaveLength(1);
+    const replay = await transport.pushBatch(ops);
+    expect(replay[1].replayed).toBe(true);
+    expect(await serverRows()).toHaveLength(1);
+  });
+
+  it("poner el movimiento primero tampoco impide avanzar la próxima llegada después de su rechazo", async () => {
+    await server.admin.exec("alter table recurring_income add column next_expected_date date;");
+    const transport = server.transportFor(USER_A);
+    const [incomeId] = await transport.reserveIds(WS, "recurring_income", 1);
+    const [movementId] = await transport.reserveIds(WS, "movements", 1);
+    const created = await transport.pushBatch([{ op_id: randomUUID(), table: "recurring_income", kind: "insert",
+      workspace_id: WS, row_id: incomeId, fields: { name: "Prueba", next_expected_date: "2026-10-13" }, base_updated_at: null }]);
+    expect(created[0].status).toBe("applied");
+    const results = await transport.pushBatch([
+      { op_id: randomUUID(), table: "movements", kind: "insert", workspace_id: WS, row_id: movementId,
+        fields: expense("Movimiento con cuenta eliminada", 25, { source_account_id: 999999 }), base_updated_at: null },
+      { op_id: randomUUID(), table: "recurring_income", kind: "update", workspace_id: WS, row_id: incomeId,
+        fields: { next_expected_date: "2026-11-13" }, base_updated_at: created[0].row!.updated_at },
+    ]);
+    expect(results.map(result => result.status)).toEqual(["rejected", "applied"]);
+    expect(results[0].code).toBe("dependency");
+    expect(await serverRows()).toHaveLength(0);
+    expect((await server.admin.query<{ due: string }>("select next_expected_date::text due from recurring_income where id=$1", [incomeId])).rows[0].due).toBe("2026-11-13");
+  });
+});
 
 const expense = (description: string, amount: number, extra: Record<string, unknown> = {}) => ({
   movement_type: "expense", status: "posted", occurred_at: new Date(clock).toISOString(), description, notes: null,

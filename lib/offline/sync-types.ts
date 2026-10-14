@@ -12,6 +12,8 @@ export type PullResponse = {
   >;
 };
 
+export type SubscriptionOccurrencePull = PullResponse["tables"][string] & { live_ids: number[] };
+
 export type PushOp = {
   op_id: string;
   table: string;
@@ -48,6 +50,8 @@ export interface SyncTransport {
   liveIds(workspaceId: number, tables: readonly string[]): Promise<Record<string, number[]>>;
   /** Un fallo del lote entero (sin red, timeout) se lanza; un rechazo de una operación llega en su resultado. */
   pushBatch(ops: PushOp[]): Promise<PushResult[]>;
+  /** null: servidor Fase 1 todavía sin el RPC de lectura del hijo. */
+  pullSubscriptionOccurrences?(workspaceId: number, cursor: PullCursor, limit: number): Promise<SubscriptionOccurrencePull | null>;
 }
 
 export type SyncChange =

@@ -8,6 +8,8 @@ import type { OfflineState } from "./runtime";
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
+export const ONLINE_ONLY_COMPOUND_NOTICE = "Necesitas internet para registrar este pago o llegada. Conéctate y vuelve a intentarlo; no se guardó ningún cambio.";
+
 export type OfflineNotice = {
   title: string;
   body: string;
@@ -92,6 +94,9 @@ export function describeInboxEntry(entry: InboxEntry): { title: string; body: st
       title: what,
       body: `Se guardó, pero otra persona había cambiado esto antes que tú.${detail} Revisa que quedó como esperabas.`,
     };
+  }
+  if (entry.kind === "delete" && entry.code === "dependency") {
+    return { title: what, body: "Este registro todavía se usa en otro lugar y no se puede borrar. Revisa sus registros relacionados." };
   }
   return { title: what, body: reasonOf(entry.code, entry.message) };
 }

@@ -17,7 +17,7 @@ import {
   upsertMirrorRows,
   type ServerRow,
 } from "./movement-store";
-import { MIRRORED_TABLES, isMirroredTable, migrate, type MirroredTable } from "./schema";
+import { MIRRORED_TABLES, DIRECT_MIRRORED_TABLES, WRITABLE_RESOURCE_TABLES, isMirroredTable, migrate, type MirroredTable } from "./schema";
 import type { SqlDriver, SqlExecutor } from "./sql-driver";
 import type { PullCursor, PushOp, PushResult, SyncChange, SyncReport, SyncTransport } from "./sync-types";
 
@@ -45,14 +45,18 @@ export function isTransientRejection(result: PushResult): boolean {
 }
 
 function describeOp(op: OutboxOp, row: ServerRow | null): string {
-  const description = (row?.description ?? op.fields.description) as string | undefined;
-  const amount = (row?.source_amount ?? row?.destination_amount ?? op.fields.source_amount ?? op.fields.destination_amount) as
+  const description = (row?.name ?? row?.description ?? op.fields.name ?? op.fields.description) as string | undefined;
+  const amount = (row?.source_amount ?? row?.destination_amount ?? row?.amount ?? row?.limit_amount ?? row?.monthly_savings_target ??
+    op.fields.source_amount ?? op.fields.destination_amount ?? op.fields.amount ?? op.fields.limit_amount ?? op.fields.monthly_savings_target) as
     | number
     | string
     | null
     | undefined;
   const verb = op.kind === "insert" ? "Nuevo" : op.kind === "update" ? "Edición de" : "Borrado de";
-  return [verb, description || "movimiento", amount != null ? `(${amount})` : ""].filter(Boolean).join(" ");
+  const resourceNames: Record<string, string> = { accounts: "cuenta", categories: "categoría", counterparties: "contacto", counterparty_roles: "rol de contacto",
+    spend_types: "tipo de gasto", budgets: "presupuesto", subscriptions: "suscripción", recurring_income: "ingreso fijo",
+    movement_templates: "plantilla", workspace_financial_goals: "meta" };
+  return [verb, description || resourceNames[op.table] || "movimiento", amount != null ? `(${amount})` : ""].filter(Boolean).join(" ");
 }
 
 export class SyncEngine {
@@ -88,6 +92,12 @@ export class SyncEngine {
   async isHydrated(workspaceId: number): Promise<boolean> {
     await this.start();
     const row = await this.db.get<{ value: string }>(`select value from meta where key = ?`, [`hydrated:${workspaceId}`]);
+    return row?.value === "1";
+  }
+
+  async isTableHydrated(workspaceId: number, table: MirroredTable): Promise<boolean> {
+    await this.start();
+    const row = await this.db.get<{ value: string }>("select value from meta where key = ?", [`hydrated_table:${workspaceId}:${table}`]);
     return row?.value === "1";
   }
 
@@ -132,6 +142,7 @@ export class SyncEngine {
         report.error = error instanceof Error ? error.message : String(error);
       }
       await this.pull(workspaceId, report);
+      await this.pullSubscriptionHistory(workspaceId, report);
       await this.reconcileDeletions(workspaceId, report);
     } catch (error) {
       report.error = error instanceof Error ? error.message : String(error);
@@ -142,14 +153,15 @@ export class SyncEngine {
   // ─── IDs ────────────────────────────────────────────────────────────────────────────────────
 
   private async refillPool(workspaceId: number): Promise<void> {
-    const size = await poolSize(this.db, workspaceId, "movements");
-    const wanted = idsToReserve(size);
-    if (wanted === 0) return;
-    try {
-      const ids = await this.transport.reserveIds(workspaceId, "movements", wanted);
-      await addPoolIds(this.db, workspaceId, "movements", ids);
-    } catch {
-      // Sin red no se puede reponer; se reintenta en el siguiente ciclo. No frena el envío.
+    for (const table of ["movements", ...WRITABLE_RESOURCE_TABLES]) {
+      const wanted = idsToReserve(await poolSize(this.db, workspaceId, table));
+      if (wanted === 0) continue;
+      try {
+        const ids = await this.transport.reserveIds(workspaceId, table, wanted);
+        await addPoolIds(this.db, workspaceId, table, ids);
+      } catch {
+        // Sin red no se puede reponer; no frena el envío. Nunca pedir IDs de historiales readonly.
+      }
     }
   }
 
@@ -159,7 +171,16 @@ export class SyncEngine {
     // Varios lotes seguidos hasta vaciar lo enviable. Cada operación solo se envía una vez por
     // ciclo (las que fallan por red quedan con espera y no vuelven a salir hasta que toque).
     for (let guard = 0; guard < 50; guard++) {
-      const ops = await listSendable(this.db, workspaceId, PUSH_BATCH_LIMIT, new Date(this.now()).toISOString());
+      const candidates = await listSendable(this.db, workspaceId, PUSH_BATCH_LIMIT, new Date(this.now()).toISOString());
+      const ops: OutboxOp[] = [];
+      const seen = new Set<string>();
+      for (const op of candidates) {
+        const key = `${op.table}:${op.rowId}`;
+        // Una respuesta debe rebasar la operación siguiente de esa fila antes de enviarla.
+        // Conservar el prefijo también conserva el orden causal frente a otros recursos.
+        if (seen.has(key)) break;
+        seen.add(key); ops.push(op);
+      }
       if (ops.length === 0) return;
       await markSending(
         this.db,
@@ -222,7 +243,7 @@ export class SyncEngine {
             rowId: op.rowId,
             kind: op.kind,
             status: "rejected",
-            code: result.code ?? "error",
+            code: result.sqlstate === "23001" ? "dependency" : result.code ?? "error",
             message: result.message ?? null,
             summary: describeOp(op, row),
           });
@@ -289,7 +310,10 @@ export class SyncEngine {
       await tx.run(`delete from outbox where table_name = ? and row_id = ?`, [op.table, op.rowId]);
       return;
     }
-    await tx.run(`delete from sync_cursors where workspace_id = ? and table_name = ?`, [op.workspaceId, op.table]);
+    if (op.table !== "movements") {
+      // Un borrado rechazado también debe restaurar hijos que se limpiaron por SET NULL/CASCADE.
+      await tx.run("delete from sync_cursors where workspace_id = ?", [op.workspaceId]);
+    } else await tx.run(`delete from sync_cursors where workspace_id = ? and table_name = ?`, [op.workspaceId, op.table]);
   }
 
   // ─── Traer cambios ──────────────────────────────────────────────────────────────────────────
@@ -310,11 +334,11 @@ export class SyncEngine {
     let complete = false;
     for (let page = 0; page < MAX_PULL_PAGES; page++) {
       const cursors = await this.loadCursors(workspaceId);
-      const response = await this.transport.pullChanges(workspaceId, cursors, MIRRORED_TABLES, PULL_PAGE_LIMIT);
+      const response = await this.transport.pullChanges(workspaceId, cursors, DIRECT_MIRRORED_TABLES, PULL_PAGE_LIMIT);
       let hasMore = false;
 
       await this.db.transaction(async (tx) => {
-        for (const table of MIRRORED_TABLES) {
+        for (const table of DIRECT_MIRRORED_TABLES) {
           const part = response.tables[table];
           if (!part) continue;
           // Filas con cambios locales sin enviar: la versión local manda hasta que se resuelvan.
@@ -330,6 +354,7 @@ export class SyncEngine {
             [workspaceId, table, part.next.since, Number(part.next.after_id ?? 0)],
           );
           if (part.has_more) hasMore = true;
+          else await tx.run("insert or replace into meta (key,value) values (?, '1')", [`hydrated_table:${workspaceId}:${table}`]);
         }
       });
 
@@ -342,6 +367,37 @@ export class SyncEngine {
     if (!complete) throw new Error("La descarga de cambios no terminó (demasiadas páginas).");
   }
 
+  /** Lectura del hijo mediante el padre; un servidor anterior simplemente no ofrece este RPC. */
+  private async pullSubscriptionHistory(workspaceId: number, report: SyncReport): Promise<void> {
+    if (!this.transport.pullSubscriptionOccurrences) return;
+    const table = "subscription_occurrences";
+    let changed = false;
+    for (let page = 0; page < MAX_PULL_PAGES; page++) {
+      const cursor = (await this.loadCursors(workspaceId))[table];
+      const part = await this.transport.pullSubscriptionOccurrences(workspaceId, cursor, PULL_PAGE_LIMIT);
+      if (!part) return;
+      await this.db.transaction(async tx => {
+        await upsertMirrorRows(tx, table, part.rows);
+        await tx.run("insert or replace into sync_cursors(workspace_id,table_name,since,after_id) values(?,?,?,?)",
+          [workspaceId, table, part.next.since, Number(part.next.after_id ?? 0)]);
+        if (!part.has_more) {
+          const live = new Set(part.live_ids.map(Number));
+          const stale = (await localIds(tx, table, workspaceId)).filter(id => !live.has(id));
+          await deleteMirrorRows(tx, table, stale);
+          changed ||= stale.length > 0;
+          await tx.run("insert or replace into meta(key,value) values(?,'1')", [`hydrated_table:${workspaceId}:${table}`]);
+        }
+      });
+      changed ||= part.rows.length > 0;
+      report.pulledRows += part.rows.length;
+      if (!part.has_more) {
+        if (changed) this.onChange({ kind: "data", tables: [table] });
+        return;
+      }
+    }
+    throw new Error("La descarga del historial de suscripciones no terminó.");
+  }
+
   // ─── Borrados ───────────────────────────────────────────────────────────────────────────────
 
   private async reconcileDeletions(workspaceId: number, report: SyncReport): Promise<void> {
@@ -350,10 +406,12 @@ export class SyncEngine {
     const due = !hydrated || !last || this.now() - Number(last.value) >= LIVE_IDS_EVERY_MS || report.rejected > 0;
     if (!due) return;
 
-    const live = await this.transport.liveIds(workspaceId, MIRRORED_TABLES);
+    const live = await this.transport.liveIds(workspaceId, DIRECT_MIRRORED_TABLES);
     const removed: string[] = [];
     await this.db.transaction(async (tx) => {
       for (const table of MIRRORED_TABLES as readonly MirroredTable[]) {
+        // Ausente no significa vacío: con servidor Fase 1 no borrar tablas todavía no registradas.
+        if (!Object.prototype.hasOwnProperty.call(live, table)) continue;
         const serverIds = new Set((live[table] ?? []).map(Number));
         const protectedIds = await pendingRowIds(tx, table);
         const stale = (await localIds(tx, table, workspaceId)).filter((id) => !serverIds.has(id) && !protectedIds.has(id));

@@ -1,8 +1,17 @@
 import type { SqlDriver } from "./sql-driver";
+import { exactCents, mirrorMoney } from "./money";
 
 /** Tablas del servidor que se reflejan en local. Lista cerrada: se interpola en SQL. */
-export const MIRRORED_TABLES = ["movements", "accounts", "categories", "counterparties"] as const;
+export const WRITABLE_RESOURCE_TABLES = ["accounts", "categories", "counterparties", "counterparty_roles", "spend_types",
+  "budgets", "subscriptions", "recurring_income", "movement_templates", "workspace_financial_goals"] as const;
+export type WritableResourceTable = (typeof WRITABLE_RESOURCE_TABLES)[number];
+export const DIRECT_MIRRORED_TABLES = ["movements", ...WRITABLE_RESOURCE_TABLES, "recurring_income_occurrences"] as const;
+export const MIRRORED_TABLES = [...DIRECT_MIRRORED_TABLES, "subscription_occurrences"] as const;
 export type MirroredTable = (typeof MIRRORED_TABLES)[number];
+
+export function isWritableResourceTable(value: string): value is WritableResourceTable {
+  return (WRITABLE_RESOURCE_TABLES as readonly string[]).includes(value);
+}
 
 export function isMirroredTable(value: string): value is MirroredTable {
   return (MIRRORED_TABLES as readonly string[]).includes(value);
@@ -92,6 +101,31 @@ const MIGRATIONS: string[] = [
   );
   create index inbox_open_idx on inbox (resolved, id);
   `,
+  `
+  -- v2: sin tocar el texto de la migracion v1.
+  alter table accounts add column money_cents integer;
+  alter table categories add column money_cents integer;
+  alter table counterparties add column money_cents integer;
+  create table counterparty_roles (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index counterparty_roles_ws_idx on counterparty_roles (workspace_id, updated_at, id);
+  create table spend_types (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index spend_types_ws_idx on spend_types (workspace_id, updated_at, id);
+  create table budgets (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index budgets_ws_idx on budgets (workspace_id, updated_at, id);
+  create table subscriptions (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index subscriptions_ws_idx on subscriptions (workspace_id, updated_at, id);
+  create table recurring_income (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index recurring_income_ws_idx on recurring_income (workspace_id, updated_at, id);
+  create table movement_templates (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index movement_templates_ws_idx on movement_templates (workspace_id, updated_at, id);
+  create table workspace_financial_goals (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index workspace_financial_goals_ws_idx on workspace_financial_goals (workspace_id, updated_at, id);
+  create table recurring_income_occurrences (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index recurring_income_occurrences_ws_idx on recurring_income_occurrences (workspace_id, updated_at, id);
+  create table subscription_occurrences (id integer primary key, workspace_id integer not null, updated_at text not null, data text not null, money_cents integer);
+  create index subscription_occurrences_ws_idx on subscription_occurrences (workspace_id, updated_at, id);
+  create index sub_occ_parent_idx on subscription_occurrences (json_extract(data, '$.subscription_id'));
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -106,6 +140,14 @@ export async function migrate(db: SqlDriver): Promise<void> {
   for (let version = current; version < SCHEMA_VERSION; version++) {
     await db.transaction(async (tx) => {
       await tx.exec(MIGRATIONS[version]);
+      if (version === 1) {
+        // Las cuentas ya descargadas por v1 también deben conservar sus montos como texto.
+        const accounts = await tx.all<{ id: number; data: string }>("select id,data from accounts");
+        for (const account of accounts) {
+          const row = mirrorMoney(JSON.parse(account.data));
+          await tx.run("update accounts set data=?,money_cents=? where id=?", [JSON.stringify(row), exactCents(row.opening_balance), account.id]);
+        }
+      }
       await tx.exec(`pragma user_version = ${version + 1}`);
     });
   }

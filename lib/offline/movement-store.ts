@@ -3,6 +3,8 @@ import type { MovementRecord } from "../../types/domain";
 import { isMirroredTable, type MirroredTable } from "./schema";
 import type { SqlExecutor, SqlParam } from "./sql-driver";
 import { SqlFilterBuilder } from "./sql-filter-builder";
+import { exactCents, mirrorMoney } from "./money";
+import { applyMirrorDeleteRelations } from "./resource-store";
 
 /** Fila tal como la devuelve el servidor (`to_jsonb`): nombres de columna de la base. */
 export type ServerRow = Record<string, unknown> & { id: number; workspace_id: number; updated_at: string };
@@ -48,19 +50,24 @@ export async function upsertMovementRows(db: SqlExecutor, rows: ServerRow[]): Pr
 }
 
 export async function upsertMirrorRows(db: SqlExecutor, table: MirroredTable, rows: ServerRow[]): Promise<void> {
+  if (!isMirroredTable(table)) throw new Error(`Tabla no reflejada en local: ${table}`);
   if (table === "movements") return upsertMovementRows(db, rows);
   for (const row of rows) {
-    await db.run(`insert or replace into ${table} (id, workspace_id, updated_at, data) values (?, ?, ?, ?)`, [
+    const exact = mirrorMoney(row);
+    const amount = row.amount ?? row.expected_amount ?? row.limit_amount ?? row.monthly_savings_target ?? row.opening_balance;
+    await db.run(`insert or replace into ${table} (id, workspace_id, updated_at, data, money_cents) values (?, ?, ?, ?, ?)`, [
       Number(row.id),
       Number(row.workspace_id),
       String(row.updated_at),
-      JSON.stringify(row),
+      JSON.stringify(exact),
+      exactCents(amount),
     ]);
   }
 }
 
 export async function deleteMirrorRows(db: SqlExecutor, table: string, ids: number[]): Promise<void> {
   if (!isMirroredTable(table)) throw new Error(`Tabla no reflejada en local: ${table}`);
+  await applyMirrorDeleteRelations(db, table, ids);
   for (let start = 0; start < ids.length; start += 200) {
     const chunk = ids.slice(start, start + 200);
     await db.run(`delete from ${table} where id in (${chunk.map(() => "?").join(", ")})`, chunk);

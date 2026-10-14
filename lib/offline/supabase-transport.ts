@@ -1,5 +1,5 @@
 import { supabase } from "../supabase";
-import type { PullCursor, PullResponse, PushOp, PushResult, SyncTransport } from "./sync-types";
+import type { PullCursor, PullResponse, PushOp, PushResult, SyncTransport, SubscriptionOccurrencePull } from "./sync-types";
 
 /**
  * Las RPC de la Fase 1 sobre el cliente de Supabase de la app (mismo token, mismos plazos de red).
@@ -18,6 +18,16 @@ async function rpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
 }
 
 export const supabaseSyncTransport: SyncTransport = {
+  async pullSubscriptionOccurrences(workspaceId, cursor, limit) {
+    try {
+      return await rpc<SubscriptionOccurrencePull>("pull_subscription_occurrences", { p_workspace_id: workspaceId, p_cursor: cursor, p_limit: limit });
+    } catch (error) {
+      // Compatibilidad mientras la migración aditiva aún no está desplegada. Otros fallos sí se informan.
+      const code = (error as { code?: string }).code;
+      if (code === "PGRST202" || code === "42883") return null;
+      throw error;
+    }
+  },
   async reserveIds(workspaceId: number, table: string, count: number) {
     const ids = await rpc<Array<number | string>>("reserve_ids", {
       p_workspace_id: workspaceId,

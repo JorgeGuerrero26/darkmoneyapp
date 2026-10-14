@@ -5,6 +5,7 @@ import { movementInputToFields, movementUpdateToFields } from "./movement-fields
 import {
   computeAccountBalances,
   getMovementRecord,
+  getServerShapedRow,
   listMovementRecords,
   type LocalAccountBalance,
   type LocalMovementPage,
@@ -14,6 +15,10 @@ import { countInbox, countOutbox, listInbox, resolveInbox, type InboxEntry } fro
 import type { SqlDriver } from "./sql-driver";
 import { SyncEngine } from "./sync-engine";
 import type { SyncReport, SyncTransport } from "./sync-types";
+import { listRowsLocal } from "./resource-store";
+import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-writes";
+import type { MirroredTable, WritableResourceTable } from "./schema";
+import { ONLINE_ONLY_COMPOUND_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
 
@@ -303,10 +308,63 @@ export class OfflineRuntime {
     return this.db;
   }
 
+  /** P1: ninguna mitad de un flujo compuesto puede empezar sin internet. Apagado = sin cambios. */
+  assertCompoundOnline(): void {
+    if (this.config.enabled && !this.state.online) throw new Error(ONLINE_ONLY_COMPOUND_NOTICE);
+  }
+
+  private async resourceContext(workspaceId: number, table: MirroredTable) {
+    const engine = this.engine, db = this.db, userId = this.userId;
+    if (!this.canReadLocal(workspaceId) || !engine || !db || !userId) return null;
+    if (!await engine.isTableHydrated(workspaceId, table)) return null;
+    // Una espera en SQLite no puede convertir una operación del usuario anterior en otra del nuevo.
+    if (this.engine !== engine || this.db !== db || this.userId !== userId || !this.canReadLocal(workspaceId)) return null;
+    return { db, userId };
+  }
+
+  async listRows(workspaceId: number, table: MirroredTable) {
+    const context = await this.resourceContext(workspaceId, table);
+    return context ? listRowsLocal(context.db, table, workspaceId, context.userId) : null;
+  }
+
+  async createRow(workspaceId: number, table: WritableResourceTable, fields: Record<string, unknown>) {
+    const context = await this.resourceContext(workspaceId, table);
+    if (!context) return null;
+    const row = await createRowLocal(context.db, { workspaceId, table, userId: context.userId, fields, nowIso: new Date(this.now()).toISOString() });
+    if (row) await this.afterWrite(table);
+    return row;
+  }
+
+  async updateRow(workspaceId: number, table: WritableResourceTable, id: number, fields: Record<string, unknown>) {
+    const context = await this.resourceContext(workspaceId, table);
+    if (!context) return null;
+    const row = await updateRowLocal(context.db, { workspaceId, table, userId: context.userId, id, fields, nowIso: new Date(this.now()).toISOString() });
+    if (row) await this.afterWrite(table);
+    return row;
+  }
+
+  async deleteRow(workspaceId: number, table: WritableResourceTable, id: number) {
+    const context = await this.resourceContext(workspaceId, table);
+    if (!context) return false;
+    if (table === "subscriptions" && await context.db.get("select 1 from movements where workspace_id=? and json_extract(data, '$.subscription_id')=? limit 1", [workspaceId, id])) {
+      this.assertCompoundOnline();
+      return false; // Con red, conservar el borrado online de la suscripción y sus pagos.
+    }
+    const done = await deleteRowLocal(context.db, { workspaceId, table, userId: context.userId, id, nowIso: new Date(this.now()).toISOString() });
+    if (done) await this.afterWrite(table);
+    return done;
+  }
+
   // ─── Escritura local ────────────────────────────────────────────────────────────────────────
 
   /** null = no se pudo localmente (sin IDs reservados, base no lista): que siga el camino online. */
   async createMovement(workspaceId: number, input: MovementFormInput): Promise<MovementRecord | null> {
+    const confirmedArrival = input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata)
+      && input.metadata.recurring_income_confirmed_arrival;
+    if (this.config.enabled && (input.movementType === "subscription_payment" || input.subscriptionId != null || confirmedArrival)) {
+      this.assertCompoundOnline();
+      return null; // Con red, estas operaciones también siguen el camino online completo.
+    }
     if (!this.canReadLocal(workspaceId) || !this.userId) return null;
     const row = await createMovementLocal(this.requireDb(), {
       workspaceId,
@@ -321,6 +379,10 @@ export class OfflineRuntime {
 
   async updateMovement(workspaceId: number, id: number, input: MovementUpdateInput): Promise<boolean> {
     if (!this.canReadLocal(workspaceId) || !this.userId) return false;
+    if (await this.isCompoundMovement(id) || input.movementType === "subscription_payment") {
+      this.assertCompoundOnline();
+      return false;
+    }
     const row = await updateMovementLocal(this.requireDb(), {
       workspaceId,
       userId: this.userId,
@@ -339,6 +401,10 @@ export class OfflineRuntime {
 
   async deleteMovement(workspaceId: number, id: number): Promise<boolean> {
     if (!this.canReadLocal(workspaceId)) return false;
+    if (await this.isCompoundMovement(id)) {
+      this.assertCompoundOnline();
+      return false;
+    }
     const done = await deleteMovementLocal(this.requireDb(), {
       workspaceId,
       id,
@@ -349,9 +415,19 @@ export class OfflineRuntime {
     return true;
   }
 
-  private async afterWrite() {
+  private async isCompoundMovement(id: number): Promise<boolean> {
+    const db = this.requireDb();
+    const row = await getServerShapedRow(db, "movements", id);
+    if (!row) return false;
+    const metadata = row.metadata as Record<string, unknown> | null;
+    if (row.subscription_id != null || row.movement_type === "subscription_payment" || metadata?.recurring_income_confirmed_arrival) return true;
+    // Un movimiento antiguo puede estar vinculado al historial sin llevar el metadata nuevo.
+    return Boolean(await db.get("select 1 from recurring_income_occurrences where json_extract(data, '$.movement_id') = ? limit 1", [id]));
+  }
+
+  private async afterWrite(table: string = "movements") {
     await this.refreshCounts();
-    await this.notifyData(["movements"]);
+    await this.notifyData([table]);
     this.scheduleWriteSync();
   }
 

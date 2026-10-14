@@ -13,12 +13,13 @@ const MIGRATIONS = [
   "202610120002_sync_reserve_and_pull.sql",
   "202610120003_sync_push_batch.sql",
 ];
+const PHASE3_MIGRATION = "202610130001_sync_readonly_occurrences.sql";
 // Los scripts npm corren desde la raíz del repo (el archivo se ejecuta ya compilado en .tmp).
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
 export type TestServer = Awaited<ReturnType<typeof createTestServer>>;
 
-export async function createTestServer() {
+export async function createTestServer(options: { phase3?: boolean } = {}) {
   const db = new PGlite();
   await db.exec(`
     create role authenticated nologin; create role anon nologin;
@@ -72,7 +73,30 @@ export async function createTestServer() {
   );
   await db.exec("create unique index movements_dedupe_uq on public.movements(workspace_id, client_dedupe_key) where client_dedupe_key is not null");
   await db.exec("drop trigger trg_spend_types_updated_at on public.spend_types; drop trigger trg_movement_templates_updated_at on public.movement_templates;");
+  await db.exec(`
+    create table recurring_income_occurrences (
+      id bigint generated always as identity primary key, workspace_id bigint not null,
+      recurring_income_id bigint not null references recurring_income(id) on delete cascade,
+      expected_date date not null, actual_date date, amount numeric(18,4) not null,
+      currency_code text not null, movement_id bigint references movements(id) on delete set null,
+      status text not null, notes text, created_at timestamptz not null default now());
+    alter table recurring_income_occurrences enable row level security;
+    create policy income_occ_sel on recurring_income_occurrences for select to authenticated using (is_workspace_member(workspace_id));
+    grant select, insert, update, delete on recurring_income_occurrences to authenticated;
+    create table subscription_occurrences (
+      id bigint generated always as identity primary key,
+      subscription_id bigint not null references subscriptions(id) on delete cascade,
+      due_date date not null, expected_amount numeric(14,2) not null, status text not null default 'scheduled',
+      movement_id bigint references movements(id) on delete set null, paid_at timestamptz, notes text,
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+      unique(subscription_id, due_date));
+    alter table subscription_occurrences enable row level security;
+    create policy sub_occ_sel on subscription_occurrences for select to authenticated using (
+      exists(select 1 from subscriptions s where s.id = subscription_id and is_workspace_member(s.workspace_id)));
+    grant select on subscription_occurrences to authenticated;
+  `);
   for (const file of MIGRATIONS) await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+  if (options.phase3 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE3_MIGRATION), "utf8"));
 
   // Una sola conexión: cada llamada fija usuario + rol y los restablece, bajo un candado.
   let tail: Promise<unknown> = Promise.resolve();
@@ -102,6 +126,11 @@ export async function createTestServer() {
       if (hooks.failAll?.()) throw new Error("Network request failed");
     };
     return {
+      async pullSubscriptionOccurrences(workspaceId, cursor, limit) {
+        guard();
+        if (options.phase3 === false) return null;
+        return call(userId, "select pull_subscription_occurrences($1,$2::jsonb,$3) r", [workspaceId, JSON.stringify(cursor), limit]);
+      },
       async reserveIds(workspaceId, tableName, count) {
         guard();
         return (await call<number[]>(userId, "select public.reserve_ids($1, $2, $3) as r", [workspaceId, tableName, count])).map(Number);
