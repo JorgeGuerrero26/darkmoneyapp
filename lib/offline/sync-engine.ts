@@ -179,12 +179,18 @@ export class SyncEngine {
       const candidates = await listSendable(this.db, workspaceId, PUSH_BATCH_LIMIT, new Date(this.now()).toISOString());
       const ops: OutboxOp[] = [];
       const seen = new Set<string>();
+      const taken = new Set<string>();
       for (const op of candidates) {
-        const key = `${op.table}:${op.rowId}`;
+        if (taken.has(op.opId)) continue; // ya entró como parte de su grupo
+        // Un grupo atómico se envía completo o no se envía: nunca partido entre dos lotes.
+        const members = op.groupId ? candidates.filter((candidate) => candidate.groupId === op.groupId) : [op];
+        if (op.groupId && (members.length !== op.groupSize || ops.length + members.length > PUSH_BATCH_LIMIT)) break;
+        const keys = members.map((member) => `${member.table}:${member.rowId}`);
         // Una respuesta debe rebasar la operación siguiente de esa fila antes de enviarla.
         // Conservar el prefijo también conserva el orden causal frente a otros recursos.
-        if (seen.has(key)) break;
-        seen.add(key); ops.push(op);
+        if (keys.some((key) => seen.has(key))) break;
+        keys.forEach((key) => seen.add(key));
+        for (const member of members) { ops.push(member); taken.add(member.opId); }
       }
       if (ops.length === 0) return;
       await markSending(
@@ -199,6 +205,7 @@ export class SyncEngine {
         row_id: op.rowId,
         fields: op.fields,
         base_updated_at: op.baseUpdatedAt,
+        ...(op.groupId ? { group_id: op.groupId, group_size: op.groupSize ?? undefined } : {}),
       }));
 
       let results: PushResult[];
@@ -224,9 +231,37 @@ export class SyncEngine {
     const touched = new Set<string>();
     let inboxChanged = false;
     const transient: string[] = [];
+    const groupOutcome = this.groupOutcomes(ops, byId);
 
     await this.db.transaction(async (tx) => {
       for (const op of ops) {
+        if (op.groupId) {
+          const outcome = groupOutcome.get(op.groupId)!;
+          if (outcome.kind === "transient") { transient.push(op.opId); continue; }
+          if (outcome.kind === "rejected") {
+            // Todo el grupo se deshizo en el servidor: se deshace también aquí, con UN solo aviso (el de la culpable).
+            touched.add(op.table);
+            await completeOp(tx, op.opId);
+            if (op.opId === outcome.culpritId) {
+              const result = byId.get(op.opId)!;
+              const row = await getServerShapedRow(tx, op.table, op.rowId);
+              await addInbox(tx, {
+                opId: op.opId,
+                table: op.table,
+                rowId: op.rowId,
+                kind: op.kind,
+                status: "rejected",
+                code: result.sqlstate === "23001" ? "dependency" : result.code ?? "error",
+                message: result.message ?? null,
+                summary: describeOp(op, row),
+              });
+              inboxChanged = true;
+              report.rejected += 1;
+            }
+            await this.undoLocalAfterRejection(tx, op);
+            continue;
+          }
+        }
         const result = byId.get(op.opId);
         if (!result) {
           // El servidor no devolvió esta operación: se trata como no resuelta.
@@ -300,6 +335,31 @@ export class SyncEngine {
     if (touched.size > 0) this.onChange({ kind: "data", tables: [...touched] });
     if (inboxChanged) this.onChange({ kind: "inbox" });
     this.onChange({ kind: "queue" });
+  }
+
+  /**
+   * Resultado de cada grupo atómico del lote. Un grupo es una unidad: si cualquiera de sus operaciones no se resolvió
+   * por un fallo pasajero (sin red, timeout), todo el grupo vuelve a la cola; si el servidor rechazó alguna de verdad,
+   * todo el grupo se rechaza (y la culpable es la que NO dice "group_failed").
+   */
+  private groupOutcomes(
+    ops: OutboxOp[],
+    byId: Map<string, PushResult>,
+  ): Map<string, { kind: "ok" } | { kind: "transient" } | { kind: "rejected"; culpritId: string }> {
+    const outcomes = new Map<string, { kind: "ok" } | { kind: "transient" } | { kind: "rejected"; culpritId: string }>();
+    for (const groupId of new Set(ops.filter((op) => op.groupId).map((op) => op.groupId!))) {
+      const members = ops.filter((op) => op.groupId === groupId);
+      const results = members.map((member) => byId.get(member.opId));
+      if (results.some((result) => !result || (result.status === "rejected" && isTransientRejection(result)))) {
+        outcomes.set(groupId, { kind: "transient" });
+        continue;
+      }
+      const rejected = members.filter((member) => byId.get(member.opId)!.status === "rejected");
+      if (rejected.length === 0) { outcomes.set(groupId, { kind: "ok" }); continue; }
+      const culprit = rejected.find((member) => byId.get(member.opId)!.code !== "group_failed") ?? rejected[0];
+      outcomes.set(groupId, { kind: "rejected", culpritId: culprit.opId });
+    }
+    return outcomes;
   }
 
   /**

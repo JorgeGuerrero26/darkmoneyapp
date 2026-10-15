@@ -1,7 +1,7 @@
 import { migrate } from "../schema";
 import {
   addInbox, backoffMs, countInbox, countOutbox, enqueueOp, listInbox, listSendable, markSending,
-  pendingRowIds, rebaseFollowingOps, releaseOps, resetStuckOps, resolveInbox,
+  newGroup, pendingRowIds, rebaseFollowingOps, releaseOps, resetStuckOps, resolveInbox, runLocalGroup,
 } from "../outbox";
 import { addPoolIds, idsToReserve, poolSize, takePoolId } from "../id-pool";
 import { newOpId } from "../uuid";
@@ -155,5 +155,63 @@ describe("op_id", () => {
     const ids = new Set(Array.from({ length: 2000 }, () => newOpId()));
     expect(ids.size).toBe(2000);
     for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
+
+describe("cola: grupos atómicos (Fase 5.1)", () => {
+  const inGroup = (kind: "insert" | "update" | "delete", table: string, rowId: number, group: { id: string; size: number }, fields: Record<string, unknown> = {}) =>
+    enqueueOp(db, { table, kind, workspaceId: 1, rowId, fields, group });
+
+  it("las operaciones de un grupo no se fusionan con otras de la misma fila ni entre sí", async () => {
+    await enqueue("insert", 10, { description: "suelta" });
+    const group = newGroup(2);
+    await inGroup("update", "movements", 10, group, { description: "del grupo" });
+    await inGroup("insert", "movements", 11, group, { description: "otra" });
+    const list = await ops();
+    expect(list).toHaveLength(3);
+    expect(list.filter((op) => op.groupId === group.id)).toHaveLength(2);
+    expect(list[0].fields).toEqual({ description: "suelta" }); // la suelta no absorbió la del grupo
+  });
+
+  it("una edición posterior de una fila cuyo alta va en un grupo no se funde con ese grupo", async () => {
+    const group = newGroup(2);
+    await inGroup("insert", "movements", 20, group, { description: "pago" });
+    await inGroup("insert", "movements", 21, group, { description: "otro" });
+    await enqueue("update", 20, { description: "editado después" }, "2026-01-01T00:00:00.000Z");
+    const list = await ops();
+    expect(list).toHaveLength(3);
+    expect(list[0].fields).toEqual({ description: "pago" });
+    expect(list[2].kind).toBe("update");
+  });
+
+  it("un grupo cuenta como UN cambio pendiente", async () => {
+    const group = newGroup(3);
+    for (const id of [30, 31, 32]) await inGroup("insert", "movements", id, group, {});
+    await enqueue("insert", 40, {});
+    expect(await countOutbox(db, 1)).toBe(2);
+    expect(await countOutbox(db)).toBe(2);
+  });
+
+  it("runLocalGroup revierte todo si se encola un número distinto de operaciones", async () => {
+    await expect(
+      runLocalGroup(db, 2, async (tx, group) => { await enqueueOp(tx, { table: "movements", kind: "insert", workspaceId: 1, rowId: 50, fields: {}, group }); }),
+    ).rejects.toThrow("esperaba 2");
+    expect(await ops()).toHaveLength(0);
+  });
+
+  it("runLocalGroup deja las dos operaciones juntas cuando todo sale bien", async () => {
+    await runLocalGroup(db, 2, async (tx, group) => {
+      await enqueueOp(tx, { table: "movements", kind: "insert", workspaceId: 1, rowId: 60, fields: {}, group });
+      await enqueueOp(tx, { table: "subscriptions", kind: "update", workspaceId: 1, rowId: 7, fields: { next_due_date: "2026-11-01" }, baseUpdatedAt: "x", group });
+    });
+    const list = await ops();
+    expect(list.map((op) => op.groupSize)).toEqual([2, 2]);
+    expect(new Set(list.map((op) => op.groupId)).size).toBe(1);
+  });
+
+  it("el tamaño de un grupo va de 2 a 10", () => {
+    expect(() => newGroup(1)).toThrow();
+    expect(() => newGroup(11)).toThrow();
+    expect(newGroup(10).size).toBe(10);
   });
 });

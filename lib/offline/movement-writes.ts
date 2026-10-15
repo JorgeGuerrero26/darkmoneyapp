@@ -1,7 +1,7 @@
-import { enqueueOp } from "./outbox";
+import { enqueueOp, inTransaction, type LocalGroup } from "./outbox";
 import { takePoolId } from "./id-pool";
 import { getServerShapedRow, upsertMovementRows, deleteMirrorRows, type ServerRow } from "./movement-store";
-import type { SqlDriver } from "./sql-driver";
+import type { SqlDriver, SqlExecutor } from "./sql-driver";
 
 const TABLE = "movements";
 
@@ -10,6 +10,8 @@ export type CreateLocalInput = {
   userId: string;
   fields: Record<string, unknown>;
   nowIso?: string;
+  /** Parte de una operación atómica de grupo (ver `runLocalGroup`). */
+  group?: LocalGroup;
 };
 
 /**
@@ -20,9 +22,9 @@ export type CreateLocalInput = {
  * Si ya hay una fila con la misma `client_dedupe_key`, devuelve esa en vez de duplicar; es la
  * misma garantía que da el índice único del servidor.
  */
-export async function createMovementLocal(db: SqlDriver, input: CreateLocalInput): Promise<ServerRow | null> {
+export async function createMovementLocal(db: SqlDriver | SqlExecutor, input: CreateLocalInput): Promise<ServerRow | null> {
   const now = input.nowIso ?? new Date().toISOString();
-  return db.transaction(async (tx) => {
+  return inTransaction(db, async (tx) => {
     const dedupeKey = input.fields.client_dedupe_key;
     if (typeof dedupeKey === "string" && dedupeKey) {
       const existing = await tx.get<{ data: string }>(
@@ -52,6 +54,7 @@ export async function createMovementLocal(db: SqlDriver, input: CreateLocalInput
       rowId: id,
       fields: input.fields,
       now,
+      group: input.group,
     });
     return row;
   });
@@ -63,12 +66,13 @@ export type UpdateLocalInput = {
   id: number;
   fields: Record<string, unknown>;
   nowIso?: string;
+  group?: LocalGroup;
 };
 
 /** Edición local. Devuelve null si la fila no está en el espejo. */
-export async function updateMovementLocal(db: SqlDriver, input: UpdateLocalInput): Promise<ServerRow | null> {
+export async function updateMovementLocal(db: SqlDriver | SqlExecutor, input: UpdateLocalInput): Promise<ServerRow | null> {
   const now = input.nowIso ?? new Date().toISOString();
-  return db.transaction(async (tx) => {
+  return inTransaction(db, async (tx) => {
     const current = await getServerShapedRow(tx, TABLE, input.id);
     if (!current) return null;
     // `updated_at` del espejo sigue siendo el que conoce el servidor: es la base del conflicto.
@@ -82,6 +86,7 @@ export async function updateMovementLocal(db: SqlDriver, input: UpdateLocalInput
       fields: input.fields,
       baseUpdatedAt: current.updated_at,
       now,
+      group: input.group,
     });
     return next;
   });

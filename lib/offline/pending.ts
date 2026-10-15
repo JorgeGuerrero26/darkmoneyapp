@@ -25,6 +25,7 @@ type OutboxRow = {
   row_id: number;
   created_at: string;
   fields: string;
+  group_id: string | null;
 };
 
 /** Qué campo guarda el nombre legible de cada tabla. */
@@ -46,11 +47,17 @@ function labelFor(table: string, data: Record<string, unknown> | null): string |
  */
 export async function listPendingChanges(db: SqlExecutor): Promise<PendingChange[]> {
   const rows = await db.all<OutboxRow>(
-    `select op_id, table_name, kind, workspace_id, row_id, created_at, fields
+    `select op_id, table_name, kind, workspace_id, row_id, created_at, fields, group_id
        from outbox where status in ('pending','sending') order by seq desc`,
   );
   const out: PendingChange[] = [];
+  const seenGroups = new Set<string>();
   for (const row of rows) {
+    // Un grupo atómico (p. ej. un pago: movimiento + avance de la suscripción) se muestra como un solo cambio.
+    if (row.group_id) {
+      if (seenGroups.has(row.group_id)) continue;
+      seenGroups.add(row.group_id);
+    }
     let data: Record<string, unknown> | null = null;
     if (row.kind !== "delete" && isMirroredTable(row.table_name)) {
       const mirrored = await db.get<{ data: string }>(`select data from ${row.table_name} where id = ?`, [row.row_id]);

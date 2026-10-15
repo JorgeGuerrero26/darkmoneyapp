@@ -1,4 +1,4 @@
-import type { SqlExecutor } from "./sql-driver";
+import type { SqlDriver, SqlExecutor } from "./sql-driver";
 import { newOpId } from "./uuid";
 
 export type OutboxKind = "insert" | "update" | "delete";
@@ -16,6 +16,9 @@ export type OutboxOp = {
   attempts: number;
   nextAttemptAt: string | null;
   status: "pending" | "sending";
+  /** Operación atómica de grupo (Fase 5.1): las que comparten `groupId` se envían juntas y se aplican todas o ninguna. */
+  groupId: string | null;
+  groupSize: number | null;
 };
 
 type OutboxDbRow = {
@@ -31,6 +34,8 @@ type OutboxDbRow = {
   attempts: number;
   next_attempt_at: string | null;
   status: "pending" | "sending";
+  group_id: string | null;
+  group_size: number | null;
 };
 
 function toOp(row: OutboxDbRow): OutboxOp {
@@ -47,7 +52,37 @@ function toOp(row: OutboxDbRow): OutboxOp {
     attempts: Number(row.attempts),
     nextAttemptAt: row.next_attempt_at,
     status: row.status,
+    groupId: row.group_id ?? null,
+    groupSize: row.group_size == null ? null : Number(row.group_size),
   };
+}
+
+export type LocalGroup = { id: string; size: number };
+
+/** Un grupo nuevo de `size` operaciones (2 a 10). Todas deben encolarse dentro de `runLocalGroup`. */
+export function newGroup(size: number): LocalGroup {
+  if (!Number.isInteger(size) || size < 2 || size > 10) throw new Error("Un grupo atómico lleva entre 2 y 10 operaciones.");
+  return { id: newOpId(), size };
+}
+
+/** Dentro de una transacción ya abierta se usa tal cual; fuera, abre una. Así las escrituras locales se pueden agrupar. */
+export function inTransaction<T>(db: SqlDriver | SqlExecutor, fn: (tx: SqlExecutor) => Promise<T>): Promise<T> {
+  return "transaction" in db ? db.transaction(fn) : fn(db);
+}
+
+/**
+ * Ejecuta varias escrituras locales como UNA sola: o quedan todas (filas del espejo y operaciones de la cola) o no
+ * queda ninguna. `fn` recibe el grupo para pasarlo a cada escritura; si encola un número distinto de operaciones
+ * que `size`, se revierte todo.
+ */
+export async function runLocalGroup<T>(db: SqlDriver, size: number, fn: (tx: SqlExecutor, group: LocalGroup) => Promise<T>): Promise<T> {
+  const group = newGroup(size);
+  return db.transaction(async (tx) => {
+    const result = await fn(tx, group);
+    const row = await tx.get<{ n: number }>(`select count(*) as n from outbox where group_id = ?`, [group.id]);
+    if (Number(row?.n ?? 0) !== size) throw new Error(`El grupo esperaba ${size} operaciones y encoló ${row?.n ?? 0}.`);
+    return result;
+  });
 }
 
 export type EnqueueInput = {
@@ -61,6 +96,8 @@ export type EnqueueInput = {
   now?: string;
   /** Catálogos: conservar padre insertado antes de sus hijos y borrarlo después. */
   preserveInsertForDelete?: boolean;
+  /** Si viene, la operación forma parte de un grupo atómico y nunca se fusiona con otras. */
+  group?: LocalGroup;
 };
 
 /**
@@ -95,7 +132,8 @@ export async function enqueueOp(db: SqlExecutor, input: EnqueueInput): Promise<v
     ]),
   );
 
-  if (prev && !sendingExists) {
+  // Una operación de grupo no se fusiona con nada, ni nada se fusiona con ella: fusionarla rompería la atomicidad.
+  if (prev && !sendingExists && !input.group && prev.groupId == null) {
     if (input.kind === "update" && (prev.kind === "insert" || prev.kind === "update")) {
       await db.run(`update outbox set fields = ? where seq = ?`, [JSON.stringify({ ...prev.fields, ...fields }), prev.seq]);
       return;
@@ -115,8 +153,8 @@ export async function enqueueOp(db: SqlExecutor, input: EnqueueInput): Promise<v
 
 async function insertOp(db: SqlExecutor, input: EnqueueInput & { fields: Record<string, unknown> }) {
   await db.run(
-    `insert into outbox (op_id, table_name, kind, workspace_id, row_id, fields, base_updated_at, created_at)
-     values (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `insert into outbox (op_id, table_name, kind, workspace_id, row_id, fields, base_updated_at, created_at, group_id, group_size)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       newOpId(),
       input.table,
@@ -126,6 +164,8 @@ async function insertOp(db: SqlExecutor, input: EnqueueInput & { fields: Record<
       JSON.stringify(input.fields),
       input.baseUpdatedAt ?? null,
       input.now ?? new Date().toISOString(),
+      input.group?.id ?? null,
+      input.group?.size ?? null,
     ],
   );
 }
@@ -190,9 +230,10 @@ export async function pendingRowIds(db: SqlExecutor, table: string): Promise<Set
 }
 
 export async function countOutbox(db: SqlExecutor, workspaceId?: number): Promise<number> {
+  // Un grupo atómico (un pago = varias filas) cuenta como UN cambio.
   const row = workspaceId == null
-    ? await db.get<{ n: number }>(`select count(*) as n from outbox`)
-    : await db.get<{ n: number }>(`select count(*) as n from outbox where workspace_id = ?`, [workspaceId]);
+    ? await db.get<{ n: number }>(`select count(distinct coalesce(group_id, op_id)) as n from outbox`)
+    : await db.get<{ n: number }>(`select count(distinct coalesce(group_id, op_id)) as n from outbox where workspace_id = ?`, [workspaceId]);
   return Number(row?.n ?? 0);
 }
 

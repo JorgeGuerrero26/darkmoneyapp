@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "./helpers/expect";
-import { countInbox, countOutbox, listInbox, listSendable } from "../outbox";
+import { countInbox, countOutbox, listInbox, listSendable, runLocalGroup } from "../outbox";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
 import { createRowLocal, deleteRowLocal, updateRowLocal } from "../resource-writes";
@@ -868,5 +868,95 @@ describe("operaciones atómicas de grupo (Fase 5.1)", () => {
     const g = { id: randomUUID(), size: 2 };
     const results = await push([op(9701, move(9701), g), op(9702, move(9702, { source_account_id: 99999 }), g)]);
     expect(results.map(r => r.status)).toEqual(["applied", "rejected"]); // sin grupos: comportamiento anterior
+  });
+});
+
+describe("grupos atómicos de punta a punta (Fase 5.1)", () => {
+  const groupWrite = (d: Device, extra: Record<string, unknown> = {}, categoryName = "Cat del grupo") =>
+    runLocalGroup(d.db, 2, async (tx, group) => {
+      const category = await createRowLocal(tx, { workspaceId: WS, userId: d.userId, table: "categories", fields: { name: categoryName }, nowIso: new Date(clock).toISOString(), group });
+      const movement = await createMovementLocal(tx, {
+        workspaceId: WS, userId: d.userId, fields: expense("Pago en grupo", 7, { category_id: category!.id, ...extra }), nowIso: new Date(clock).toISOString(), group,
+      });
+      return { category: category!, movement: movement! };
+    });
+
+  it("un grupo guardado sin red llega entero al servidor y la cola queda vacía", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const { category, movement } = await groupWrite(a);
+    expect(await countOutbox(a.db)).toBe(1); // un grupo = un cambio
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(0);
+    expect(report.applied).toBe(2);
+    expect(await countOutbox(a.db)).toBe(0);
+    expect((await server.admin.query("select 1 from categories where id=$1", [category.id])).rows).toHaveLength(1);
+    expect((await server.admin.query("select 1 from movements where id=$1", [movement.id])).rows).toHaveLength(1);
+  });
+
+  it("si el servidor rechaza una parte, no queda ninguna: ni allá, ni en el teléfono, y avisa una sola vez", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const { category, movement } = await groupWrite(a, { source_account_id: 424242 });
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(1);
+    expect(report.applied).toBe(0);
+    const inbox = await listInbox(a.db);
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]).toMatchObject({ status: "rejected", code: "dependency" });
+    expect(await countOutbox(a.db)).toBe(0);
+    expect((await server.admin.query("select 1 from categories where id=$1", [category.id])).rows).toHaveLength(0);
+    expect((await server.admin.query("select 1 from movements where id=$1", [movement.id])).rows).toHaveLength(0);
+    expect(await getServerShapedRow(a.db, "categories", category.id)).toBeNull();
+    expect(await getServerShapedRow(a.db, "movements", movement.id)).toBeNull();
+  });
+
+  it("un fallo de red pasajero deja el grupo entero en la cola, sin enviar una mitad", async () => {
+    let down = true;
+    const a = device(USER_A, { failPush: () => down });
+    await a.engine.syncNow(WS).catch(() => undefined);
+    const hooksDown = down;
+    expect(hooksDown).toBe(true);
+    down = false;
+    await a.engine.syncNow(WS);
+    const { category, movement } = await groupWrite(a);
+    down = true;
+    await a.engine.syncNow(WS).catch(() => undefined);
+    expect(await countOutbox(a.db)).toBe(1);
+    expect((await server.admin.query("select 1 from categories where id=$1", [category.id])).rows).toHaveLength(0);
+    down = false;
+    tick(10 * 60_000);
+    const report = await a.engine.syncNow(WS);
+    expect(report.applied).toBe(2);
+    expect((await server.admin.query("select 1 from movements where id=$1", [movement.id])).rows).toHaveLength(1);
+  });
+
+  it("un lote casi lleno no parte un grupo: se envía completo en el siguiente", async () => {
+    const batches: number[][] = [];
+    const a = device(USER_A);
+    const original = a.engine["transport"].pushBatch.bind(a.engine["transport"]);
+    a.engine["transport"].pushBatch = async (ops) => {
+      batches.push(ops.map((op) => (op.group_id ? 1 : 0)));
+      return original(ops);
+    };
+    await a.engine.syncNow(WS);
+    for (let i = 0; i < 99; i++) await create(a, `Suelto ${i}`, 1);
+    await groupWrite(a);
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(0);
+    expect(batches.length).toBeGreaterThan(1);
+    for (const batch of batches) {
+      const grouped = batch.filter(Boolean).length;
+      expect(grouped === 0 || grouped === 2).toBe(true); // nunca una mitad del grupo en un lote
+    }
+    expect(await countOutbox(a.db)).toBe(0);
+  });
+
+  it("un teléfono con la cola anterior (sin grupos) sigue funcionando tras actualizar el esquema", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    await create(a, "Normal", 3);
+    const report = await a.engine.syncNow(WS);
+    expect(report.applied).toBe(1);
   });
 });

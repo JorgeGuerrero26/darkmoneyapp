@@ -132,6 +132,12 @@ const MIGRATIONS: string[] = [
   create index obligations_ws_idx on obligations (workspace_id, updated_at, id);
   create index obligations_counterparty_idx on obligations (json_extract(data, '$.counterparty_id'));
   `,
+  `
+  -- v4 (Fase 5.1): operaciones atómicas de grupo. Las que comparten group_id viajan y se aplican todas o ninguna.
+  alter table outbox add column group_id text;
+  alter table outbox add column group_size integer;
+  create index outbox_group_idx on outbox (group_id);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
