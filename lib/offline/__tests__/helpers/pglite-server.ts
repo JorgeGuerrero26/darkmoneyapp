@@ -15,12 +15,13 @@ const MIGRATIONS = [
 ];
 const PHASE3_MIGRATION = "202610130001_sync_readonly_occurrences.sql";
 const PHASE4_MIGRATION = "202610140001_sync_obligations.sql";
+const PHASE5_GROUPS_MIGRATION = "202610150003_sync_push_batch_groups.sql";
 // Los scripts npm corren desde la raíz del repo (el archivo se ejecuta ya compilado en .tmp).
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
 export type TestServer = Awaited<ReturnType<typeof createTestServer>>;
 
-export async function createTestServer(options: { phase3?: boolean; phase4?: boolean } = {}) {
+export async function createTestServer(options: { phase3?: boolean; phase4?: boolean; groups?: boolean } = {}) {
   const db = new PGlite();
   await db.exec(`
     create role authenticated nologin; create role anon nologin;
@@ -111,6 +112,7 @@ export async function createTestServer(options: { phase3?: boolean; phase4?: boo
   for (const file of MIGRATIONS) await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
   if (options.phase3 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE3_MIGRATION), "utf8"));
   if (options.phase4 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE4_MIGRATION), "utf8"));
+  if (options.groups !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE5_GROUPS_MIGRATION), "utf8"));
 
   // Una sola conexión: cada llamada fija usuario + rol y los restablece, bajo un candado.
   let tail: Promise<unknown> = Promise.resolve();

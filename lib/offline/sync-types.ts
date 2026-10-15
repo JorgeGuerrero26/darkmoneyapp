@@ -22,6 +22,9 @@ export type PushOp = {
   row_id: number;
   fields: Record<string, unknown>;
   base_updated_at: string | null;
+  /** Operación atómica de grupo (Fase 5.1): las operaciones con el mismo `group_id` se aplican todas o ninguna. */
+  group_id?: string;
+  group_size?: number;
 };
 
 export type PushStatus = "applied" | "merged" | "review" | "noop" | "rejected";
@@ -34,6 +37,8 @@ export type PushResult = {
   row?: ServerRow;
   previous?: Record<string, unknown>;
   replayed?: boolean;
+  /** Presente en las operaciones de un grupo atómico. */
+  group_id?: string;
   code?: string;
   sqlstate?: string;
   message?: string;

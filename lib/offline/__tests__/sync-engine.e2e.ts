@@ -779,3 +779,94 @@ describe("lo que se borra en el servidor desaparece del teléfono", () => {
     expect(await getServerShapedRow(a.db, "categories", category.id)).not.toBeNull();
   });
 });
+
+describe("operaciones atómicas de grupo (Fase 5.1)", () => {
+  const move = (id: number, extra: Record<string, unknown> = {}) => ({
+    movement_type: "expense", status: "posted", occurred_at: "2026-10-12T10:00:00.000Z", description: `Grupo ${id}`,
+    source_account_id: 1, source_amount: 5, ...extra,
+  });
+  const op = (rowId: number, fields: Record<string, unknown>, group?: { id: string; size: number }, table = "movements") => ({
+    op_id: randomUUID(), table, kind: "insert" as const, workspace_id: WS, row_id: rowId, fields, base_updated_at: null,
+    ...(group ? { group_id: group.id, group_size: group.size } : {}),
+  });
+  const push = (ops: ReturnType<typeof op>[]) => server.transportFor(USER_A).pushBatch(ops);
+  const exists = async (table: string, id: number) =>
+    (await server.admin.query(`select 1 from ${table} where id=$1`, [id])).rows.length === 1;
+  const applied = async (ids: string[]) =>
+    (await server.admin.query("select 1 from sync_applied_ops where op_id = any($1::uuid[])", [ids])).rows.length;
+
+  it("un grupo completo se aplica entero y cada resultado trae su group_id", async () => {
+    const g = { id: randomUUID(), size: 2 };
+    const results = await push([op(9101, { name: "Cat grupo" }, g, "categories"), op(9102, move(9102, { category_id: 9101 }), g)]);
+    expect(results.map(r => r.status)).toEqual(["applied", "applied"]);
+    expect(results.every(r => r.group_id === g.id)).toBe(true);
+    expect(await exists("categories", 9101)).toBe(true);
+    expect(await exists("movements", 9102)).toBe(true);
+  });
+
+  it("si una operación del grupo se rechaza no queda NADA del grupo, y se sabe cuál fue la culpable", async () => {
+    const g = { id: randomUUID(), size: 2 };
+    const first = op(9201, move(9201));
+    const bad = op(9202, move(9202, { source_account_id: 99999 })); // cuenta inexistente
+    // La primera es válida por sí sola, pero el grupo se deshace.
+    const grouped = await push([{ ...first, op_id: randomUUID(), row_id: 9203, group_id: g.id, group_size: 2 }, { ...bad, op_id: randomUUID(), row_id: 9204, group_id: g.id, group_size: 2 }]);
+    expect(grouped[0]).toMatchObject({ status: "rejected", code: "group_failed", group_id: g.id });
+    expect(grouped[1]).toMatchObject({ status: "rejected", code: "dependency", group_id: g.id });
+    expect(await exists("movements", 9203)).toBe(false);
+    expect(await exists("movements", 9204)).toBe(false);
+    expect(await applied([grouped[0].op_id, grouped[1].op_id])).toBe(0);
+  });
+
+  it("reintentar un grupo ya aplicado no lo repite: devuelve lo aplicado como reenvío", async () => {
+    const g = { id: randomUUID(), size: 2 };
+    const ops = [op(9301, move(9301), g), op(9302, move(9302), g)];
+    await push(ops);
+    const again = await push(ops);
+    expect(again.map(r => r.status)).toEqual(["applied", "applied"]);
+    expect(again.every(r => r.replayed === true)).toBe(true);
+    expect((await server.admin.query("select count(*)::int n from movements where id in (9301, 9302)")).rows[0]).toEqual({ n: 2 });
+  });
+
+  it("un grupo al que le faltan operaciones en el envío se rechaza entero", async () => {
+    const g = { id: randomUUID(), size: 3 };
+    const results = await push([op(9401, move(9401), g), op(9402, move(9402), g)]);
+    expect(results.map(r => r.code)).toEqual(["group_incomplete", "group_incomplete"]);
+    expect(await exists("movements", 9401)).toBe(false);
+    expect(await exists("movements", 9402)).toBe(false);
+  });
+
+  it("un tamaño de grupo inválido se rechaza sin aplicar nada", async () => {
+    const g = { id: randomUUID(), size: 1 };
+    const results = await push([op(9501, move(9501), g)]);
+    expect(results[0]).toMatchObject({ status: "rejected", code: "invalid_op" });
+    expect(await exists("movements", 9501)).toBe(false);
+  });
+
+  it("las operaciones sin grupo siguen siendo independientes y el orden de resultados se conserva", async () => {
+    const g = { id: randomUUID(), size: 2 };
+    const results = await push([
+      op(9601, move(9601)),
+      op(9602, move(9602, { source_account_id: 99999 }), g),
+      op(9603, move(9603)),
+      op(9604, move(9604), g),
+    ]);
+    expect(results.map(r => r.op_id)).toHaveLength(4);
+    expect(results[0].status).toBe("applied");
+    expect(results[1].status).toBe("rejected");
+    expect(results[2].status).toBe("applied");
+    expect(results[3]).toMatchObject({ status: "rejected", code: "group_failed" });
+    expect(await exists("movements", 9601)).toBe(true);
+    expect(await exists("movements", 9603)).toBe(true);
+    expect(await exists("movements", 9604)).toBe(false);
+  });
+
+  it("un servidor sin la migración de grupos aplica las operaciones por separado (compatibilidad)", async () => {
+    await server.close();
+    server = await createTestServer({ groups: false });
+    await server.addMember(WS, USER_A);
+    await server.admin.exec("insert into accounts (workspace_id, name, currency_code, opening_balance) values (1, 'Efectivo', 'PEN', 100)");
+    const g = { id: randomUUID(), size: 2 };
+    const results = await push([op(9701, move(9701), g), op(9702, move(9702, { source_account_id: 99999 }), g)]);
+    expect(results.map(r => r.status)).toEqual(["applied", "rejected"]); // sin grupos: comportamiento anterior
+  });
+});
