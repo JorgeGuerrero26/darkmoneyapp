@@ -131,3 +131,12 @@ O. **Al volver internet:** gris "Enviando 2 de 3…", luego el aviso "3 cambios 
 P. **Si algo falla:** la línea pasa a rojo "1 cambio necesita revisión ›" y no desaparece hasta resolverlo desde la hoja.
 Q. **Corte breve:** quita y pon el internet en menos de 2 segundos: la línea no debe parpadear.
 R. **Modo apagado:** ninguna de estas líneas ni avisos aparece, y los encabezados son los de siempre.
+
+### Pagos sin conexión (Fase 5.1)
+
+S. **Pagar una suscripción sin internet:** en modo avión, abre una suscripción y registra su pago. Debe guardarse al instante:
+   el próximo cobro avanza y el saldo de la cuenta baja. La línea de estado dice "1 cambio guardado en tu teléfono" (un pago = un
+   cambio, no dos). Al volver internet debe llegar **una sola vez** y el historial de la suscripción debe mostrar el pago.
+T. **Pago repetido:** pagar dos veces el mismo cobro (tocar Guardar de nuevo) no debe duplicarlo.
+U. **Pago rechazado:** si el servidor no puede aplicar el pago (por ejemplo la cuenta ya no existe), el próximo cobro **no** debe
+   quedar avanzado, y debe llegar un solo aviso "necesita revisión".

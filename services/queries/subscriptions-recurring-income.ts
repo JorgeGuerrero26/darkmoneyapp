@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum, type NumericLike } from "./_shared";
 import { toScheduledChangesRows } from "../../features/recurring-income/lib/scheduledChanges";
-import { markSubscriptionPaid } from "../../features/subscriptions/lib/markSubscriptionPaid";
+import { buildSubscriptionPayment, markSubscriptionPaid, recordSubscriptionPaymentFingerprint } from "../../features/subscriptions/lib/markSubscriptionPaid";
 import {
   isCoreSnapshot,
   patchSnapshotSubscriptionNextDue,
@@ -538,6 +538,22 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
     mutationKey: ["mark-subscription-paid"],
     mutationFn: async (args: MarkPaidArgs) => {
       if (!workspaceId) throw new Error("Workspace no disponible.");
+      // Modo sin conexión (beta): avanzar el cobro y registrar el pago van juntos, en el teléfono y luego al servidor.
+      const payment = buildSubscriptionPayment({
+        subscription: args.subscription,
+        paidDate: args.paidDate,
+        amount: args.amount,
+        accountId: args.accountId,
+      });
+      const local = await offlineRuntime.paySubscription(workspaceId, {
+        subscriptionId: args.subscription.id,
+        nextDueDate: payment.nextDueDate,
+        movementFields: payment.movementFields,
+      });
+      if (local) {
+        recordSubscriptionPaymentFingerprint(workspaceId, args.amount, args.accountId);
+        return { nextDueDate: payment.nextDueDate, movementId: local.movementId, occurredAt: payment.occurredAt };
+      }
       offlineRuntime.assertCompoundOnline();
       return await markSubscriptionPaid({
         subscription: args.subscription,

@@ -18,6 +18,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Con el modo sin conexión encendido, también puedes crear y editar sin internet tus cuentas, categorías, contactos, presupuestos, suscripciones, ingresos fijos y créditos o deudas. Se guardan al instante y se envían solos cuando vuelve la conexión. Registrar un pago o una llegada sigue necesitando internet.",
       "Cuando registras un movimiento detectado dividido en varias categorías, ahora se guarda completo o no se guarda nada: ya no puede quedar a medias si se corta el internet.",
       "En Suscripciones, el total mensual ya tiene en cuenta cada cuántos días o meses se cobra, y solo suma las que están en la misma moneda. Y una suscripción sin cobros pendientes te dice cuándo toca el próximo.",
+      "Con el modo sin conexión encendido, ya puedes registrar sin internet el pago de una suscripción: el próximo cobro avanza y el pago se anota al instante, y todo se envía junto cuando vuelve la conexión.",
     ],
   },
   {

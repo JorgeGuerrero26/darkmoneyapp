@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "./helpers/expect";
 import { countInbox, countOutbox, listInbox, listSendable, runLocalGroup } from "../outbox";
+import { paySubscriptionLocal } from "../subscription-pay";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
 import { createRowLocal, deleteRowLocal, updateRowLocal } from "../resource-writes";
@@ -958,5 +959,71 @@ describe("grupos atómicos de punta a punta (Fase 5.1)", () => {
     await create(a, "Normal", 3);
     const report = await a.engine.syncNow(WS);
     expect(report.applied).toBe(1);
+  });
+});
+
+describe("pagar una suscripción sin red (Fase 5.1, paso 3)", () => {
+  const payFields = (accountId = 1) => ({
+    movement_type: "subscription_payment", status: "posted", occurred_at: "2026-10-15T10:00:00.000Z", description: "Netflix",
+    source_account_id: accountId, source_amount: 12, subscription_id: 0, metadata: { manual_subscription_payment: true },
+    client_dedupe_key: "subscription-payment:SUB:2026-10-20",
+  });
+  const prepare = async () => {
+    await server.admin.exec("alter table subscriptions add column if not exists next_due_date date");
+    const { rows } = await server.admin.query<{ id: number }>(
+      "insert into subscriptions (workspace_id, name, next_due_date) values (1, 'Netflix', '2026-10-20') returning id",
+    );
+    const subId = Number(rows[0].id);
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const fields = { ...payFields(), subscription_id: subId, client_dedupe_key: `subscription-payment:${subId}:2026-10-20` };
+    return { a, subId, fields };
+  };
+  const dueOnServer = async (id: number) =>
+    String((await server.admin.query<{ d: string }>("select next_due_date::text d from subscriptions where id=$1", [id])).rows[0].d);
+
+  it("avanza el cobro y registra el pago como una sola cosa, y llega entero al servidor", async () => {
+    const { a, subId, fields } = await prepare();
+    const result = await paySubscriptionLocal(a.db, { workspaceId: WS, userId: USER_A, subscriptionId: subId, nextDueDate: "2026-11-20", movementFields: fields, nowIso: new Date(clock).toISOString() });
+    expect(result).not.toBeNull();
+    expect(await countOutbox(a.db)).toBe(1); // un pago = un cambio
+    const local = await getServerShapedRow(a.db, "subscriptions", subId);
+    expect(String(local?.next_due_date)).toBe("2026-11-20"); // se ve al instante
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(0);
+    expect(await dueOnServer(subId)).toBe("2026-11-20");
+    expect((await server.admin.query("select 1 from movements where id=$1 and movement_type='subscription_payment'", [result!.movementId])).rows).toHaveLength(1);
+    expect(await countOutbox(a.db)).toBe(0);
+  });
+
+  it("pagar dos veces el mismo cobro no lo duplica", async () => {
+    const { a, subId, fields } = await prepare();
+    const input = { workspaceId: WS, userId: USER_A, subscriptionId: subId, nextDueDate: "2026-11-20", movementFields: fields, nowIso: new Date(clock).toISOString() };
+    const first = await paySubscriptionLocal(a.db, input);
+    const second = await paySubscriptionLocal(a.db, input);
+    expect(second?.movementId).toBe(first?.movementId);
+    expect(await countOutbox(a.db)).toBe(1);
+    await a.engine.syncNow(WS);
+    expect((await server.admin.query("select count(*)::int n from movements where movement_type='subscription_payment'")).rows[0]).toEqual({ n: 1 });
+  });
+
+  it("si el servidor rechaza el pago (cuenta inexistente), el cobro NO avanza y se avisa una vez", async () => {
+    const { a, subId, fields } = await prepare();
+    await paySubscriptionLocal(a.db, { workspaceId: WS, userId: USER_A, subscriptionId: subId, nextDueDate: "2026-11-20", movementFields: { ...fields, source_account_id: 424242 }, nowIso: new Date(clock).toISOString() });
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(1);
+    expect(await dueOnServer(subId)).toBe("2026-10-20");
+    expect((await listInbox(a.db))).toHaveLength(1);
+    await a.engine.syncNow(WS); // la vuelta de descarga restaura la fecha del servidor
+    expect(String((await getServerShapedRow(a.db, "subscriptions", subId))?.next_due_date)).toBe("2026-10-20");
+    expect(await countOutbox(a.db)).toBe(0);
+  });
+
+  it("una suscripción que no está en la copia local devuelve null (sigue el camino online)", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const result = await paySubscriptionLocal(a.db, { workspaceId: WS, userId: USER_A, subscriptionId: 99999, nextDueDate: "2026-11-20", movementFields: payFields(), nowIso: new Date(clock).toISOString() });
+    expect(result).toBeNull();
+    expect(await countOutbox(a.db)).toBe(0);
   });
 });

@@ -19,6 +19,7 @@ import { listRowsLocal } from "./resource-store";
 import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-writes";
 import type { MirroredTable, WritableResourceTable } from "./schema";
 import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pending";
+import { paySubscriptionLocal } from "./subscription-pay";
 import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
@@ -504,6 +505,31 @@ export class OfflineRuntime {
     if (!row) return null;
     await this.afterWrite();
     return getMovementRecord(this.requireDb(), row.id);
+  }
+
+  /**
+   * Pagar una suscripción en el teléfono (avance del próximo cobro + movimiento del pago, como un grupo atómico).
+   * null = no se pudo localmente (modo apagado, copia no lista, IDs agotados): que siga el camino online.
+   */
+  async paySubscription(
+    workspaceId: number,
+    input: { subscriptionId: number; nextDueDate: string; movementFields: Record<string, unknown> },
+  ): Promise<{ movementId: number } | null> {
+    if (!this.config.enabled || !this.canReadLocal(workspaceId) || !this.userId) return null;
+    if (!(await this.resourceContext(workspaceId, "subscriptions"))) return null;
+    const result = await paySubscriptionLocal(this.requireDb(), {
+      workspaceId,
+      userId: this.userId,
+      subscriptionId: input.subscriptionId,
+      nextDueDate: input.nextDueDate,
+      movementFields: input.movementFields,
+      nowIso: new Date(this.now()).toISOString(),
+    });
+    if (!result) return null;
+    await this.refreshCounts();
+    await this.notifyData(["movements", "subscriptions"]);
+    this.scheduleWriteSync();
+    return result;
   }
 
   async updateMovement(workspaceId: number, id: number, input: MovementUpdateInput): Promise<boolean> {
