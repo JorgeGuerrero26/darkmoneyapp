@@ -52,12 +52,12 @@ export function QuickDetectedMovementEntry(props: Props) {
     </View> };
   } else if (r.dataError) {
     status = { title: "Movimiento detectado", height: 0.4, content: <StatusContent message="No pudimos cargar tus cuentas y categorías" onRetry={r.retryData} /> };
-  } else if (r.isPendingEmail && (r.emailProAccess.data !== true || r.emailProAccess.isError)) {
-    const proRequired = r.emailProAccess.data === false && !r.emailProAccess.isError;
+  } else if (r.isPendingEmail && r.emailProAccess.data !== true) {
+    const proRequired = r.emailProAccess.data === false;
     status = proRequired ? { title: "Disponible con PRO", height: 0.48,
       content: <ProFeatureContent title="Revisa tus pagos con PRO" description={EMAIL_DETECTION_PRO_DESCRIPTION} />,
       footer: <ProFeatureActions onClose={close} onViewPro={() => { close(); void openDarkMoneyProPlans().catch((error) => showErrorToast("No se pudo abrir los planes PRO", error)); }} />,
-    } : { title: "Movimiento detectado", height: 0.4, content: <StatusContent message={r.emailProAccess.isError ? "No pudimos verificar tu acceso PRO" : "Verificando tu acceso PRO…"} loading={!r.emailProAccess.isError} onRetry={r.emailProAccess.isError ? () => { void r.emailProAccess.refetch(); } : undefined} /> };
+    } : { title: "Movimiento detectado", height: 0.4, content: <StatusContent message={r.emailProAccess.isError ? "No pudimos confirmar tu acceso PRO. Revisa tu conexión y toca Reintentar." : "Verificando tu acceso PRO…"} loading={!r.emailProAccess.isError} onRetry={r.emailProAccess.isError ? () => { void r.emailProAccess.refetch(); } : undefined} /> };
   } else if (!r.suggestion) {
     status = { title: "Movimiento detectado", height: 0.4, content: <StatusContent loading={!r.suggestionQuery.isError && r.suggestionQuery.isFetching} message={r.suggestionQuery.isError ? "No pudimos cargar la detección" : !r.suggestionQuery.isFetching ? "Esta detección ya no está disponible" : "Cargando los datos…"} onRetry={() => { void r.suggestionQuery.refetch(); }} /> };
   }

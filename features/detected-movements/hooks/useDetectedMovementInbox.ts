@@ -9,7 +9,9 @@ import type { DetectedMovementSuggestion } from "../../../services/queries/notif
 /** Selección y borradores locales; el estado pendiente vive únicamente en Supabase. */
 export function useDetectedMovementInbox(userId: string | null, workspaceId: number | null) {
   const access = useEmailDetectionProAccessQuery(userId);
-  const enabled = access.data === true && !access.isError;
+  // Un fallo pasajero al volver a verificar (señal débil) NO esconde lo que ya se sabía: se sigue mostrando la lista con el
+  // último acceso confirmado. El error solo se muestra si nunca se llegó a confirmar.
+  const enabled = access.data === true;
   const query = usePendingDetectedMovementsQuery(userId, workspaceId, enabled);
   const queryClient = useQueryClient();
   // Ordena también la caché persistida de versiones anteriores, que venía al revés.
@@ -54,9 +56,10 @@ export function useDetectedMovementInbox(userId: string | null, workspaceId: num
     setSelectedId(next?.id ?? null); setReviewSelection(next);
     if (!next) setMode("closed");
   }
-  const error = access.isError ? "No pudimos verificar tu acceso PRO" : enabled && query.isError ? "No pudimos cargar los movimientos por revisar" : null;
-  const loading = access.isPending || (enabled && query.isPending);
-  const retry = () => { if (access.isError) void access.refetch(); else void query.refetch(); };
+  const accessUnknown = access.data === undefined;
+  const error = accessUnknown && access.isError ? "No pudimos confirmar tu acceso PRO. Revisa tu conexión y toca Reintentar." : enabled && query.isError ? "No pudimos cargar los movimientos por revisar" : null;
+  const loading = (accessUnknown && access.isPending) || (enabled && query.isPending);
+  const retry = () => { if (accessUnknown && access.isError) void access.refetch(); else void query.refetch(); };
   return { pending, selected, mode, error, loading, retry, drafts: drafts.current, rememberDraft, resolve, resolveMany, select,
     openReview: () => { setReviewSelection(selected); setMode("review"); },
     openList: () => { setReviewSelection(selected); setMode("list"); }, close: () => setMode("closed") };

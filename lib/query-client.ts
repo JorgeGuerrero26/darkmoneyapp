@@ -160,6 +160,7 @@ const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PERSISTED_QUERY_ROOTS = new Set([
   "user-workspaces",
   "user-entitlement",
+  "email-detection-pro-access",
   "workspace-snapshot",
   "dashboard-movements",
   "dashboard-analytics",

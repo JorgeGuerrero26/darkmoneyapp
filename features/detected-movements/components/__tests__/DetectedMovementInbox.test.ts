@@ -55,10 +55,17 @@ it("muestra el error de consulta y permite reintentar", async () => {
 it("un fallo al verificar PRO se muestra y reintenta la verificación", async () => {
   mockAccess = { ...mockAccess, data: undefined, isError: true };
   await render();
-  expect(renderer.root.findByProps({ accessibilityRole: "alert" }).props.children).toBe("No pudimos verificar tu acceso PRO");
+  expect(renderer.root.findByProps({ accessibilityRole: "alert" }).props.children).toBe("No pudimos confirmar tu acceso PRO. Revisa tu conexión y toca Reintentar.");
   await act(async () => renderer.root.findByProps({ label: "Reintentar" }).props.onPress());
   expect(mockAccessRefetch).toHaveBeenCalledTimes(1);
   expect(mockRefetch).not.toHaveBeenCalled();
+});
+it("si el acceso PRO ya estaba confirmado y una verificación posterior falla, la lista NO desaparece ni muestra error", async () => {
+  mockQuery.data = [receipt(13, "2026-10-09T01:23:10Z")];
+  mockAccess = { ...mockAccess, data: true, isError: true };
+  await render();
+  expect(renderer.root.findAllByProps({ accessibilityRole: "alert" })).toHaveLength(0);
+  expect(renderer.root.findByProps({ testID: "selected-detection" }).props.children).toBe("13");
 });
 it("la carga tiene feedback mientras una respuesta vacía no deja hueco", async () => {
   mockQuery.isPending = true;
