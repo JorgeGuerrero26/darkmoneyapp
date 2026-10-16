@@ -112,6 +112,9 @@ export class OfflineRuntime {
   private config: RuntimeConfig = { enabled: false, userId: null, workspaceId: null, workspaceIds: [] };
   private queue: Promise<unknown> = Promise.resolve();
   private writeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Una escritura por otra vía puede haber BORRADO filas en el servidor: la próxima sincronización las revisa. */
+  private reconcileNext = false;
+  private lastNudgeReconcileAt = 0;
   private readonly now: () => number;
   private readonly writeDebounceMs: number;
   private readonly otherWorkspacesDelayMs: number;
@@ -259,7 +262,11 @@ export class OfflineRuntime {
     try {
       // Al volver a la app, volver la red o pedirlo a mano se revisa también qué borró el servidor (otra persona u otro
       // dispositivo); en un guardado normal no hace falta y se evita la consulta.
-      const forceReconcile = reason === "manual" || reason === "network" || reason === "foreground";
+      let forceReconcile = reason === "manual" || reason === "network" || reason === "foreground";
+      if (reason === "write" && this.reconcileNext) {
+        forceReconcile = true;
+        this.reconcileNext = false;
+      }
       report = await engine.syncNow(workspaceId, { forceReconcile });
       // Los demás espacios, uno tras otro: mantienen su copia al día y envían lo que quedó pendiente
       // en ellos. Un fallo aquí no tumba el ciclo del espacio abierto.
@@ -297,8 +304,15 @@ export class OfflineRuntime {
    * la base local todavía no lo tiene. Se pone al día en breve, junto con otras escrituras que
    * lleguen seguidas, sin esperar al latido de 5 minutos.
    */
-  nudge() {
-    if (this.state.availability === "ready") this.scheduleWriteSync();
+  nudge(options?: { reconcile?: boolean }) {
+    if (this.state.availability !== "ready") return;
+    // Un cobro eliminado desde el detalle de una deuda borra también su movimiento EN EL SERVIDOR: la copia local no se
+    // entera por la descarga normal, hay que preguntar qué filas siguen vivas. A lo más una vez cada 20 s.
+    if (options?.reconcile && this.now() - this.lastNudgeReconcileAt >= 20_000) {
+      this.reconcileNext = true;
+      this.lastNudgeReconcileAt = this.now();
+    }
+    this.scheduleWriteSync();
   }
 
   /** Sincroniza los demás espacios un rato después de abrir la app, sin estorbar a la carga inicial. */

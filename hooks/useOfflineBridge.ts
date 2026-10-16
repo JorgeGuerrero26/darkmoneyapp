@@ -116,7 +116,8 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
   useEffect(() => {
     if (!enabled) return;
     return queryClient.getMutationCache().subscribe((event) => {
-      if (event.type === "updated" && event.action.type === "success") offlineRuntime.nudge();
+      // `reconcile`: la escritura pudo borrar filas en el servidor (p. ej. eliminar un cobro borra su movimiento).
+      if (event.type === "updated" && event.action.type === "success") offlineRuntime.nudge({ reconcile: true });
     });
   }, [queryClient, enabled]);
 

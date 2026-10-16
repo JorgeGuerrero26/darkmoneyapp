@@ -344,6 +344,27 @@ describe("OfflineRuntime", () => {
     expect(log.liveIdsCalls).toBe(afterStart + 3);
   });
 
+  it("una escritura por otra vía (p. ej. eliminar un cobro, que borra su movimiento en el servidor) hace revisar lo borrado, a lo más cada 20 s", async () => {
+    let clock = Date.parse("2026-10-16T12:00:00.000Z");
+    const { runtime, log } = setup({ now: () => clock });
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    const afterStart = log.liveIdsCalls;
+    runtime.nudge();
+    await settle();
+    expect(log.liveIdsCalls).toBe(afterStart); // un nudge normal no revisa borrados
+    runtime.nudge({ reconcile: true });
+    await settle();
+    expect(log.liveIdsCalls).toBe(afterStart + 1);
+    runtime.nudge({ reconcile: true });
+    await settle();
+    expect(log.liveIdsCalls).toBe(afterStart + 1); // dentro de los 20 s no se repite
+    clock += 21_000;
+    runtime.nudge({ reconcile: true });
+    await settle();
+    expect(log.liveIdsCalls).toBe(afterStart + 2);
+  });
+
   it("apagar el interruptor suelta la base y vuelve a 'desactivado'", async () => {
     const { runtime } = setup();
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
