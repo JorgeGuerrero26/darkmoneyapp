@@ -151,11 +151,15 @@ const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /**
  * Raíces de queryKey que se persisten a disco para arranque instantáneo
  * (hidratación desde AsyncStorage + revalidación en background). Whitelist a
- * propósito: nada de IA, entitlements ni detección — solo lo que pinta las
- * pantallas principales.
+ * propósito: nada de IA ni detección — solo lo que pinta las pantallas principales.
+ *
+ * `user-entitlement` (el plan) también: el inicio avanzado esperaba su respuesta para decidir si mostrarse y, con poca
+ * señal, dejaba esqueletos varios segundos al abrir la app. Con el plan anterior guardado se pinta al instante y se
+ * revalida enseguida; el servidor sigue siendo quien autoriza cada función de pago.
  */
 const PERSISTED_QUERY_ROOTS = new Set([
   "user-workspaces",
+  "user-entitlement",
   "workspace-snapshot",
   "dashboard-movements",
   "dashboard-analytics",

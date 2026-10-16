@@ -16,7 +16,7 @@ describe("qué consultas se guardan en disco", () => {
   });
 
   it("las de siempre se guardan, con el modo sin conexión apagado o encendido", () => {
-    for (const root of ["workspace-snapshot", "movements", "user-workspaces", "dashboard-movements", "notifications"]) {
+    for (const root of ["workspace-snapshot", "movements", "user-workspaces", "dashboard-movements", "notifications", "user-entitlement"]) {
       expect(shouldPersistQueryRoot(root)).toBe(true);
     }
     mockOfflineEnabled = true;
