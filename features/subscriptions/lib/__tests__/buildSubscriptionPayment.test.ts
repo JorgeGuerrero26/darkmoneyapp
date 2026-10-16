@@ -29,3 +29,12 @@ describe("pago de una suscripción (mismo resultado en línea y sin conexión)",
     expect(next.movementFields.client_dedupe_key).not.toBe(a.movementFields.client_dedupe_key);
   });
 });
+
+describe("pagar el cobro más antiguo sin pagar", () => {
+  it("con un cobro anterior pendiente, el pago es de ESE cobro (fecha, clave y próximo cobro)", () => {
+    const payment = buildSubscriptionPayment({ subscription, paidDate: "2026-10-04", amount: 12, accountId: 4, dueDate: "2026-09-04" });
+    expect(payment.nextDueDate).toBe("2026-10-20"); // se calcula desde el cobro pagado (sept → oct), no desde la fecha guardada
+    expect(payment.movementFields.metadata).toMatchObject({ paid_for_due_date: "2026-09-04" });
+    expect(payment.movementFields.client_dedupe_key).toBe("subscription-payment:7:2026-09-04");
+  });
+});

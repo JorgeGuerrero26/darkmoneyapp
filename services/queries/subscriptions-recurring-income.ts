@@ -528,6 +528,7 @@ type MarkPaidArgs = {
   paidDate: string;
   amount: number;
   accountId: number;
+  dueDate?: string;
 };
 
 export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
@@ -544,6 +545,7 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
         paidDate: args.paidDate,
         amount: args.amount,
         accountId: args.accountId,
+        dueDate: args.dueDate,
       });
       const local = await offlineRuntime.paySubscription(workspaceId, {
         subscriptionId: args.subscription.id,
@@ -561,6 +563,7 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
         paidDate: args.paidDate,
         amount: args.amount,
         accountId: args.accountId,
+        dueDate: args.dueDate,
       });
     },
     onSuccess: (result, variables) => {

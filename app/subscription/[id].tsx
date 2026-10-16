@@ -177,7 +177,7 @@ function SubscriptionDetailScreen() {
   }, [subscription, updateMutation, showToast]);
 
   const handleMarkPaid = useCallback(
-    async (args: { paidDate: string; amount: number; accountId: number }) => {
+    async (args: { paidDate: string; amount: number; accountId: number; dueDate: string }) => {
       if (!subscription) return;
       try {
         const { nextDueDate } = await markPaidMutation.mutateAsync({
@@ -185,6 +185,7 @@ function SubscriptionDetailScreen() {
           paidDate: args.paidDate,
           amount: args.amount,
           accountId: args.accountId,
+          dueDate: args.dueDate,
         });
         setMarkPaidVisible(false);
         showToast("Pago registrado", "success", `${subscription.name} · próximo cobro ${formatSubscriptionYmd(nextDueDate)}`);
@@ -377,6 +378,7 @@ function SubscriptionDetailScreen() {
             visible={markPaidVisible}
             subscription={subscription}
             accounts={snapshot?.accounts ?? []}
+            occurrences={occurrences}
             isPending={markPaidMutation.isPending}
             onClose={() => setMarkPaidVisible(false)}
             onConfirm={handleMarkPaid}

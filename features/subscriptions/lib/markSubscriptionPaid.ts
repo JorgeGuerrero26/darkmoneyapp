@@ -10,6 +10,8 @@ type Args = {
   paidDate: string; // YYYY-MM-DD
   amount: number;
   accountId: number;
+  /** El cobro que se paga (`yyyy-MM-dd`). Por defecto, la fecha de próximo cobro guardada. */
+  dueDate?: string;
 };
 
 /**
@@ -23,9 +25,11 @@ export function buildSubscriptionPayment({
   paidDate,
   amount,
   accountId,
-}: Pick<Args, "subscription" | "paidDate" | "amount" | "accountId">) {
+  dueDate,
+}: Pick<Args, "subscription" | "paidDate" | "amount" | "accountId" | "dueDate">) {
+  const paidDueDate = dueDate ?? subscription.nextDueDate;
   const nextDueDate = computeNextRecurringDate(
-    subscription.nextDueDate,
+    paidDueDate,
     subscription.frequency,
     subscription.intervalCount,
     subscription.dayOfMonth,
@@ -48,9 +52,9 @@ export function buildSubscriptionPayment({
     subscription_id: subscription.id,
     metadata: {
       manual_subscription_payment: true,
-      paid_for_due_date: subscription.nextDueDate,
+      paid_for_due_date: paidDueDate,
     },
-    client_dedupe_key: `subscription-payment:${subscription.id}:${subscription.nextDueDate}`,
+    client_dedupe_key: `subscription-payment:${subscription.id}:${paidDueDate}`,
   };
   return { nextDueDate, occurredAt, movementFields };
 }
@@ -80,11 +84,12 @@ export async function markSubscriptionPaid({
   paidDate,
   amount,
   accountId,
+  dueDate,
 }: Args): Promise<{ nextDueDate: string; movementId: number | null; occurredAt: string }> {
   if (!supabase) throw new Error("Supabase no disponible.");
 
   // Step 1: advance next_due_date. Si esto falla, abortamos sin crear movement.
-  const { nextDueDate, occurredAt, movementFields } = buildSubscriptionPayment({ subscription, paidDate, amount, accountId });
+  const { nextDueDate, occurredAt, movementFields } = buildSubscriptionPayment({ subscription, paidDate, amount, accountId, dueDate });
   const { error: updateError } = await supabase
     .from("subscriptions")
     .update({ next_due_date: nextDueDate })

@@ -16,14 +16,17 @@ import { computeNextRecurringDate } from "../../../lib/subscription-helpers";
 import { sortByName } from "../../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import type { AccountSummary, SubscriptionSummary } from "../../../types/domain";
+import { oldestUnpaidDueDate } from "../lib/oldestUnpaidDueDate";
 
 type Props = {
   visible: boolean;
   subscription: SubscriptionSummary | null;
   accounts: AccountSummary[];
+  /** Historial mes a mes (si ya cargó): decide qué cobro se paga, el más antiguo sin pagar. */
+  occurrences?: ReadonlyArray<{ dueDate: string; status: string }> | null;
   isPending: boolean;
   onClose: () => void;
-  onConfirm: (args: { paidDate: string; amount: number; accountId: number }) => void;
+  onConfirm: (args: { paidDate: string; amount: number; accountId: number; dueDate: string }) => void;
 };
 
 function parseYmd(ymd: string): Date {
@@ -49,6 +52,7 @@ export function MarkSubscriptionPaidSheet({
   visible,
   subscription,
   accounts,
+  occurrences,
   isPending,
   onClose,
   onConfirm,
@@ -66,23 +70,24 @@ export function MarkSubscriptionPaidSheet({
 
   useEffect(() => {
     if (!visible || !subscription) return;
-    setPaidDate(subscription.nextDueDate); // la fecha programada gana a hoy: es la del cobro
+    setPaidDate(oldestUnpaidDueDate(subscription.nextDueDate, occurrences)); // la fecha programada gana a hoy: es la del cobro
     setAmount(String(subscription.amount));
     // La cuenta con la que se paga ya está guardada en la suscripción. Sin esto, el único dato
     // obligatorio de la hoja era el único que llegaba vacío.
     setAccountId(subscription.accountId ?? null);
     setAccountOpen(false);
     setError("");
-  }, [visible, subscription]);
+  }, [visible, subscription, occurrences]);
 
   if (!subscription) return null;
 
   const money = (value: number) => formatCurrency(value, subscription.currencyCode);
   const selectedAccount = eligibleAccounts.find((account) => account.id === accountId) ?? null;
-  const dueDate = parseYmd(subscription.nextDueDate);
+  const payingDueDate = oldestUnpaidDueDate(subscription.nextDueDate, occurrences);
+  const dueDate = parseYmd(payingDueDate);
   const nextDueDate = parseYmd(
     computeNextRecurringDate(
-      subscription.nextDueDate,
+      payingDueDate,
       subscription.frequency,
       subscription.intervalCount,
       subscription.dayOfMonth,
@@ -103,7 +108,7 @@ export function MarkSubscriptionPaidSheet({
       setError("Escribe cuánto pagaste.");
       return;
     }
-    return onConfirm({ paidDate, amount: parsed, accountId });
+    return onConfirm({ paidDate, amount: parsed, accountId, dueDate: payingDueDate });
   }
 
   return (

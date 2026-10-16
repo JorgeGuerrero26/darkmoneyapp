@@ -56,6 +56,7 @@ import {
   useMarkSubscriptionPaidMutation,
   useUpdateSubscriptionMutation,
 } from "../services/queries/subscriptions-recurring-income";
+import { useSubscriptionOccurrencesQuery } from "../services/queries/subscription-occurrences";
 import { useToast } from "../hooks/useToast";
 import { useNotificationReason } from "../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
@@ -81,6 +82,7 @@ function SubscriptionsScreen() {
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [markPaidTarget, setMarkPaidTarget] = useState<SubscriptionSummary | null>(null);
+  const { data: markPaidOccurrences } = useSubscriptionOccurrencesQuery(markPaidTarget?.id ?? null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Las canceladas son historial: llegan plegadas para no competir con lo que pide acción.
@@ -269,7 +271,7 @@ function SubscriptionsScreen() {
   }, [showToast, updateMutation]);
 
   const handleMarkPaid = useCallback(
-    async (args: { paidDate: string; amount: number; accountId: number }) => {
+    async (args: { paidDate: string; amount: number; accountId: number; dueDate: string }) => {
       if (!markPaidTarget) return;
       try {
         const { nextDueDate } = await markPaidMutation.mutateAsync({
@@ -277,6 +279,7 @@ function SubscriptionsScreen() {
           paidDate: args.paidDate,
           amount: args.amount,
           accountId: args.accountId,
+          dueDate: args.dueDate,
         });
         setMarkPaidTarget(null);
         showToast("Pago registrado", "success", `${markPaidTarget.name} · próximo cobro ${formatSubscriptionYmd(nextDueDate)}`);
@@ -589,6 +592,7 @@ function SubscriptionsScreen() {
             visible={Boolean(markPaidTarget)}
             subscription={markPaidTarget}
             accounts={snapshot?.accounts ?? []}
+            occurrences={markPaidOccurrences}
             isPending={markPaidMutation.isPending}
             onClose={() => setMarkPaidTarget(null)}
             onConfirm={handleMarkPaid}
