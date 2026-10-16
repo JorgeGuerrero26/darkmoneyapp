@@ -259,3 +259,33 @@ describe("guardado y lectura", () => {
  * se pactó con otra persona— y los S/ 20 de más bajan a febrero, que era la cuota calculada y ya
  * existía para absorber el saldo: pasa de 50.00 a 30.00.
  */
+
+describe("calendario efectivo en la hoja del plan (deuda real)", () => {
+  const { effectivePlanSchedule, planTotal } = require("../payment-plan");
+  const plan = {
+    mode: "custom" as const,
+    tail: 610,
+    firstDueDate: "2026-09-15",
+    agreed: [580, 600, 750, 610, 660, 540, 540].map((amount, i) => ({ amount, dueDate: `${i < 4 ? 2026 : 2027}-${String(((8 + i) % 12) + 1).padStart(2, "0")}-15` })),
+  };
+  const payments = [
+    { amount: 3155, date: "2026-08-20" }, // antes de que empezara el plan
+    { amount: 580, date: "2026-10-01" },
+  ];
+
+  it("reparte la deuda de hoy menos lo cobrado antes del plan, no el monto de apertura", () => {
+    const { payments: schedule, basis } = effectivePlanSchedule({ plan, context: { openingPrincipal: 7175, currentDebt: 25679, payments }, startDate: "2026-03-15" });
+    expect(basis).toBe(22524);
+    expect(planTotal(schedule)).toBe(22524);
+    // Antes (solo apertura) terminaba en ago 2027; con la deuda real llega mucho más lejos.
+    expect(schedule[schedule.length - 1].dueDate > "2027-08-15").toBe(true);
+    // Las cuotas acordadas no se tocan.
+    expect(schedule.slice(0, 7).map((p: { amount: number }) => p.amount)).toEqual([580, 600, 750, 610, 660, 540, 540]);
+  });
+
+  it("sin aumentos coincide con el calendario de siempre", () => {
+    const { payments: schedule, basis } = effectivePlanSchedule({ plan, context: { openingPrincipal: 7175, currentDebt: 7175, payments: [] }, startDate: "2026-03-15" });
+    expect(basis).toBe(7175);
+    expect(planTotal(schedule)).toBe(7175);
+  });
+});

@@ -458,6 +458,52 @@ export function coverPlan({
   });
 }
 
+/** Lo que se sabe de la deuda real cuando se edita un plan (la hoja del plan lo usa para mostrar el calendario efectivo). */
+export type PlanDebtContext = {
+  /** El monto de apertura (con el que se pactó el plan). */
+  openingPrincipal: number;
+  /** Lo que se debe hoy: apertura + aumentos − reducciones. */
+  currentDebt: number;
+  payments: readonly ActualPayment[];
+};
+
+/**
+ * El calendario que de verdad rige hoy y la deuda que reparte.
+ *
+ * La hoja del plan enseñaba el calendario sobre el monto de APERTURA (7.175), mientras que el detalle de la deuda, el
+ * flujo y el registro de cobros ya lo expanden sobre la deuda de hoy (25.679 menos lo cobrado antes de que empezara
+ * el plan). Resultado: la hoja decía "hasta Ago 2027, 7.175" y el resto de la app, otra cosa. Esta función es la
+ * misma cuenta que `coverPlan`, para que la hoja diga lo mismo que el resto.
+ *
+ * `basis` = lo que reparte el calendario (deuda de hoy − lo cobrado antes del mes del primer pago).
+ */
+export function effectivePlanSchedule({
+  plan,
+  context,
+  startDate,
+}: {
+  plan: PaymentPlan;
+  context: PlanDebtContext;
+  startDate: string;
+}): { payments: ScheduledPayment[]; basis: number } {
+  const planMonth = monthKey(anchorFor(plan, startDate));
+  const paidBefore = context.payments
+    .filter((payment) => monthKey(payment.date) < planMonth)
+    .reduce((sum, payment) => sum + toCents(payment.amount), 0);
+  const basis = Math.max(0, fromCents(toCents(context.currentDebt) - paidBefore));
+  const rows = coverPlan({
+    plan,
+    openingPrincipal: context.openingPrincipal,
+    currentDebt: context.currentDebt,
+    startDate,
+    payments: context.payments,
+  });
+  return {
+    basis,
+    payments: rows.map(({ seq, dueDate, amount, source }) => ({ seq, dueDate, amount, source })),
+  };
+}
+
 /**
  * La cuota a la que va el cobro que se está registrando: la primera que no está cerrada.
  *

@@ -19,6 +19,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Cuando registras un movimiento detectado dividido en varias categorías, ahora se guarda completo o no se guarda nada: ya no puede quedar a medias si se corta el internet.",
       "En Suscripciones, el total mensual ya tiene en cuenta cada cuántos días o meses se cobra, y solo suma las que están en la misma moneda. Y una suscripción sin cobros pendientes te dice cuándo toca el próximo.",
       "Con el modo sin conexión encendido, ya puedes registrar sin internet el pago de una suscripción: el próximo cobro avanza y el pago se anota al instante, y todo se envía junto cuando vuelve la conexión.",
+      "Al editar el plan de pagos de un crédito o deuda que ya creció (por ventas nuevas o aumentos), la hoja ahora muestra el calendario completo sobre lo que se debe hoy, igual que el resto de la app. Antes solo repartía el monto con el que se abrió y parecía que el plan terminaba con la deuda sin cubrir.",
     ],
   },
   {

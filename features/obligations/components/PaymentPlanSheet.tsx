@@ -13,13 +13,15 @@ import { SegmentedControl } from "../../../components/ui/SegmentedControl";
 import { TextField } from "../../../components/ui/TextField";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
-import { addMonthsIso, defaultFirstDueDate, expandPaymentPlan, isPlanComplete, monthKey, planDifference, planTotal, type PaymentPlan } from "../lib/payment-plan";
+import { addMonthsIso, defaultFirstDueDate, effectivePlanSchedule, expandPaymentPlan, isPlanComplete, monthKey, planDifference, planTotal, type PaymentPlan, type PlanDebtContext } from "../lib/payment-plan";
 
 type Props = {
   visible: boolean;
   /** El plan que hay ahora mismo. `null` = ninguno. */
   plan: PaymentPlan | null;
   principal: number;
+  /** Deuda real (solo al editar una obligación existente): el calendario se muestra sobre lo que se debe hoy. */
+  debtContext?: PlanDebtContext;
   currencyCode: string;
   startDate: string;
   onClose: () => void;
@@ -76,7 +78,8 @@ const newDraft = (amount = "", dueDate?: string): AgreedDraft => ({
 export function PaymentPlanSheet({
   visible,
   plan,
-  principal,
+  principal: openingInput,
+  debtContext,
   currencyCode,
   startDate,
   onClose,
@@ -133,9 +136,15 @@ export function PaymentPlanSheet({
     };
   }, [agreed, count, firstDueDate, mode, tail]);
 
+  // Con la deuda real conocida, el calendario es el que rige hoy (el mismo del detalle de la deuda y de la proyección).
+  const effective = useMemo(
+    () => (draftPlan && debtContext ? effectivePlanSchedule({ plan: draftPlan, context: debtContext, startDate }) : null),
+    [debtContext, draftPlan, startDate],
+  );
+  const principal = effective ? effective.basis : openingInput;
   const payments = useMemo(
-    () => (draftPlan ? expandPaymentPlan({ plan: draftPlan, principal, startDate }) : []),
-    [draftPlan, principal, startDate],
+    () => (effective ? effective.payments : draftPlan ? expandPaymentPlan({ plan: draftPlan, principal: openingInput, startDate }) : []),
+    [draftPlan, effective, openingInput, startDate],
   );
   const calculated = payments.filter((payment) => payment.source === "calculated");
   const complete = isPlanComplete(principal, payments);

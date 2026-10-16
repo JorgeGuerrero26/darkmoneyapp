@@ -30,7 +30,7 @@ import { FormOptionRow } from "../ui/FormOptionRow";
 import { ObligationCreatedSheet } from "../../features/obligations/components/ObligationCreatedSheet";
 import { ObligationDetailsSheet } from "../../features/obligations/components/ObligationDetailsSheet";
 import { PaymentPlanSheet } from "../../features/obligations/components/PaymentPlanSheet";
-import { describePlan, expandPaymentPlan, normalizePaymentPlan, parsePaymentPlan, type PaymentPlan } from "../../features/obligations/lib/payment-plan";
+import { describePlan, effectivePlanSchedule, expandPaymentPlan, normalizePaymentPlan, parsePaymentPlan, type PaymentPlan } from "../../features/obligations/lib/payment-plan";
 import { currencyPluralTitle } from "../../constants/currencies";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
@@ -586,9 +586,26 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const impactLine = selectedOrigin?.description ?? "No mueve dinero de tus cuentas al crearla.";
 
   const principalNumber = Number(principalAmount) || 0;
+  /**
+   * Al editar una obligación que ya creció (ventas nuevas, aumentos), el plan se muestra sobre la deuda de hoy y no sobre
+   * el monto de apertura. Si el monto de apertura se cambia aquí, la deuda de hoy se corre lo mismo.
+   */
+  const planDebtContext = useMemo(() => {
+    if (!editObligation) return undefined;
+    const current = editObligation.currentPrincipalAmount && editObligation.currentPrincipalAmount > 0
+      ? editObligation.currentPrincipalAmount
+      : editObligation.principalAmount;
+    return {
+      openingPrincipal: principalNumber,
+      currentDebt: Math.max(0, current + (principalNumber - editObligation.principalAmount)),
+      payments: editObligation.events
+        .filter((event) => event.eventType === "payment")
+        .map((event) => ({ amount: event.amount, date: event.eventDate })),
+    };
+  }, [editObligation, principalNumber]);
   const planLabel = describePlan({
     plan: paymentPlan,
-    principal: principalNumber,
+    principal: paymentPlan && planDebtContext ? effectivePlanSchedule({ plan: paymentPlan, context: planDebtContext, startDate }).basis : principalNumber,
     startDate,
     formatAmount: (amount) => formatCurrency(amount, currencyCode),
   });
@@ -699,6 +716,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               visible={planOpen}
               plan={paymentPlan}
               principal={principalNumber}
+              debtContext={planDebtContext}
               currencyCode={currencyCode}
               startDate={startDate}
               onClose={() => setPlanOpen(false)}
@@ -707,7 +725,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 // Las dos columnas viejas se siguen escribiendo mientras haya obligaciones que
                 // las lean: el número de cuotas sale del plan, y la cuota de dividir el monto.
                 const payments = plan
-                  ? expandPaymentPlan({ plan, principal: principalNumber, startDate })
+                  ? planDebtContext
+                    ? effectivePlanSchedule({ plan, context: planDebtContext, startDate }).payments
+                    : expandPaymentPlan({ plan, principal: principalNumber, startDate })
                   : [];
                 setInstallmentCount(payments.length > 0 ? String(payments.length) : "");
                 setInstallmentAmount(payments.length > 0 ? String(payments[0].amount) : "");
