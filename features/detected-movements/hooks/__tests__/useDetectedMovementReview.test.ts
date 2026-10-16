@@ -63,7 +63,13 @@ jest.mock("../../../../services/queries/workspace-data", () => ({
   useDashboardAnalyticsQuery: () => ({ data: null }),
   useUserEntitlementQuery: () => ({ data: { proAccessEnabled: mockProAccess } }),
 }));
-jest.mock("../../../../services/queries/email-detection-access", () => ({ useEmailDetectionProAccessQuery: () => ({ data: true }), assertEmailDetectionProAccess: jest.fn().mockResolvedValue(true) }));
+let mockProCheck: () => Promise<unknown> = () => Promise.resolve(true);
+let mockEmailAccessData: boolean | undefined = true;
+jest.mock("../../../../services/queries/email-detection-access", () => ({
+  ProAccessUnverifiedError: class ProAccessUnverifiedError extends Error {},
+  useEmailDetectionProAccessQuery: () => ({ data: mockEmailAccessData }),
+  assertEmailDetectionProAccess: () => mockProCheck(),
+}));
 jest.mock("../../../../services/queries/movement-patterns", () => ({ useMovementPatternsQuery: () => ({ data: null }) }));
 jest.mock("../../../../services/queries/spend-types", () => ({ useSpendTypesQuery: () => ({ data: [] }) }));
 jest.mock("../../../../hooks/useMovementCategoryAiSuggestion", () => ({ useMovementCategoryAiSuggestion: () => ({ recommendation: null }) }));
@@ -364,6 +370,37 @@ it("si la división falla no se crea ninguna parte ni se cierra la revisión", a
   expect(mockCreate).not.toHaveBeenCalled();
   expect(mockResolved).not.toHaveBeenCalled();
   expect(current.saveError).toBeTruthy();
+});
+
+describe("detección por correo: la verificación de PRO al guardar", () => {
+  const { ProAccessUnverifiedError } = require("../../../../services/queries/email-detection-access");
+  const emailSuggestion = () => { mockSuggestion = { ...mockReceipt, packageName: "email:inbound" }; };
+  afterEach(() => { mockProCheck = () => Promise.resolve(true); mockEmailAccessData = true; });
+
+  it("si la verificación falla por red pero el acceso ya estaba confirmado, el guardado sigue (el servidor vuelve a exigir PRO)", async () => {
+    emailSuggestion();
+    await act(async () => renderer.update(React.createElement(Harness, { key: "email-ok" })));
+    mockProCheck = () => Promise.reject(new ProAccessUnverifiedError("No se pudo verificar tu acceso PRO. Reintenta."));
+    await act(async () => { await current.submit(); });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("si nunca se confirmó el acceso, un fallo de verificación bloquea el guardado", async () => {
+    emailSuggestion();
+    mockEmailAccessData = undefined;
+    await act(async () => renderer.update(React.createElement(Harness, { key: "email-unknown" })));
+    mockProCheck = () => Promise.reject(new ProAccessUnverifiedError("No se pudo verificar tu acceso PRO. Reintenta."));
+    await act(async () => { await current.submit(); });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("si el servidor dice que NO hay PRO, no se guarda aunque antes se hubiera confirmado", async () => {
+    emailSuggestion();
+    await act(async () => renderer.update(React.createElement(Harness, { key: "email-no" })));
+    mockProCheck = () => Promise.reject(new Error("La detección por correo requiere DarkMoney PRO activo."));
+    await act(async () => { await current.submit(); });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
 });
 
 it("Deshacer usa una sola mutación con el registro original tras cambiar de espacio", async () => {

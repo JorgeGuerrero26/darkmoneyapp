@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 
+/** La verificación no pudo completarse (red, servidor): NO es lo mismo que «no tienes PRO». */
+export class ProAccessUnverifiedError extends Error {}
+
 /** El servidor resuelve el plan vigente; no usa overrides visuales ni el modo del dashboard. */
 export async function fetchEmailDetectionProAccess(): Promise<boolean> {
   if (!supabase) throw new Error("Sesión no disponible.");
   const { data, error } = await supabase.rpc("has_email_detection_pro_access");
-  if (error) throw new Error("No se pudo verificar tu acceso PRO. Reintenta.");
+  if (error) throw new ProAccessUnverifiedError("No se pudo verificar tu acceso PRO. Reintenta.");
   return data === true;
 }
 

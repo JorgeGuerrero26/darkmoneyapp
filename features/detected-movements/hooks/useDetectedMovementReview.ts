@@ -18,7 +18,7 @@ import { useMovementPatternsQuery } from "../../../services/queries/movement-pat
 import { useDetectionLearningQuery } from "../../../services/queries/detection-learning";
 import { learningObject, proposeFromPersonalHistory, receiptAccountHints } from "../lib/personal-learning";
 import { EMAIL_SOURCE_PACKAGE } from "../../../services/queries/inbound-email-alias";
-import { assertEmailDetectionProAccess, useEmailDetectionProAccessQuery } from "../../../services/queries/email-detection-access";
+import { assertEmailDetectionProAccess, ProAccessUnverifiedError, useEmailDetectionProAccessQuery } from "../../../services/queries/email-detection-access";
 import { normalizeAnalyticsText } from "../../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../../hooks/useMovementCategoryAiSuggestion";
 import { useMovementDescriptionCleanup } from "../../../hooks/useMovementDescriptionCleanup";
@@ -637,7 +637,13 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     setIsSaving(true); setSaveError(null); setDuplicateCandidate(null);
     try {
       if (suggestion.packageName === EMAIL_SOURCE_PACKAGE) {
-        await assertEmailDetectionProAccess();
+        try {
+          await assertEmailDetectionProAccess();
+        } catch (error) {
+          // Con poca señal la verificación puede fallar aunque el plan esté bien. Si ya se había confirmado el acceso se sigue:
+          // el servidor vuelve a exigir PRO al registrar y rechazaría el guardado si de verdad no lo hubiera.
+          if (!(error instanceof ProAccessUnverifiedError && emailProAccess.data === true)) throw error;
+        }
       }
       await submitInner(force);
     } catch (error) {
