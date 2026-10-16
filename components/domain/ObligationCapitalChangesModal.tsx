@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import type { ObligationEventSummary } from "../../types/domain";
 import { parseDisplayDate } from "../../lib/date";
 import { firstMeaningfulText } from "../../lib/text-utils";
+import { AnalyticsRow } from "../ui/AnalyticsRow";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { BottomSheet } from "../ui/BottomSheet";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { SegmentedControl } from "../ui/SegmentedControl";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 
 type CapitalChangeTab = "increase" | "decrease";
 
@@ -21,6 +23,11 @@ type Props = {
   initialTab?: CapitalChangeTab;
 };
 
+/**
+ * Cambios de capital de una obligación, con el mismo lenguaje que las demás hojas de análisis: un control segmentado,
+ * una cifra principal sin tarjeta y filas separadas por una línea fina (antes eran tarjetas con borde y cápsulas de
+ * color, un estilo que ya no usa el resto de la app).
+ */
 export function ObligationCapitalChangesModal({
   visible,
   onClose,
@@ -36,200 +43,76 @@ export function ObligationCapitalChangesModal({
     setActiveTab(initialTab);
   }, [initialTab, visible]);
 
-  const currentItems = activeTab === "increase" ? increases : decreases;
+  const isIncrease = activeTab === "increase";
+  const currentItems = isIncrease ? increases : decreases;
   const currentTotal = useMemo(
     () => currentItems.reduce((sum, item) => sum + item.amount, 0),
     [currentItems],
   );
+  const sign = isIncrease ? "+" : "-";
 
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      title="Cambios de capital"
-      snapHeight={0.72}
-    >
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryEyebrow}>
-          {activeTab === "increase" ? "Aumentos registrados" : "Reducciones registradas"}
-        </Text>
-        <Text style={styles.summaryValue}>
-          {activeTab === "increase" ? "+" : "-"}
+    <BottomSheet visible={visible} onClose={onClose} title="Cambios de capital" snapHeight={0.72}>
+      <SegmentedControl<CapitalChangeTab>
+        options={[
+          { value: "increase", label: `Aumentos (${increases.length})` },
+          { value: "decrease", label: `Reducciones (${decreases.length})` },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
+
+      <View style={styles.hero}>
+        <Text style={styles.kicker}>{isIncrease ? "AUMENTOS REGISTRADOS" : "REDUCCIONES REGISTRADAS"}</Text>
+        <Text
+          style={[styles.amount, { color: isIncrease ? COLORS.income : COLORS.danger }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          {sign}
           {formatCurrency(currentTotal, currencyCode)}
         </Text>
-        <Text style={styles.summaryMeta}>
+        <Text style={styles.caption}>
           {currentItems.length} {currentItems.length === 1 ? "evento" : "eventos"} en total
         </Text>
       </View>
 
-      <View style={styles.tabsRow}>
-        <TouchableOpacity
-          style={[styles.tabChip, activeTab === "increase" && styles.tabChipActive]}
-          onPress={() => setActiveTab("increase")}
-          activeOpacity={0.86}
-        >
-          <Text style={[styles.tabChipText, activeTab === "increase" && styles.tabChipTextActive]}>
-            Aumentos ({increases.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabChip, activeTab === "decrease" && styles.tabChipActive]}
-          onPress={() => setActiveTab("decrease")}
-          activeOpacity={0.86}
-        >
-          <Text style={[styles.tabChipText, activeTab === "decrease" && styles.tabChipTextActive]}>
-            Reducciones ({decreases.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       {currentItems.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>
-            {activeTab === "increase"
-              ? "Todavia no hay aumentos de capital registrados."
-              : "Todavia no hay reducciones de capital registradas."}
-          </Text>
-        </View>
+        <Text style={styles.empty}>
+          {isIncrease
+            ? "Todavía no hay aumentos de capital registrados."
+            : "Todavía no hay reducciones de capital registradas."}
+        </Text>
       ) : (
-        currentItems.map((event) => {
-          const detail =
-            firstMeaningfulText(event.description, event.reason, event.notes) ?? "Sin motivo registrado";
-          return (
-            <View key={event.id} style={styles.eventCard}>
-              <View style={styles.eventHeader}>
-                <View style={styles.eventHeaderInfo}>
-                  <Text style={styles.eventDate}>
-                    {format(parseDisplayDate(event.eventDate), "d MMM yyyy", { locale: es })}
-                  </Text>
-                  {event.installmentNo ? (
-                    <Text style={styles.eventInstallment}>Cuota {event.installmentNo}</Text>
-                  ) : null}
-                </View>
-                <Text
-                  style={[
-                    styles.eventAmount,
-                    activeTab === "increase" ? styles.eventAmountPositive : styles.eventAmountNegative,
-                  ]}
-                >
-                  {activeTab === "increase" ? "+" : "-"}
-                  {formatCurrency(event.amount, currencyCode)}
-                </Text>
-              </View>
-              <Text style={styles.eventReason}>{detail}</Text>
-            </View>
-          );
-        })
+        <View style={styles.rows}>
+          {currentItems.map((event, index) => {
+            const reason = firstMeaningfulText(event.description, event.reason, event.notes) ?? "Sin motivo registrado";
+            return (
+              <AnalyticsRow
+                key={event.id}
+                label={format(parseDisplayDate(event.eventDate), "d MMM yyyy", { locale: es })}
+                detail={event.installmentNo ? `${reason} · Cuota ${event.installmentNo}` : reason}
+                value={`${sign}${formatCurrency(event.amount, currencyCode)}`}
+                valueColor={isIncrease ? COLORS.income : COLORS.danger}
+                last={index === currentItems.length - 1}
+              />
+            );
+          })}
+        </View>
       )}
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  summaryCard: {
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    padding: SPACING.md,
-    gap: 4,
+  hero: {
+    paddingVertical: SPACING.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
-  summaryEyebrow: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  summaryValue: {
-    fontSize: FONT_SIZE.xl,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.heading,
-  },
-  summaryMeta: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textDisabled,
-    fontFamily: FONT_FAMILY.body,
-  },
-  tabsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-  },
-  tabChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 7,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  tabChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  tabChipText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  tabChipTextActive: {
-    color: "#FFFFFF",
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  emptyCard: {
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    padding: SPACING.md,
-  },
-  emptyText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-    lineHeight: 20,
-  },
-  eventCard: {
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: "rgba(244,241,236,0.04)",
-    padding: SPACING.md,
-    gap: SPACING.xs,
-  },
-  eventHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  eventHeaderInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  eventDate: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  eventInstallment: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  eventAmount: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  eventAmountPositive: {
-    color: COLORS.income,
-  },
-  eventAmountNegative: {
-    color: COLORS.danger,
-  },
-  eventReason: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-    lineHeight: 20,
-  },
+  kicker: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, letterSpacing: 1, color: COLORS.storm },
+  amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.display, marginTop: SPACING.sm },
+  caption: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, marginTop: SPACING.xs },
+  rows: { paddingTop: SPACING.sm },
+  empty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 20, paddingTop: SPACING.md },
 });
