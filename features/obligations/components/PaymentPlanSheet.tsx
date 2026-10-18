@@ -235,7 +235,26 @@ export function PaymentPlanSheet({
   return (
     <FormFeedbackProvider visible={visible} fields={validationFields} onSubmit={savePlan}>
     <>
-    <InlineFormSheet visible={visible} title="Plan de pagos" onBack={onClose} footer={<FormSubmitBar label="Guardar plan" onSubmit={savePlan} />}>
+    <InlineFormSheet
+      visible={visible}
+      title="Plan de pagos"
+      onBack={onClose}
+      footer={<FormSubmitBar label="Guardar plan" onSubmit={savePlan} />}
+      overlay={payDayOpen ? (
+        <SearchableSelectSheet<string>
+          inline
+          visible
+          title="Día de cobro"
+          options={payDayOptions}
+          value={payDay == null ? "start" : String(payDay)}
+          onChange={(value) => {
+            setPayDay(value === "start" ? null : value === "last" ? "last" : Number(value));
+            setPayDayOpen(false);
+          }}
+          onClose={() => setPayDayOpen(false)}
+        />
+      ) : null}
+    >
       <SegmentedControl
         options={[
           { value: "equal", label: "Cuotas iguales" },
@@ -398,21 +417,6 @@ export function PaymentPlanSheet({
 
       </View>
     </InlineFormSheet>
-
-    {payDayOpen ? (
-      <SearchableSelectSheet<string>
-        inline
-        visible
-        title="Día de cobro"
-        options={payDayOptions}
-        value={payDay == null ? "start" : String(payDay)}
-        onChange={(value) => {
-          setPayDay(value === "start" ? null : value === "last" ? "last" : Number(value));
-          setPayDayOpen(false);
-        }}
-        onClose={() => setPayDayOpen(false)}
-      />
-    ) : null}
 
     {/* Hermana, no hija: se pinta encima del plan y lo deja intacto detrás. */}
     {openRow ? (
