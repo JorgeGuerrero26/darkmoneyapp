@@ -115,7 +115,7 @@ const LEGACY_ORIGIN_LABELS: Record<string, string> = { manual: "Manual" };
  */
 function getAutoOpeningImpact(
   direction: "receivable" | "payable",
-  originType: ObligationFormInput["originType"],
+  originType: ObligationFormInput["originType"] | "",
 ): "none" | "inflow" | "outflow" {
   const options = direction === "receivable" ? RECEIVABLE_ORIGINS : PAYABLE_ORIGINS;
   return options.find((option) => option.value === originType)?.impact ?? "none";
@@ -160,7 +160,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [openingAccountOpen, setOpeningAccountOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [direction, setDirection] = useState<"receivable" | "payable">("payable");
-  const [originType, setOriginType] = useState<ObligationFormInput["originType"]>("manual");
+  // Sin elegir = vacío (no hay un origen «Manual» que ofrecer): se pide antes de guardar.
+  const [originType, setOriginType] = useState<ObligationFormInput["originType"] | "">("");
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
   const [principalAmount, setPrincipalAmount] = useState("");
   const [startDate, setStartDate] = useState(today);
@@ -187,7 +188,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
   const [titleError, setTitleError] = useState("");
   const [, setAmountError] = useState("");
-  const [, setOriginError] = useState("");
+  const [originError, setOriginError] = useState("");
   const [counterpartyError, setCounterpartyError] = useState("");
   const [, setSettlementAccountError] = useState("");
   const [, setCurrencyError] = useState("");
@@ -245,7 +246,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
     } else {
       setTitle("");
       setDirection("payable");
-      setOriginType("manual");
+      setOriginType("");
       setCurrencyCode(defaultCurrency);
       setPrincipalAmount("");
       setStartDate(today);
@@ -389,6 +390,12 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       if (!firstValidationMessage) firstValidationMessage = message;
       valid = false;
     }
+    if (!isEditing && !originType) {
+      const message = "Elige cómo nació: presté dinero, vendí a cuotas…";
+      setOriginError(message);
+      if (!firstValidationMessage) firstValidationMessage = message;
+      valid = false;
+    }
     if (!isEditing && !currencyCode.trim()) {
       const message = "Selecciona una moneda";
       setCurrencyError(message);
@@ -482,7 +489,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           clientDedupeKey: submitDedupeKeyRef.current,
           title: title.trim(),
           direction,
-          originType,
+          originType: originType as ObligationFormInput["originType"], // ya validado: no está vacío al crear
           openingImpact: resolvedImpact,
           openingAccountId: resolvedImpact !== "none" ? openingAccountId : null,
           currencyCode,
@@ -858,7 +865,12 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               <TouchableOpacity
                 key={opt.value}
                 style={[styles.directionBtn, isSelected && styles.directionBtnSelected]}
-                onPress={() => setDirection(opt.value as "receivable" | "payable")}
+                onPress={() => {
+                  const next = opt.value as "receivable" | "payable";
+                  setDirection(next);
+                  const allowed = (next === "receivable" ? RECEIVABLE_ORIGINS : PAYABLE_ORIGINS).some((origin) => origin.value === originType);
+                  if (!allowed) setOriginType("");
+                }}
                 activeOpacity={0.8}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
@@ -890,7 +902,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Contacto y origen, como filas con su valor a la derecha. */}
       <View onLayout={(event) => { counterpartySectionYRef.current = event.nativeEvent.layout.y; }}>
         {counterpartiesSorted.length > 0 ? (
-          <View style={[styles.group, counterpartyError ? styles.sectionErrorWrap : null]}>
+          <View style={[styles.group, counterpartyError || originError ? styles.sectionErrorWrap : null]}>
             <FormOptionRow fieldId="counterpartyId"
               grouped
               label="Contacto"
@@ -904,6 +916,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 grouped
                 label="Cómo nació"
                 value={selectedOriginLabel}
+                placeholder="Elegir cómo nació"
                 onPress={() => setOriginOpen(true)}
                 last={!showCurrencyRow}
               />
