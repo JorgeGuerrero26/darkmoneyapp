@@ -16,7 +16,8 @@ import { computeNextRecurringDate } from "../../../lib/subscription-helpers";
 import { sortByName } from "../../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import type { AccountSummary, SubscriptionSummary } from "../../../types/domain";
-import { oldestUnpaidDueDate } from "../lib/oldestUnpaidDueDate";
+import { defaultPaymentDate, oldestUnpaidDueDate } from "../lib/oldestUnpaidDueDate";
+import { todayPeru } from "../../../lib/date";
 
 type Props = {
   visible: boolean;
@@ -70,7 +71,8 @@ export function MarkSubscriptionPaidSheet({
 
   useEffect(() => {
     if (!visible || !subscription) return;
-    setPaidDate(oldestUnpaidDueDate(subscription.nextDueDate, occurrences)); // la fecha programada gana a hoy: es la del cobro
+    // Cobro que aún no vence: su fecha. Cobro vencido: hoy (cuándo salió el dinero), para que el movimiento se vea en el mes en que se paga.
+    setPaidDate(defaultPaymentDate(oldestUnpaidDueDate(subscription.nextDueDate, occurrences), todayPeru()));
     setAmount(String(subscription.amount));
     // La cuenta con la que se paga ya está guardada en la suscripción. Sin esto, el único dato
     // obligatorio de la hoja era el único que llegaba vacío.

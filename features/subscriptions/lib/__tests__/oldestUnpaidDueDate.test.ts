@@ -16,3 +16,15 @@ describe("qué cobro propone la hoja de pago", () => {
     expect(oldestUnpaidDueDate("2026-09-04", [occ("2026-10-04", "scheduled")])).toBe("2026-09-04");
   });
 });
+
+import { defaultPaymentDate } from "../oldestUnpaidDueDate";
+
+describe("fecha que lleva el movimiento del pago", () => {
+  it("un cobro vencido se anota con la fecha de hoy", () => {
+    expect(defaultPaymentDate("2026-09-04", "2026-10-17")).toBe("2026-10-17");
+  });
+  it("un cobro que aún no vence (o vence hoy) conserva su fecha", () => {
+    expect(defaultPaymentDate("2026-10-20", "2026-10-17")).toBe("2026-10-20");
+    expect(defaultPaymentDate("2026-10-17", "2026-10-17")).toBe("2026-10-17");
+  });
+});
