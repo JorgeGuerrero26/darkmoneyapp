@@ -21,6 +21,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Con el modo sin conexión encendido, ya puedes registrar sin internet el pago de una suscripción: el próximo cobro avanza y el pago se anota al instante, y todo se envía junto cuando vuelve la conexión.",
       "Al editar el plan de pagos de un crédito o deuda que ya creció (por ventas nuevas o aumentos), la hoja ahora muestra el calendario completo sobre lo que se debe hoy, igual que el resto de la app. Antes solo repartía el monto con el que se abrió y parecía que el plan terminaba con la deuda sin cubrir.",
       "Al crear un crédito o deuda, «Cómo nació» ya no aparece como «Manual»: sale vacío con «Elegir cómo nació» y te pide elegir una opción antes de guardar.",
+      "Al crear un crédito o deuda hay un campo nuevo, «Total que te devolverán» (o «que devolverás»): se llena solo con el monto y, si lo cambias, la diferencia se registra como interés sin mover tus cuentas. Por ejemplo, prestas 1,500 y te devuelven 1,550: la deuda queda en 1,550 y el plan de pagos se arma sobre ese total.",
     ],
   },
   {

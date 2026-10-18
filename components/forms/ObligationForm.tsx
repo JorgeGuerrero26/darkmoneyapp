@@ -17,7 +17,7 @@ import { newClientDedupeKey } from "../../lib/idempotency";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
-import { useCreateObligationMutation, useUpdateObligationMutation, useCreateObligationShareInviteMutation, useUnlinkObligationShareMutation, useObligationActiveShareQuery, type ObligationFormInput } from "../../services/queries/obligations";
+import { useCreateObligationMutation, useCreatePrincipalAdjustmentMutation, useUpdateObligationMutation, useCreateObligationShareInviteMutation, useUnlinkObligationShareMutation, useObligationActiveShareQuery, type ObligationFormInput } from "../../services/queries/obligations";
 import { shouldResendShareInvite } from "../../lib/obligation-share";
 import { offlineRuntime } from "../../lib/offline/instance";
 import { waitUntilSent } from "../../lib/offline/ensure-sent";
@@ -30,6 +30,7 @@ import { FormOptionRow } from "../ui/FormOptionRow";
 import { ObligationCreatedSheet } from "../../features/obligations/components/ObligationCreatedSheet";
 import { ObligationDetailsSheet } from "../../features/obligations/components/ObligationDetailsSheet";
 import { PaymentPlanSheet } from "../../features/obligations/components/PaymentPlanSheet";
+import { agreedInterest } from "../../features/obligations/lib/agreedInterest";
 import { describePlan, effectivePlanSchedule, expandPaymentPlan, normalizePaymentPlan, parsePaymentPlan, type PaymentPlan } from "../../features/obligations/lib/payment-plan";
 import { currencyPluralTitle } from "../../constants/currencies";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
@@ -136,6 +137,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const { showToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateObligationMutation(activeWorkspaceId);
+  const interestMutation = useCreatePrincipalAdjustmentMutation(activeWorkspaceId);
   const updateMutation = useUpdateObligationMutation(activeWorkspaceId);
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
   const unlinkShareMutation = useUnlinkObligationShareMutation(activeWorkspaceId);
@@ -164,6 +166,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [originType, setOriginType] = useState<ObligationFormInput["originType"] | "">("");
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
   const [principalAmount, setPrincipalAmount] = useState("");
+  // «Total a devolver»: se llena solo con el monto hasta que la persona lo cambie; vaciarlo vuelve a seguir al monto.
+  const [returnTotal, setReturnTotal] = useState("");
+  const [returnTotalTouched, setReturnTotalTouched] = useState(false);
   const [startDate, setStartDate] = useState(today);
   const [dueDate, setDueDate] = useState("");
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
@@ -249,6 +254,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       setOriginType("");
       setCurrencyCode(defaultCurrency);
       setPrincipalAmount("");
+      setReturnTotal("");
+      setReturnTotalTouched(false);
       setStartDate(today);
       setDueDate("");
       setCounterpartyId(null);
@@ -390,6 +397,11 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       if (!firstValidationMessage) firstValidationMessage = message;
       valid = false;
     }
+    if (!isEditing && returnBelowPrincipal) {
+      const message = "El total a devolver no puede ser menor que el monto";
+      if (!firstValidationMessage) firstValidationMessage = message;
+      valid = false;
+    }
     if (!isEditing && !originType) {
       const message = "Elige cómo nació: presté dinero, vendí a cuotas…";
       setOriginError(message);
@@ -482,6 +494,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         }
         showToast(successMsg, "success");
       } else {
+        // El interés se registra como un movimiento de la deuda en el servidor: sin internet no se puede, y es mejor decirlo
+        // antes de guardar que dejar la deuda sin su interés.
+        if (interestAmount > 0 && offlineRuntime.getState().availability === "ready" && !offlineRuntime.getState().online) {
+          setSubmitError("Para registrar el interés necesitas internet. Conéctate, o deja el total igual al monto y súmalo después con «Ajustar monto».");
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+          return;
+        }
         const resolvedImpact = getAutoOpeningImpact(direction, originType);
         if (!submitDedupeKeyRef.current) submitDedupeKeyRef.current = newClientDedupeKey("obligation");
         const created = await createMutation.mutateAsync({
@@ -501,7 +520,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           installmentAmount: installmentAmount ? (parseFormAmountInput(installmentAmount) ?? Number.NaN) : null,
           installmentCount: installmentCount ? parseInt(installmentCount) : null,
           paymentPlan: normalizePaymentPlan(paymentPlan),
-          interestRate: interestRate ? (parseFormAmountInput(interestRate, "rate") ?? Number.NaN) : null,
+          // Si no escribió una tasa pero pactó un total mayor, se guarda el porcentaje que resulta (solo informativo).
+          interestRate: interestRate ? (parseFormAmountInput(interestRate, "rate") ?? Number.NaN) : interestPercent,
           description: description.trim() || null,
           notes: notes.trim() || null,
         });
@@ -513,13 +533,31 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           showToast(
             "Obligación guardada en tu teléfono",
             "success",
-            shareEmail.trim() ? "La invitación la podrás enviar cuando haya internet." : "Se enviará sola cuando haya internet.",
+            interestAmount > 0
+              ? `Se enviará sola cuando haya internet. El interés de ${formatCurrency(interestAmount, currencyCode)} agrégalo después con «Ajustar monto».`
+              : shareEmail.trim() ? "La invitación la podrás enviar cuando haya internet." : "Se enviará sola cuando haya internet.",
           );
           submitDedupeKeyRef.current = null;
           haptics.success();
           onSuccess?.();
           onClose();
           return;
+        }
+        let interestNote: string | null = null;
+        if (interestAmount > 0) {
+          try {
+            await interestMutation.mutateAsync({
+              obligationId: created.id,
+              direction,
+              mode: "increase",
+              amount: interestAmount,
+              eventDate: startDate,
+              reason: "Interés pactado",
+              createMovement: false,
+            });
+          } catch {
+            interestNote = `No se pudo registrar el interés de ${formatCurrency(interestAmount, currencyCode)}: agrégalo con «Ajustar monto».`;
+          }
         }
         if (shareEmail.trim() && activeWorkspaceId) {
           const r = await shareMutation.mutateAsync({
@@ -534,7 +572,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             r.emailSent ? `Invitación enviada a ${r.invitedEmail}` : "Invitación registrada",
           );
         } else {
-          showToast("Obligación creada", "success");
+          showToast("Obligación creada", interestNote ? "warning" : "success", interestNote ?? undefined);
         }
         submitDedupeKeyRef.current = null; // éxito → rotar la clave para el próximo registro
         haptics.success();
@@ -545,7 +583,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             id: created.id,
             title: title.trim(),
             summary: [
-              formatCurrency(principalNumber, currencyCode),
+              formatCurrency(planPrincipalNumber, currencyCode),
               planLabel ?? null,
             ].filter(Boolean).join(" · "),
             counterpartyName,
@@ -594,6 +632,17 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
   const principalNumber = Number(principalAmount) || 0;
   /**
+   * Lo que se devolverá en total (monto + interés pactado), solo al crear. Se llena solo con el monto: si no hay interés,
+   * no hay que tocarlo. La diferencia es el interés, que no sale de ninguna cuenta.
+   */
+  const returnTotalText = returnTotalTouched ? returnTotal : principalAmount;
+  const returnTotalNumber = parseFormAmountInput(returnTotalText) ?? 0;
+  const { interestAmount: createInterest, interestPercent, belowPrincipal } = agreedInterest({ principal: principalNumber, returnTotal: returnTotalNumber });
+  const returnBelowPrincipal = !isEditing && belowPrincipal;
+  const interestAmount = isEditing ? 0 : createInterest;
+  /** Sobre qué monto se arma el plan: al crear, el total a devolver (con el interés); al editar, la deuda real. */
+  const planPrincipalNumber = !isEditing && interestAmount > 0 ? returnTotalNumber : principalNumber;
+  /**
    * Al editar una obligación que ya creció (ventas nuevas, aumentos), el plan se muestra sobre la deuda de hoy y no sobre
    * el monto de apertura. Si el monto de apertura se cambia aquí, la deuda de hoy se corre lo mismo.
    */
@@ -612,16 +661,16 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   }, [editObligation, principalNumber]);
   const planLabel = describePlan({
     plan: paymentPlan,
-    principal: paymentPlan && planDebtContext ? effectivePlanSchedule({ plan: paymentPlan, context: planDebtContext, startDate }).basis : principalNumber,
+    principal: paymentPlan && planDebtContext ? effectivePlanSchedule({ plan: paymentPlan, context: planDebtContext, startDate }).basis : planPrincipalNumber,
     startDate,
     formatAmount: (amount) => formatCurrency(amount, currencyCode),
   });
   /** De dónde sale la cuota, para que la cifra no aparezca de la nada. */
   const planHint = (() => {
-    if (!paymentPlan || paymentPlan.mode !== "equal" || principalNumber <= 0) return null;
-    const payments = expandPaymentPlan({ plan: paymentPlan, principal: principalNumber, startDate });
+    if (!paymentPlan || paymentPlan.mode !== "equal" || planPrincipalNumber <= 0) return null;
+    const payments = expandPaymentPlan({ plan: paymentPlan, principal: planPrincipalNumber, startDate });
     if (payments.length === 0) return null;
-    return `${formatCurrency(principalNumber, currencyCode)} ÷ ${payments.length}. Se recalcula si cambias el monto.`;
+    return `${formatCurrency(planPrincipalNumber, currencyCode)} ÷ ${payments.length}. Se recalcula si cambias el monto.`;
   })();
 
   /**
@@ -722,7 +771,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             <PaymentPlanSheet
               visible={planOpen}
               plan={paymentPlan}
-              principal={principalNumber}
+              principal={planPrincipalNumber}
               debtContext={planDebtContext}
               currencyCode={currencyCode}
               startDate={startDate}
@@ -734,7 +783,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 const payments = plan
                   ? planDebtContext
                     ? effectivePlanSchedule({ plan, context: planDebtContext, startDate }).payments
-                    : expandPaymentPlan({ plan, principal: principalNumber, startDate })
+                    : expandPaymentPlan({ plan, principal: planPrincipalNumber, startDate })
                   : [];
                 setInstallmentCount(payments.length > 0 ? String(payments.length) : "");
                 setInstallmentAmount(payments.length > 0 ? String(payments[0].amount) : "");
@@ -896,6 +945,29 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             onChangeText={(t) => { setPrincipalAmount(t); setAmountError(""); }}
             currencyCode={currencyCode}
           />
+        </View>
+      ) : null}
+
+      {/* Total a devolver: sigue al monto hasta que se cambie; la diferencia es el interés pactado. */}
+      {!isEditing ? (
+        <View style={styles.field}>
+          <Text style={styles.sectionLabel}>{direction === "receivable" ? "Total que te devolverán" : "Total que devolverás"}</Text>
+          <CurrencyInput fieldId="returnTotal"
+            value={returnTotalText}
+            onChangeText={(t) => {
+              if (!t.trim()) { setReturnTotal(""); setReturnTotalTouched(false); return; }
+              setReturnTotal(t);
+              setReturnTotalTouched(true);
+            }}
+            currencyCode={currencyCode}
+          />
+          <Text style={[styles.shareHint, returnBelowPrincipal ? { color: COLORS.danger } : null]}>
+            {returnBelowPrincipal
+              ? "No puede ser menor que el monto."
+              : interestAmount > 0
+                ? `Incluye ${formatCurrency(interestAmount, currencyCode)} de interés (${interestPercent}%). Se suma al monto de la deuda sin mover tus cuentas.`
+                : "Se llena solo con el monto. Cámbialo si te van a devolver más."}
+          </Text>
         </View>
       ) : null}
 
