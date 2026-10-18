@@ -13,7 +13,8 @@ import { SegmentedControl } from "../../../components/ui/SegmentedControl";
 import { TextField } from "../../../components/ui/TextField";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
-import { addMonthsIso, defaultFirstDueDate, effectivePlanSchedule, expandPaymentPlan, isPlanComplete, monthKey, planDifference, planTotal, type PaymentPlan, type PlanDebtContext } from "../lib/payment-plan";
+import { addMonthsIso, defaultFirstDueDate, effectivePlanSchedule, expandPaymentPlan, isPlanComplete, monthKey, planDifference, planTotal, type PayDay, type PaymentPlan, type PlanDebtContext } from "../lib/payment-plan";
+import { SearchableSelectSheet } from "../../../components/ui/SearchableSelectSheet";
 
 type Props = {
   visible: boolean;
@@ -101,6 +102,9 @@ export function PaymentPlanSheet({
   );
   /** Qué selector de mes está abierto: "first" o la clave de una fila. */
   const [monthPickerFor, setMonthPickerFor] = useState<string | null>(null);
+  /** El día del mes en que cae cada cuota. Vacío = el día de la fecha de inicio de la deuda. */
+  const [payDay, setPayDay] = useState<PayDay | null>(plan?.payDay ?? null);
+  const [payDayOpen, setPayDayOpen] = useState(false);
 
   // Al abrir se parte de lo que ya hay guardado: la hoja edita el plan vigente, no uno en blanco.
   useEffect(() => {
@@ -114,6 +118,8 @@ export function PaymentPlanSheet({
     );
     setTail(plan?.mode === "custom" && plan.tail != null ? String(plan.tail) : "");
     setFirstDueDate(plan?.firstDueDate ?? defaultFirstDueDate(startDate));
+    setPayDay(plan?.payDay ?? null);
+    setPayDayOpen(false);
     setMonthPickerFor(null);
   }, [plan, startDate, visible]);
 
@@ -121,7 +127,7 @@ export function PaymentPlanSheet({
     if (mode === "equal") {
       const parsed = Number(count);
       return Number.isFinite(parsed) && parsed > 0
-        ? { mode: "equal", count: Math.floor(parsed), firstDueDate }
+        ? { mode: "equal", count: Math.floor(parsed), firstDueDate, ...(payDay != null ? { payDay } : {}) }
         : null;
     }
     const payments = agreed
@@ -133,8 +139,9 @@ export function PaymentPlanSheet({
       agreed: payments,
       tail: Number.isFinite(tailAmount) && tailAmount > 0 ? tailAmount : null,
       firstDueDate,
+      ...(payDay != null ? { payDay } : {}),
     };
-  }, [agreed, count, firstDueDate, mode, tail]);
+  }, [agreed, count, firstDueDate, mode, payDay, tail]);
 
   // Con la deuda real conocida, el calendario es el que rige hoy (el mismo del detalle de la deuda y de la proyección).
   const effective = useMemo(
@@ -151,6 +158,16 @@ export function PaymentPlanSheet({
   const difference = planDifference(principal, payments);
   const money = (amount: number) => formatCurrency(amount, currencyCode);
   const lastPayment = payments[payments.length - 1];
+  const startDay = (() => {
+    const parsedStart = parseISO(startDate);
+    return Number.isNaN(parsedStart.getTime()) ? 1 : parsedStart.getDate();
+  })();
+  const payDayLabel = payDay === "last" ? "Fin de mes" : payDay != null ? `Día ${payDay}` : `Día ${startDay} · como la fecha de inicio`;
+  const payDayOptions = [
+    { value: "start", label: `Día ${startDay} · el de la fecha de inicio` },
+    { value: "last", label: "Fin de mes" },
+    ...Array.from({ length: 31 }, (_, index) => ({ value: String(index + 1), label: `Día ${index + 1}` })),
+  ];
 
   /** El mes que le toca a una fila hoy: el suyo si lo eligió, o el que le da la posición. */
   const monthOf = (index: number) => agreed[index]?.dueDate ?? addMonthsIso(firstDueDate, index);
@@ -227,6 +244,20 @@ export function PaymentPlanSheet({
         value={mode}
         onChange={(next) => setMode(next)}
       />
+
+      {/* El día en que cae cada cuota. Sin elegir, es el día de la fecha de inicio de la deuda. */}
+      <View style={styles.group}>
+        <TouchableOpacity
+          style={styles.equalRow}
+          onPress={() => setPayDayOpen(true)}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+          accessibilityLabel={`Día de cobro: ${payDayLabel}`}
+        >
+          <Text style={styles.equalLabel}>Día de cobro</Text>
+          <Text style={styles.monthValue}>{payDayLabel}</Text>
+        </TouchableOpacity>
+      </View>
 
       {mode === "equal" ? (
         <View style={styles.group}>
@@ -367,6 +398,21 @@ export function PaymentPlanSheet({
 
       </View>
     </InlineFormSheet>
+
+    {payDayOpen ? (
+      <SearchableSelectSheet<string>
+        inline
+        visible
+        title="Día de cobro"
+        options={payDayOptions}
+        value={payDay == null ? "start" : String(payDay)}
+        onChange={(value) => {
+          setPayDay(value === "start" ? null : value === "last" ? "last" : Number(value));
+          setPayDayOpen(false);
+        }}
+        onClose={() => setPayDayOpen(false)}
+      />
+    ) : null}
 
     {/* Hermana, no hija: se pinta encima del plan y lo deja intacto detrás. */}
     {openRow ? (

@@ -1,4 +1,4 @@
-import { addMonths, differenceInCalendarMonths, format, parseISO } from "date-fns";
+import { addMonths, differenceInCalendarMonths, endOfMonth, format, parseISO, setDate } from "date-fns";
 
 /**
  * El plan de pagos de una obligación.
@@ -33,9 +33,25 @@ export type AgreedPayment = {
   dueDate?: string;
 };
 
+/**
+ * El día del mes en que cae cada cuota: un número (1 a 31) o `"last"` (fin de mes). Ausente = el día de la fecha de inicio de la
+ * deuda, que es como se calculaban siempre. Un día que el mes no tiene (31 en abril, 30 en febrero) cae en el último día del mes.
+ */
+export type PayDay = number | "last";
+
 export type PaymentPlan =
-  | { mode: "equal"; count: number; firstDueDate?: string }
-  | { mode: "custom"; agreed: readonly AgreedPayment[]; tail: number | null; firstDueDate?: string };
+  | { mode: "equal"; count: number; firstDueDate?: string; payDay?: PayDay }
+  | { mode: "custom"; agreed: readonly AgreedPayment[]; tail: number | null; firstDueDate?: string; payDay?: PayDay };
+
+/** Lleva una fecha al día de cobro del plan, dentro de su mismo mes. Sin día elegido no la toca. */
+export function applyPayDay(isoDate: string, payDay: PayDay | null | undefined): string {
+  if (payDay == null) return isoDate;
+  const date = parseISO(isoDate);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  const lastDay = endOfMonth(date).getDate();
+  const day = payDay === "last" ? lastDay : Math.min(Math.max(1, Math.floor(payDay)), lastDay);
+  return format(setDate(date, day), "yyyy-MM-dd");
+}
 
 export type ScheduledPayment = {
   /** 1, 2, 3… en el orden en que se pagan. */
@@ -129,7 +145,7 @@ export function expandPaymentPlan({
       assigned += cents;
       payments.push({
         seq: i + 1,
-        dueDate: addMonthsIso(anchor, i),
+        dueDate: applyPayDay(addMonthsIso(anchor, i), plan.payDay),
         amount: fromCents(cents),
         source: "calculated",
       });
@@ -154,7 +170,7 @@ export function expandPaymentPlan({
   plan.agreed.forEach((agreed, index) => {
     const cents = toCents(agreed.amount);
     if (cents <= 0) return;
-    const dueDate: string = placeAfterPrevious(agreed.dueDate ?? addMonthsIso(anchor, index));
+    const dueDate: string = applyPayDay(placeAfterPrevious(agreed.dueDate ?? addMonthsIso(anchor, index)), plan.payDay);
     previous = dueDate;
     payments.push({
       seq: payments.length + 1,
@@ -169,7 +185,7 @@ export function expandPaymentPlan({
   if (tailCents > 0) {
     while (remaining > 0 && payments.length < MAX_SCHEDULED) {
       const cents = Math.min(tailCents, remaining);
-      const dueDate: string = previous ? addMonthsIso(previous, 1) : addMonthsIso(anchor, payments.length);
+      const dueDate: string = applyPayDay(previous ? addMonthsIso(previous, 1) : addMonthsIso(anchor, payments.length), plan.payDay);
       previous = dueDate;
       payments.push({
         seq: payments.length + 1,
@@ -235,7 +251,10 @@ export function describePlan({
 /** El plan tal como se guarda, o `null` si no hay uno que valga la pena guardar. */
 export function normalizePaymentPlan(plan: PaymentPlan | null): PaymentPlan | null {
   if (!plan) return null;
-  const firstDueDate = plan.firstDueDate ? { firstDueDate: plan.firstDueDate } : {};
+  const firstDueDate = {
+    ...(plan.firstDueDate ? { firstDueDate: plan.firstDueDate } : {}),
+    ...(readPayDay(plan.payDay) != null ? { payDay: readPayDay(plan.payDay) } : {}),
+  };
   if (plan.mode === "equal") {
     return plan.count > 0 ? { mode: "equal", count: Math.floor(plan.count), ...firstDueDate } : null;
   }
@@ -252,7 +271,8 @@ export function parsePaymentPlan(raw: unknown): PaymentPlan | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
   const firstDueDate = readIsoDate(value.firstDueDate);
-  const anchor = firstDueDate ? { firstDueDate } : {};
+  const payDay = readPayDay(value.payDay);
+  const anchor = { ...(firstDueDate ? { firstDueDate } : {}), ...(payDay != null ? { payDay } : {}) };
   if (value.mode === "equal") {
     const count = Number(value.count);
     return Number.isFinite(count) && count > 0 ? { mode: "equal", count: Math.floor(count), ...anchor } : null;
@@ -268,6 +288,13 @@ export function parsePaymentPlan(raw: unknown): PaymentPlan | null {
     return { mode: "custom", agreed, tail, ...anchor };
   }
   return null;
+}
+
+/** Un día de cobro válido (1 a 31 o fin de mes), o nada. */
+function readPayDay(raw: unknown): PayDay | undefined {
+  if (raw === "last") return "last";
+  const day = Number(raw);
+  return raw != null && raw !== "" && Number.isInteger(day) && day >= 1 && day <= 31 ? day : undefined;
 }
 
 function readIsoDate(raw: unknown): string | undefined {

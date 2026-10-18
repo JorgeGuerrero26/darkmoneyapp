@@ -289,3 +289,45 @@ describe("calendario efectivo en la hoja del plan (deuda real)", () => {
     expect(planTotal(schedule)).toBe(7175);
   });
 });
+
+describe("día de cobro del plan", () => {
+  const { applyPayDay, expandPaymentPlan: expand, normalizePaymentPlan: normalize, parsePaymentPlan: parse } = require("../payment-plan");
+  const custom = {
+    mode: "custom" as const,
+    tail: 100,
+    firstDueDate: "2026-10-15",
+    agreed: [{ amount: 550, dueDate: "2026-10-15" }, { amount: 700, dueDate: "2026-11-15" }],
+  };
+
+  it("fin de mes: cada cuota cae en el último día de su mes, también en la cola", () => {
+    const rows = expand({ plan: { ...custom, payDay: "last" }, principal: 1450, startDate: "2026-03-15" });
+    expect(rows.map((r: { dueDate: string }) => r.dueDate)).toEqual(["2026-10-31", "2026-11-30", "2026-12-31", "2027-01-31", "2027-02-28"].slice(0, rows.length));
+    expect(rows[0].dueDate).toBe("2026-10-31");
+    expect(rows[1].dueDate).toBe("2026-11-30");
+  });
+
+  it("un día fijo que el mes no tiene cae en el último día del mes (31 en abril, 30 en febrero)", () => {
+    expect(applyPayDay("2027-04-10", 31)).toBe("2027-04-30");
+    expect(applyPayDay("2027-02-10", 30)).toBe("2027-02-28");
+    expect(applyPayDay("2027-03-10", 5)).toBe("2027-03-05");
+  });
+
+  it("cuotas iguales también respetan el día", () => {
+    const rows = expand({ plan: { mode: "equal", count: 3, firstDueDate: "2026-10-15", payDay: "last" }, principal: 300, startDate: "2026-03-15" });
+    expect(rows.map((r: { dueDate: string }) => r.dueDate)).toEqual(["2026-10-31", "2026-11-30", "2026-12-31"]);
+  });
+
+  it("sin día elegido todo sigue como antes (el día de la fecha de inicio)", () => {
+    const rows = expand({ plan: custom, principal: 1450, startDate: "2026-03-15" });
+    expect(rows[0].dueDate).toBe("2026-10-15");
+    expect(rows[1].dueDate).toBe("2026-11-15");
+  });
+
+  it("el día se guarda y se lee de la base; uno inválido se descarta", () => {
+    expect(normalize({ ...custom, payDay: "last" }).payDay).toBe("last");
+    expect(parse({ ...custom, payDay: 20 }).payDay).toBe(20);
+    expect(parse({ ...custom, payDay: 40 }).payDay).toBeUndefined();
+    expect(parse({ ...custom, payDay: "otro" }).payDay).toBeUndefined();
+    expect(parse(custom).payDay).toBeUndefined();
+  });
+});
