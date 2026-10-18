@@ -53,7 +53,7 @@ export function ObligationDetailFields({ obligation, directionLabel }: Props) {
       {obligation.interestRate != null ? (
         <DetailFieldRow label="Interés" value={`${obligation.interestRate}%`} />
       ) : null}
-      <DetailFieldRow label="Cuenta de liquidación" value={obligation.settlementAccountName || "Sin cuenta"} muted={!obligation.settlementAccountName} last={!obligation.description?.trim() && !obligation.notes?.trim()} />
+      <DetailFieldRow label="Cuenta habitual" value={obligation.settlementAccountName || "Sin cuenta"} muted={!obligation.settlementAccountName} last={!obligation.description?.trim() && !obligation.notes?.trim()} />
       {obligation.description?.trim() ? <DetailFieldRow label="Descripción" value={obligation.description.trim()} valueLines={0} last={!obligation.notes?.trim()} /> : null}
       {obligation.notes?.trim() ? <DetailFieldRow label="Notas" value={obligation.notes.trim()} valueLines={0} last /> : null}
     </View>

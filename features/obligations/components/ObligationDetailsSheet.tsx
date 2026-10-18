@@ -1,5 +1,5 @@
 import { FormFeedbackProvider, FormSubmitBar } from "../../../components/ui/FormFeedback";
-import { dateField, optionalNumberField } from "../../../lib/form-field-rules";
+import { dateField } from "../../../lib/form-field-rules";
 import { StyleSheet, Text, View } from "react-native";
 
 
@@ -19,9 +19,6 @@ type Props = {
 
   dueDate: string;
   onChangeDueDate: (value: string) => void;
-
-  interestRate: string;
-  onChangeInterestRate: (value: string) => void;
 
   settlementAccountLabel: string | null;
   onOpenSettlementAccount: () => void;
@@ -53,8 +50,6 @@ export function ObligationDetailsSheet({
   onOpenPlan,
   dueDate,
   onChangeDueDate,
-  interestRate,
-  onChangeInterestRate,
   settlementAccountLabel,
   onOpenSettlementAccount,
   description,
@@ -64,7 +59,7 @@ export function ObligationDetailsSheet({
   onClose,
   onDone,
 }: Props) {
-  const fields = { dueDate: dateField(dueDate, { optional: true }), interestRate: optionalNumberField(interestRate, { nonnegative: true, kind: "rate" }), description: { value: description }, notes: { value: notes } };
+  const fields = { dueDate: dateField(dueDate, { optional: true }), description: { value: description }, notes: { value: notes } };
   return (
     <FormFeedbackProvider visible={visible} fields={fields} onSubmit={onDone}>
     <InlineFormSheet
@@ -109,27 +104,13 @@ export function ObligationDetailsSheet({
         <FormOptionRow fieldId="settlementAccountId"
           grouped
           last
-          label="Cuenta de liquidación"
+          label="Cuenta habitual"
           value={settlementAccountLabel}
           placeholder="Ninguna"
           onPress={onOpenSettlementAccount}
         />
       </View>
-
-      {/* La tasa se escribe, no se elige: una fila con chevrón prometía llevar a algún sitio y
-          lo que hacía era desplegar este mismo campo debajo (revisión 21). */}
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Tasa de interés</Text>
-        <TextField fieldId="interestRate"
-          style={styles.input}
-          value={interestRate}
-          onChangeText={onChangeInterestRate}
-          keyboardType="decimal-pad"
-          placeholder="Sin interés"
-          placeholderTextColor={COLORS.storm}
-          accessibilityLabel="Tasa de interés en porcentaje"
-        />
-      </View>
+      <Text style={styles.planHint}>La cuenta habitual es la que aparece elegida al registrar un cobro o un pago de esta deuda. Es opcional y se puede cambiar cada vez.</Text>
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripción</Text>

@@ -1,6 +1,6 @@
 import { ObligationInviteFields } from "../../features/obligations/components/ObligationInviteFields";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
-import { requiredField, positiveAmountField, optionalNumberField, dateField, emailField, parseFormAmountInput, selectedAccountField } from "../../lib/form-field-rules";
+import { requiredField, positiveAmountField, dateField, emailField, parseFormAmountInput, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -187,7 +187,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
     summary: string;
     counterpartyName: string;
   } | null>(null);
-  const [interestRate, setInterestRate] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -245,7 +244,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         parsePaymentPlan(editObligation.paymentPlan)
         ?? (editObligation.installmentCount ? { mode: "equal", count: editObligation.installmentCount } : null),
       );
-      setInterestRate(editObligation.interestRate ? String(editObligation.interestRate) : "");
       setDescription(editObligation.description ?? "");
       setNotes(editObligation.notes ?? "");
     } else {
@@ -263,7 +261,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       setOpeningAccountId(null);
       setInstallmentAmount("");
       setInstallmentCount("");
-      setInterestRate("");
       setDescription("");
       setNotes("");
     }
@@ -349,7 +346,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
          // El plan puede cambiar sin que cambien la cuota ni el número de cuotas: de seis
          // iguales a seis a medida que suman lo mismo.
          JSON.stringify(normalizePaymentPlan(paymentPlan)) !== JSON.stringify(parsePaymentPlan(editObligation?.paymentPlan)) ||
-         interestRate !== (editObligation?.interestRate ? String(editObligation.interestRate) : "") ||
          description !== (editObligation?.description ?? "") ||
          notes !== (editObligation?.notes ?? "") ||
          shareEmail.trim() !== (activeShare?.invitedEmail ?? "").trim() ||
@@ -469,7 +465,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             installmentAmount: installmentAmount ? (parseFormAmountInput(installmentAmount) ?? Number.NaN) : null,
             installmentCount: installmentCount ? parseInt(installmentCount) : null,
             paymentPlan: normalizePaymentPlan(paymentPlan),
-            interestRate: interestRate ? (parseFormAmountInput(interestRate, "rate") ?? Number.NaN) : null,
             description: description.trim() || null,
             notes: notes.trim() || null,
           },
@@ -520,8 +515,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           installmentAmount: installmentAmount ? (parseFormAmountInput(installmentAmount) ?? Number.NaN) : null,
           installmentCount: installmentCount ? parseInt(installmentCount) : null,
           paymentPlan: normalizePaymentPlan(paymentPlan),
-          // Si no escribió una tasa pero pactó un total mayor, se guarda el porcentaje que resulta (solo informativo).
-          interestRate: interestRate ? (parseFormAmountInput(interestRate, "rate") ?? Number.NaN) : interestPercent,
+          // La tasa no se escribe: sale sola del total a devolver (solo informativa).
+          interestRate: interestPercent,
           description: description.trim() || null,
           notes: notes.trim() || null,
         });
@@ -687,7 +682,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       currencyCode: isEditing ? { value: currencyCode } : requiredField(currencyCode, "Elige una moneda", null, () => setCurrencyOpen(true)),
       startDate: isEditing ? { value: startDate } : dateField(startDate),
       dueDate: { ...dateField(dueDate, { optional: true, min: startDate }), autoContinue: true, reveal: () => setDetailsOpen(true) },
-      interestRate: { ...optionalNumberField(interestRate, { nonnegative: true, kind: "rate" }), reveal: () => setDetailsOpen(true) },
       settlementAccountId: { ...selectedAccountField(settlementAccountId, activeAccountsSorted, true), reveal: () => setDetailsOpen(true), open: () => setSettlementOpen(true) },
       description: { value: description, reveal: () => setDetailsOpen(true) },
       notes: { value: notes, reveal: () => setDetailsOpen(true) },
@@ -757,8 +751,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               onOpenPlan={() => setPlanOpen(true)}
               dueDate={dueDate}
               onChangeDueDate={setDueDate}
-              interestRate={interestRate}
-              onChangeInterestRate={setInterestRate}
               settlementAccountLabel={settlementAccountName}
               onOpenSettlementAccount={() => setSettlementOpen(true)}
               description={description}
@@ -814,7 +806,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             <SearchableSelectSheet
               inline
               visible={settlementOpen}
-              title="Cuenta de liquidación"
+              title="Cuenta habitual"
               options={[
                 { value: null as number | null, label: "Sin cuenta" },
                 ...activeAccountsSorted.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
