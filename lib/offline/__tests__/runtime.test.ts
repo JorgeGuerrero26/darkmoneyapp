@@ -10,14 +10,19 @@ const expense = (description: string, amount: number) => ({
   sourceAccountId: 1, sourceAmount: amount, destinationAccountId: null, destinationAmount: null, dedupeKey: `k-${description}`,
 });
 
+/** Cuántas llamadas ha recibido el servidor falso: `settle` espera a que dejen de llegar (no a un tiempo fijo). */
+let transportActivity = 0;
+
 /** Servidor falso mínimo: acepta todo y devuelve la fila como la dejaría el servidor real. */
 function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: number; pulledWs?: number[]; liveIdsCalls?: number }): SyncTransport {
   let nextId = 1000;
   return {
     async reserveIds(_ws, _table, count) {
+      transportActivity += 1;
       return Array.from({ length: count }, () => nextId++);
     },
     async pullChanges(ws, cursors, tables) {
+      transportActivity += 1;
       log.pulls += 1;
       log.pulledWs?.push(ws);
       return {
@@ -28,10 +33,12 @@ function fakeTransport(log: { pushed: PushOp[][]; failPush: boolean; pulls: numb
       };
     },
     async liveIds() {
+      transportActivity += 1;
       if (log.liveIdsCalls != null) log.liveIdsCalls += 1;
       return {};
     },
     async pushBatch(ops) {
+      transportActivity += 1;
       if (log.failPush) throw new Error("Network request failed");
       log.pushed.push(ops);
       return ops.map<PushResult>((op) => ({
@@ -65,7 +72,18 @@ function setup(overrides: Partial<RuntimeDeps> = {}) {
   return { runtime, log, drivers, deleted, changes };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 120));
+/**
+ * Espera a que el motor termine lo que estaba haciendo: pasa un rato SIN llamadas nuevas al servidor falso (hasta 5 s).
+ * Un tiempo fijo no servía: en un servidor de CI cargado el motor tardaba más y la prueba fallaba al azar.
+ */
+const settle = async () => {
+  const limit = Date.now() + 5000;
+  let seen: number;
+  do {
+    seen = transportActivity;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  } while (transportActivity !== seen && Date.now() < limit);
+};
 /** Espera a que algo ocurra (hasta 5 s) en vez de adivinar cuánto tarda: en un servidor de CI cargado un tiempo fijo no alcanza. */
 const until = async (condition: () => boolean, timeoutMs = 5000) => {
   const limit = Date.now() + timeoutMs;
@@ -284,7 +302,7 @@ describe("OfflineRuntime", () => {
   });
 
   it("al abrir la app solo se sincroniza el espacio abierto; los demás esperan para no estorbar a la carga inicial", async () => {
-    const { runtime, log } = setup({ otherWorkspacesDelayMs: 150 });
+    const { runtime, log } = setup({ otherWorkspacesDelayMs: 1500 });
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2, 3] });
     await settle();
     expect(new Set(log.pulledWs)).toEqual(new Set([1])); // todavía nada de los otros espacios
@@ -293,11 +311,11 @@ describe("OfflineRuntime", () => {
   });
 
   it("si se cierra el motor antes del retardo, no sincroniza los demás espacios", async () => {
-    const { runtime, log } = setup({ otherWorkspacesDelayMs: 150 });
+    const { runtime, log } = setup({ otherWorkspacesDelayMs: 1500 });
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2] });
     await settle();
     await runtime.configure({ enabled: false, userId: "u1", workspaceId: 1 });
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 1800)); // más que el retardo: si el temporizador siguiera vivo, ya habría disparado
     expect(new Set(log.pulledWs)).toEqual(new Set([1]));
   });
 
