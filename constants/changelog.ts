@@ -26,6 +26,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El plan de pagos de un crédito o deuda ahora deja elegir el día de cobro: un día fijo del mes o fin de mes. Antes todas las cuotas caían el mismo día en que empezó la deuda y no se podía cambiar.",
       "Con el modo sin conexión encendido, ya puedes anotar sin internet la llegada de un ingreso fijo: el dinero entra a tu cuenta, el ingreso espera su siguiente fecha y la llegada queda en su historial, todo junto. Cuando vuelve la conexión se envía completo.",
       "Con el modo sin conexión encendido, ya puedes registrar sin internet un pago o un cobro de un crédito o deuda: el dinero se mueve en tu cuenta al instante, el pendiente de la deuda baja y todo se envía junto cuando vuelve la conexión. Si el pago supera lo que se debe, el servidor lo rechaza y no queda nada a medias. Los comprobantes (fotos) y editar o borrar un pago siguen necesitando internet.",
+      "Los avisos que salen al guardar algo en un formulario ahora se ven por encima del formulario, y no escondidos detrás. Y al adjuntar una foto sin internet, la app lo dice claro en vez de fallar con un error de red.",
     ],
   },
   {

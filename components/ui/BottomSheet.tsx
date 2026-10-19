@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SHADOW, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
+import { ToastContainer } from "./Toast";
 import { SHORT_SHEET_ENTRANCE } from "./useDismissibleSheet";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
@@ -298,6 +299,10 @@ export function BottomSheet({
       </View>
 
       {overlay}
+
+      {/* iOS pinta este Modal por encima de TODO lo demás, incluido el aviso global: un toast lanzado desde un formulario
+          quedaba escondido detrás. Se repite aquí, dentro del Modal, para que se vea sobre el formulario. */}
+      <ToastContainer />
     </Modal>
   );
 }

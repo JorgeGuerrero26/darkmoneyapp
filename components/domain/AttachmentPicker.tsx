@@ -21,6 +21,7 @@ import {
   buildEntityAttachmentDraftDir,
   type AttachmentEntityType,
 } from "../../lib/entity-attachments";
+import { onlineManager } from "@tanstack/react-query";
 import { useToast } from "../../hooks/useToast";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUserEntitlementQuery } from "../../services/queries/workspace-data";
@@ -231,7 +232,15 @@ export function AttachmentPicker({
     return path;
   }
 
+  /** Las fotos se suben en el momento de elegirlas: sin internet se dice claro en vez de fallar con un error de red. */
+  function requireInternet(): boolean {
+    if (onlineManager.isOnline()) return true;
+    showToast("Sin internet: no se pueden adjuntar fotos ahora. Guarda y agrégalas después, cuando vuelva la conexión.", "warning");
+    return false;
+  }
+
   async function pickFromGallery() {
+    if (!requireInternet()) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       showToast("Se necesita acceso a la galería para adjuntar imágenes.", "warning");
@@ -254,6 +263,7 @@ export function AttachmentPicker({
   }
 
   async function pickFromCamera() {
+    if (!requireInternet()) return;
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       showToast("Se necesita acceso a la cámara para tomar fotos.", "warning");
