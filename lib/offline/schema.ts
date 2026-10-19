@@ -3,9 +3,11 @@ import { exactCents, mirrorMoney } from "./money";
 
 /** Tablas del servidor que se reflejan en local. Lista cerrada: se interpola en SQL. */
 export const WRITABLE_RESOURCE_TABLES = ["accounts", "categories", "counterparties", "counterparty_roles", "spend_types",
-  "budgets", "subscriptions", "recurring_income", "movement_templates", "workspace_financial_goals", "obligations"] as const;
+  "budgets", "subscriptions", "recurring_income", "movement_templates", "workspace_financial_goals", "obligations",
+  // Solo dentro de un grupo atómico (llegada de un ingreso fijo): el servidor lo permite desde la migración 202610160001.
+  "recurring_income_occurrences"] as const;
 export type WritableResourceTable = (typeof WRITABLE_RESOURCE_TABLES)[number];
-export const DIRECT_MIRRORED_TABLES = ["movements", ...WRITABLE_RESOURCE_TABLES, "recurring_income_occurrences"] as const;
+export const DIRECT_MIRRORED_TABLES = ["movements", ...WRITABLE_RESOURCE_TABLES] as const;
 export const MIRRORED_TABLES = [...DIRECT_MIRRORED_TABLES, "subscription_occurrences"] as const;
 export type MirroredTable = (typeof MIRRORED_TABLES)[number];
 

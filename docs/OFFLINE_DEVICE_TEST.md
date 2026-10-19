@@ -140,3 +140,11 @@ S. **Pagar una suscripción sin internet:** en modo avión, abre una suscripció
 T. **Pago repetido:** pagar dos veces el mismo cobro (tocar Guardar de nuevo) no debe duplicarlo.
 U. **Pago rechazado:** si el servidor no puede aplicar el pago (por ejemplo la cuenta ya no existe), el próximo cobro **no** debe
    quedar avanzado, y debe llegar un solo aviso "necesita revisión".
+
+V. **Llegada de un ingreso fijo sin internet:** en modo avión, abre un ingreso fijo y anota su llegada (cuenta de destino incluida). Debe
+   guardarse al instante: el saldo de la cuenta sube, el ingreso pasa a esperar la siguiente fecha y la llegada aparece en su historial.
+   La línea de estado dice "1 cambio guardado en tu teléfono" (la llegada = un cambio, no tres). Al volver internet debe llegar **una sola
+   vez**, con el movimiento en Movimientos.
+W. **Llegada repetida:** anotar dos veces la misma llegada (Guardar de nuevo) no debe duplicarla.
+X. **Llegada rechazada:** si el servidor no la puede aplicar, no debe quedar nada a medias (ni movimiento, ni historial, ni fecha nueva)
+   y debe llegar un solo aviso de revisión.

@@ -41,6 +41,7 @@ import {
   computeNextRecurringDate,
   subscriptionFrequencyListLabel,
 } from "../../lib/subscription-helpers";
+import { buildIncomeArrival } from "../../features/recurring-income/lib/buildIncomeArrival";
 import type { AppProfile } from "../../lib/auth-context";
 import type {
   AccountSummary,
@@ -3234,6 +3235,17 @@ export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | n
       movementId?: number | null;
     }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // Modo sin conexión (beta): movimiento + historial de llegadas + próxima fecha viajan como un solo grupo.
+      const arrival = buildIncomeArrival(input);
+      const local = await offlineRuntime.confirmArrival(workspaceId, {
+        recurringIncomeId: input.recurringIncomeId,
+        movementFields: arrival.movementFields,
+        occurrenceFields: arrival.occurrenceFields,
+        recurringIncomePatch: arrival.recurringIncomePatch,
+      });
+      if (local) {
+        return { nextExpectedDate: arrival.nextExpectedDate, movementId: local.movementId, updatedBaseAmount: arrival.updatedBaseAmount };
+      }
       offlineRuntime.assertCompoundOnline();
       const actual = input.actualDate.trim();
       const expected = input.expectedDate.trim();

@@ -16,6 +16,7 @@ const MIGRATIONS = [
 const PHASE3_MIGRATION = "202610130001_sync_readonly_occurrences.sql";
 const PHASE4_MIGRATION = "202610140001_sync_obligations.sql";
 const PHASE5_GROUPS_MIGRATION = "202610150003_sync_push_batch_groups.sql";
+const PHASE5_INCOME_MIGRATION = "202610160001_sync_income_occurrences_writable.sql";
 // Los scripts npm corren desde la raíz del repo (el archivo se ejecuta ya compilado en .tmp).
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -96,6 +97,9 @@ export async function createTestServer(options: { phase3?: boolean; phase4?: boo
       status text not null, notes text, created_at timestamptz not null default now());
     alter table recurring_income_occurrences enable row level security;
     create policy income_occ_sel on recurring_income_occurrences for select to authenticated using (is_workspace_member(workspace_id));
+    create policy income_occ_ins on recurring_income_occurrences for insert to authenticated with check (is_workspace_member(workspace_id));
+    create policy income_occ_upd on recurring_income_occurrences for update to authenticated using (is_workspace_member(workspace_id)) with check (is_workspace_member(workspace_id));
+    create policy income_occ_del on recurring_income_occurrences for delete to authenticated using (is_workspace_member(workspace_id));
     grant select, insert, update, delete on recurring_income_occurrences to authenticated;
     create table subscription_occurrences (
       id bigint generated always as identity primary key,
@@ -113,6 +117,7 @@ export async function createTestServer(options: { phase3?: boolean; phase4?: boo
   if (options.phase3 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE3_MIGRATION), "utf8"));
   if (options.phase4 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE4_MIGRATION), "utf8"));
   if (options.groups !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE5_GROUPS_MIGRATION), "utf8"));
+  if (options.groups !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE5_INCOME_MIGRATION), "utf8"));
 
   // Una sola conexión: cada llamada fija usuario + rol y los restablece, bajo un candado.
   let tail: Promise<unknown> = Promise.resolve();

@@ -59,12 +59,12 @@ it("guarda dinero exacto como texto y solo centavos enteros como columna indexad
   await expect(updateRowLocal(db, { ...context, table: "budgets", id: 4, fields: { limit_amount: "1.2301" } })).rejects.toThrow("fracción de centavo");
 });
 
-it("las ocurrencias preservan todos los decimales y nunca entran al escritor", async () => {
+it("las ocurrencias preservan todos los decimales y una fila con fracción de centavo no se edita sin conexión", async () => {
   await upsertMirrorRows(db, "recurring_income_occurrences", [row(9, { amount: "90000000000000.1234" })]);
   const record = await getServerShapedRow(db, "recurring_income_occurrences", 9);
   expect(record?.amount).toBe("90000000000000.1234");
   expect((await db.get<{ money_cents: number | null }>("select money_cents from recurring_income_occurrences"))?.money_cents).toBeNull();
-  await expect(updateRowLocal(db, { ...context, table: "recurring_income_occurrences" as never, id: 9, fields: { amount: 5 } })).rejects.toThrow("solo lectura");
+  await expect(updateRowLocal(db, { ...context, table: "recurring_income_occurrences" as never, id: 9, fields: { amount: 5 } })).rejects.toThrow("fracción de centavo");
   expect(await countOutbox(db)).toBe(0);
 });
 

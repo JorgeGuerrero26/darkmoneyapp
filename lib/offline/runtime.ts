@@ -20,6 +20,7 @@ import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-write
 import type { MirroredTable, WritableResourceTable } from "./schema";
 import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pending";
 import { paySubscriptionLocal } from "./subscription-pay";
+import { confirmArrivalLocal, type ConfirmArrivalLocalInput } from "./income-arrival";
 import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
@@ -542,6 +543,30 @@ export class OfflineRuntime {
     if (!result) return null;
     await this.refreshCounts();
     await this.notifyData(["movements", "subscriptions"]);
+    this.scheduleWriteSync();
+    return result;
+  }
+
+  /**
+   * Anotar la llegada de un ingreso fijo en el teléfono (movimiento + historial de llegadas + avance de la próxima fecha,
+   * como un grupo atómico). null = no se pudo localmente (modo apagado, copia no lista, IDs agotados): sigue el camino online.
+   */
+  async confirmArrival(
+    workspaceId: number,
+    input: Omit<ConfirmArrivalLocalInput, "workspaceId" | "userId" | "nowIso">,
+  ): Promise<{ movementId: number } | null> {
+    if (!this.config.enabled || !this.canReadLocal(workspaceId) || !this.userId) return null;
+    if (!(await this.resourceContext(workspaceId, "recurring_income"))) return null;
+    if (!(await this.resourceContext(workspaceId, "recurring_income_occurrences"))) return null;
+    const result = await confirmArrivalLocal(this.requireDb(), {
+      ...input,
+      workspaceId,
+      userId: this.userId,
+      nowIso: new Date(this.now()).toISOString(),
+    });
+    if (!result) return null;
+    await this.refreshCounts();
+    await this.notifyData(["movements", "recurring_income", "recurring_income_occurrences"]);
     this.scheduleWriteSync();
     return result;
   }

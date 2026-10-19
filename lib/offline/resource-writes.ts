@@ -18,6 +18,7 @@ function writable(table: string) {
 function authorFields(table: WritableResourceTable, userId: string): Record<string, unknown> {
   if (table === "workspace_financial_goals") return { user_id: userId };
   if (table === "movement_templates") return { created_by_user_id: userId };
+  if (table === "recurring_income_occurrences") return {};
   return table === "counterparty_roles" ? {} : { created_by_user_id: userId, updated_by_user_id: userId };
 }
 

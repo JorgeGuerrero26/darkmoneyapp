@@ -24,6 +24,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Al crear un crédito o deuda hay un campo nuevo, «Total que te devolverán» (o «que devolverás»): se llena solo con el monto y, si lo cambias, la diferencia se registra como interés sin mover tus cuentas. Por ejemplo, prestas 1,500 y te devuelven 1,550: la deuda queda en 1,550 y el plan de pagos se arma sobre ese total.",
       "En créditos y deudas ya no hay que escribir la tasa de interés: sale sola del total que te devolverán. Y «Cuenta de liquidación» pasó a llamarse «Cuenta habitual», con una línea que explica que es la que aparece elegida al registrar un cobro o un pago.",
       "El plan de pagos de un crédito o deuda ahora deja elegir el día de cobro: un día fijo del mes o fin de mes. Antes todas las cuotas caían el mismo día en que empezó la deuda y no se podía cambiar.",
+      "Con el modo sin conexión encendido, ya puedes anotar sin internet la llegada de un ingreso fijo: el dinero entra a tu cuenta, el ingreso espera su siguiente fecha y la llegada queda en su historial, todo junto. Cuando vuelve la conexión se envía completo.",
     ],
   },
   {

@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { expect } from "./helpers/expect";
 import { countInbox, countOutbox, listInbox, listSendable, runLocalGroup } from "../outbox";
 import { paySubscriptionLocal } from "../subscription-pay";
+import { confirmArrivalLocal } from "../income-arrival";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
 import { createRowLocal, deleteRowLocal, updateRowLocal } from "../resource-writes";
@@ -1025,5 +1026,81 @@ describe("pagar una suscripción sin red (Fase 5.1, paso 3)", () => {
     const result = await paySubscriptionLocal(a.db, { workspaceId: WS, userId: USER_A, subscriptionId: 99999, nextDueDate: "2026-11-20", movementFields: payFields(), nowIso: new Date(clock).toISOString() });
     expect(result).toBeNull();
     expect(await countOutbox(a.db)).toBe(0);
+  });
+});
+
+describe("llegada de un ingreso fijo sin red (Fase 5.1, paso 4)", () => {
+  const prepare = async () => {
+    await server.admin.exec(`alter table recurring_income add column if not exists next_expected_date date;
+      alter table recurring_income add column if not exists amount numeric(14,2);
+      alter table recurring_income add column if not exists account_id bigint;`);
+    const { rows } = await server.admin.query<{ id: number }>(
+      "insert into recurring_income (workspace_id, name, next_expected_date, amount) values (1, 'Sueldo', '2026-10-30', 3000) returning id",
+    );
+    const incomeId = Number(rows[0].id);
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const movementFields = {
+      movement_type: "income", status: "posted", occurred_at: "2026-10-30T10:00:00.000Z", description: "Sueldo",
+      destination_account_id: 1, destination_amount: 3000, metadata: { recurring_income_confirmed_arrival: true },
+      client_dedupe_key: `income-arrival:${incomeId}:2026-10-30`,
+    };
+    const occurrenceFields = {
+      recurring_income_id: incomeId, expected_date: "2026-10-30", actual_date: "2026-10-30", amount: 3000, currency_code: "PEN", status: "on_time",
+    };
+    return { a, incomeId, movementFields, occurrenceFields };
+  };
+  const arrive = (ctx: Awaited<ReturnType<typeof prepare>>, overrides: { movementFields?: Record<string, unknown> } = {}) =>
+    confirmArrivalLocal(ctx.a.db, {
+      workspaceId: WS, userId: USER_A, recurringIncomeId: ctx.incomeId,
+      movementFields: overrides.movementFields ?? ctx.movementFields, occurrenceFields: ctx.occurrenceFields,
+      recurringIncomePatch: { next_expected_date: "2026-11-30" }, nowIso: new Date(clock).toISOString(),
+    });
+
+  it("movimiento + historial + próxima fecha viajan juntos y llegan una sola vez", async () => {
+    const ctx = await prepare();
+    const result = await arrive(ctx);
+    expect(result).not.toBeNull();
+    expect(await countOutbox(ctx.a.db)).toBe(1); // una llegada = un cambio
+    const report = await ctx.a.engine.syncNow(WS);
+    if (report.rejected) throw new Error(JSON.stringify((await listInbox(ctx.a.db)).map((entry) => ({ code: entry.code, message: entry.message, table: entry.table }))));
+    expect(report.rejected).toBe(0);
+    expect(await countOutbox(ctx.a.db)).toBe(0);
+    expect((await server.admin.query("select 1 from movements where id=$1", [result!.movementId])).rows).toHaveLength(1);
+    const occ = (await server.admin.query<{ movement_id: string; status: string }>("select movement_id::text, status from recurring_income_occurrences where recurring_income_id=$1", [ctx.incomeId])).rows;
+    expect(occ).toEqual([{ movement_id: String(result!.movementId), status: "on_time" }]);
+    const next = (await server.admin.query<{ d: string }>("select next_expected_date::text d from recurring_income where id=$1", [ctx.incomeId])).rows[0].d;
+    expect(next).toBe("2026-11-30");
+  });
+
+  it("anotar dos veces la misma llegada no la duplica", async () => {
+    const ctx = await prepare();
+    const first = await arrive(ctx);
+    const second = await arrive(ctx);
+    expect(second?.movementId).toBe(first?.movementId);
+    expect(await countOutbox(ctx.a.db)).toBe(1);
+    await ctx.a.engine.syncNow(WS);
+    expect((await server.admin.query("select count(*)::int n from recurring_income_occurrences")).rows[0]).toEqual({ n: 1 });
+  });
+
+  it("si el servidor rechaza una parte (cuenta inexistente) no queda nada: ni movimiento, ni historial, ni fecha nueva", async () => {
+    const ctx = await prepare();
+    await arrive(ctx, { movementFields: { ...ctx.movementFields, destination_account_id: 424242 } });
+    const report = await ctx.a.engine.syncNow(WS);
+    expect(report.rejected).toBe(1);
+    expect((await listInbox(ctx.a.db))).toHaveLength(1);
+    expect((await server.admin.query("select count(*)::int n from recurring_income_occurrences")).rows[0]).toEqual({ n: 0 });
+    expect((await server.admin.query<{ d: string }>("select next_expected_date::text d from recurring_income where id=$1", [ctx.incomeId])).rows[0].d).toBe("2026-10-30");
+    expect(await countOutbox(ctx.a.db)).toBe(0);
+  });
+
+  it("un ingreso que no está en la copia local devuelve null (sigue el camino online)", async () => {
+    const ctx = await prepare();
+    const result = await confirmArrivalLocal(ctx.a.db, {
+      workspaceId: WS, userId: USER_A, recurringIncomeId: 99999, movementFields: ctx.movementFields,
+      occurrenceFields: { ...ctx.occurrenceFields, recurring_income_id: 99999 }, recurringIncomePatch: { next_expected_date: "2026-11-30" }, nowIso: new Date(clock).toISOString(),
+    });
+    expect(result).toBeNull();
+    expect(await countOutbox(ctx.a.db)).toBe(0);
   });
 });
