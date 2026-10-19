@@ -63,6 +63,7 @@ const TABLE_NOUN: Record<string, { noun: string; feminine: boolean }> = {
   subscriptions: { noun: "suscripción", feminine: true },
   recurring_income: { noun: "ingreso fijo", feminine: false },
   obligations: { noun: "crédito o deuda", feminine: false },
+  obligation_events: { noun: "pago de deuda", feminine: false },
 };
 
 const FIELD_LABEL: Record<string, string> = {

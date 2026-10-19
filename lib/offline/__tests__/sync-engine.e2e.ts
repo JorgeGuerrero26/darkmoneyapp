@@ -13,6 +13,7 @@ import { expect } from "./helpers/expect";
 import { countInbox, countOutbox, listInbox, listSendable, runLocalGroup } from "../outbox";
 import { paySubscriptionLocal } from "../subscription-pay";
 import { confirmArrivalLocal } from "../income-arrival";
+import { createObligationPaymentLocal } from "../obligation-payment";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
 import { createRowLocal, deleteRowLocal, updateRowLocal } from "../resource-writes";
@@ -1102,5 +1103,81 @@ describe("llegada de un ingreso fijo sin red (Fase 5.1, paso 4)", () => {
     });
     expect(result).toBeNull();
     expect(await countOutbox(ctx.a.db)).toBe(0);
+  });
+});
+
+describe("pago de una deuda sin red (Fase 5.1, paso 5)", () => {
+  const prepare = async (principal = 1000) => {
+    const { rows } = await server.admin.query<{ id: number }>(
+      "insert into obligations (workspace_id, title, direction, counterparty_id, principal_amount) values (1, 'Deuda de prueba', 'receivable', 1, $1) returning id",
+      [principal],
+    );
+    const obligationId = Number(rows[0].id);
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    return { a, obligationId };
+  };
+  const pay = (ctx: Awaited<ReturnType<typeof prepare>>, overrides: Record<string, unknown> = {}) =>
+    createObligationPaymentLocal(ctx.a.db, {
+      workspaceId: WS, userId: USER_A, obligationId: ctx.obligationId, direction: "receivable", amount: 300,
+      occurredAt: "2026-10-19T15:00:00.000Z", eventDate: "2026-10-19", accountId: 1, nowIso: new Date(clock).toISOString(), ...overrides,
+    });
+
+  it("movimiento + evento viajan juntos y llegan una sola vez, ligados entre sí", async () => {
+    const ctx = await prepare();
+    const result = await pay(ctx);
+    expect(result).not.toBeNull();
+    expect(await countOutbox(ctx.a.db)).toBe(1); // un pago = un cambio
+    const report = await ctx.a.engine.syncNow(WS);
+    if (report.rejected) throw new Error(JSON.stringify((await listInbox(ctx.a.db)).map((entry) => ({ code: entry.code, message: entry.message }))));
+    expect(await countOutbox(ctx.a.db)).toBe(0);
+    const event = (await server.admin.query<{ id: string; movement_id: string; amount: string }>(
+      "select id::text, movement_id::text, amount::text from obligation_events where obligation_id=$1", [ctx.obligationId])).rows;
+    expect(event).toEqual([{ id: String(result!.eventId), movement_id: String(result!.movementId), amount: "300.00" }]);
+    const movement = (await server.admin.query<{ movement_type: string; obligation_id: string; destination_amount: string; metadata: { obligation_event_id: number } }>(
+      "select movement_type, obligation_id::text, destination_amount::text, metadata from movements where id=$1", [result!.movementId])).rows[0];
+    expect(movement.movement_type).toBe("obligation_payment");
+    expect(movement.obligation_id).toBe(String(ctx.obligationId));
+    expect(movement.destination_amount).toBe("300.00");
+    expect(Number(movement.metadata.obligation_event_id)).toBe(result!.eventId);
+  });
+
+  it("un sobrepago que rechaza el servidor no deja nada: ni movimiento ni evento, y avisa una vez", async () => {
+    const ctx = await prepare(200);
+    const result = await pay(ctx, { amount: 300 });
+    const report = await ctx.a.engine.syncNow(WS);
+    expect(report.rejected).toBe(1);
+    expect((await listInbox(ctx.a.db))).toHaveLength(1);
+    expect((await server.admin.query("select 1 from obligation_events")).rows).toHaveLength(0);
+    expect((await server.admin.query("select 1 from movements where id=$1", [result!.movementId])).rows).toHaveLength(0);
+    expect(await getServerShapedRow(ctx.a.db, "movements", result!.movementId!)).toBeNull();
+    expect(await countOutbox(ctx.a.db)).toBe(0);
+  });
+
+  it("sin cuenta solo viaja el evento", async () => {
+    const ctx = await prepare();
+    const result = await pay(ctx, { accountId: null });
+    expect(result?.movementId).toBeNull();
+    await ctx.a.engine.syncNow(WS);
+    expect((await server.admin.query<{ movement_id: string | null }>("select movement_id::text from obligation_events")).rows).toEqual([{ movement_id: null }]);
+    expect((await server.admin.query("select 1 from movements where movement_type='obligation_payment'")).rows).toHaveLength(0);
+  });
+
+  it("una obligación que no está en la copia local devuelve null (sigue el camino online)", async () => {
+    const ctx = await prepare();
+    const result = await pay(ctx, { obligationId: 99999 });
+    expect(result).toBeNull();
+    expect(await countOutbox(ctx.a.db)).toBe(0);
+  });
+
+  it("el servidor rechaza editar o borrar eventos desde el teléfono", async () => {
+    const ctx = await prepare();
+    const first = await pay(ctx);
+    await ctx.a.engine.syncNow(WS);
+    const result = await server.transportFor(USER_A).pushBatch([
+      { op_id: randomUUID(), table: "obligation_events", kind: "delete", workspace_id: WS, row_id: first!.eventId, fields: {}, base_updated_at: null },
+    ]);
+    expect(result[0]).toMatchObject({ status: "rejected", code: "invalid_op" });
+    expect((await server.admin.query("select 1 from obligation_events")).rows).toHaveLength(1);
   });
 });

@@ -404,6 +404,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           notes: notes.trim() || null,
           createMovement,
           direction: obligation.direction,
+          hasAttachments: attachments.length > 0,
         });
         createdPaymentResult = created;
         showToast(actsAsCollector ? "Cobro registrado" : "Pago registrado", "success");

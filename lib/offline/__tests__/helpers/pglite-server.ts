@@ -17,6 +17,7 @@ const PHASE3_MIGRATION = "202610130001_sync_readonly_occurrences.sql";
 const PHASE4_MIGRATION = "202610140001_sync_obligations.sql";
 const PHASE5_GROUPS_MIGRATION = "202610150003_sync_push_batch_groups.sql";
 const PHASE5_INCOME_MIGRATION = "202610160001_sync_income_occurrences_writable.sql";
+const PHASE5_EVENTS_MIGRATION = "202610170001_sync_obligation_events.sql";
 // Los scripts npm corren desde la raíz del repo (el archivo se ejecuta ya compilado en .tmp).
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
@@ -85,6 +86,34 @@ export async function createTestServer(options: { phase3?: boolean; phase4?: boo
        start_date date not null default current_date, due_date date, installment_amount numeric(18,2), installment_count integer,
        interest_rate numeric, description text, notes text, client_dedupe_key text, payment_plan jsonb`,
   );
+  // Eventos de obligaciones como en producción: SIN workspace_id, ligados a la obligación; un trigger rechaza el sobrepago.
+  await db.exec(`
+    create table public.obligation_events (
+      id bigint generated always as identity primary key,
+      obligation_id bigint not null references public.obligations(id) on delete cascade,
+      event_type text not null, event_date date not null, amount numeric(14,2) not null check (amount > 0),
+      installment_no integer, description text, notes text,
+      movement_id bigint references public.movements(id) on delete set null,
+      created_by_user_id uuid, metadata jsonb not null default '{}',
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+    alter table public.obligation_events enable row level security;
+    create policy ev_sel on public.obligation_events for select to authenticated using (exists (select 1 from public.obligations o where o.id = obligation_id and public.is_workspace_member(o.workspace_id)));
+    create policy ev_ins on public.obligation_events for insert to authenticated with check (exists (select 1 from public.obligations o where o.id = obligation_id and public.is_workspace_member(o.workspace_id)));
+    create policy ev_upd on public.obligation_events for update to authenticated using (exists (select 1 from public.obligations o where o.id = obligation_id and public.is_workspace_member(o.workspace_id)));
+    create policy ev_del on public.obligation_events for delete to authenticated using (exists (select 1 from public.obligations o where o.id = obligation_id and public.is_workspace_member(o.workspace_id)));
+    grant select, insert, update, delete on public.obligation_events to authenticated;
+    create function public.tg_events_guard() returns trigger language plpgsql security definer set search_path = public as $$
+    declare v_pending numeric;
+    begin
+      select o.principal_amount - coalesce((select sum(e.amount) from public.obligation_events e where e.obligation_id = o.id and e.event_type = 'payment'), 0)
+        into v_pending from public.obligations o where o.id = new.obligation_id;
+      if new.event_type = 'payment' and new.amount > v_pending + 0.009 then
+        raise exception 'el pago excede lo que se debe' using errcode = '23514';
+      end if;
+      return new;
+    end $$;
+    create trigger obligation_events_settle_and_guard before insert on public.obligation_events for each row execute function public.tg_events_guard();
+  `);
   await db.exec(`create unique index obligations_dedupe_uq on public.obligations(workspace_id, client_dedupe_key) where client_dedupe_key is not null`);
   await db.exec("create unique index movements_dedupe_uq on public.movements(workspace_id, client_dedupe_key) where client_dedupe_key is not null");
   await db.exec("drop trigger trg_spend_types_updated_at on public.spend_types; drop trigger trg_movement_templates_updated_at on public.movement_templates;");
@@ -118,6 +147,7 @@ export async function createTestServer(options: { phase3?: boolean; phase4?: boo
   if (options.phase4 !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE4_MIGRATION), "utf8"));
   if (options.groups !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE5_GROUPS_MIGRATION), "utf8"));
   if (options.groups !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE5_INCOME_MIGRATION), "utf8"));
+  if (options.groups !== false) await db.exec(readFileSync(join(MIGRATIONS_DIR, PHASE5_EVENTS_MIGRATION), "utf8"));
 
   // Una sola conexión: cada llamada fija usuario + rol y los restablece, bajo un candado.
   let tail: Promise<unknown> = Promise.resolve();

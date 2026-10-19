@@ -49,6 +49,11 @@ export async function reactToLocalDataChange(queryClient: QueryClient, wsId: num
   // Las consultas que leen de la copia del teléfono guardan su resultado: hay que avisarles de que cambió
   // (si no, Categorías seguía diciendo "0 movimientos" tras registrar un gasto sin red).
   for (const root of queryRootsToRefresh(tables)) void queryClient.invalidateQueries({ queryKey: [root] });
+  // Un pago de deuda enviado: el pendiente y el historial de la deuda los calcula el servidor, hay que pedirlos de nuevo.
+  if (tables.includes("obligation_events")) {
+    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    void queryClient.invalidateQueries({ queryKey: ["obligation-events"] });
+  }
   if (wsId == null) return;
   await applyLocalBalancesToCache(queryClient, wsId);
   // Catálogos escritos sin red (o traídos de otro dispositivo): el cache se rehace desde la base local.

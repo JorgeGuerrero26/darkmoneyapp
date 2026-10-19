@@ -21,6 +21,7 @@ import type { MirroredTable, WritableResourceTable } from "./schema";
 import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pending";
 import { paySubscriptionLocal } from "./subscription-pay";
 import { confirmArrivalLocal, type ConfirmArrivalLocalInput } from "./income-arrival";
+import { createObligationPaymentLocal, type CreateObligationPaymentLocalInput } from "./obligation-payment";
 import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
@@ -571,6 +572,30 @@ export class OfflineRuntime {
     return result;
   }
 
+  /**
+   * Registrar un pago o cobro de una obligación en el teléfono (movimiento + evento, como un grupo atómico; sin cuenta, solo el
+   * evento). null = no se pudo localmente (modo apagado, copia no lista, obligación que no está en la copia, IDs agotados):
+   * sigue el camino online.
+   */
+  async createObligationPayment(
+    workspaceId: number,
+    input: Omit<CreateObligationPaymentLocalInput, "workspaceId" | "userId" | "nowIso">,
+  ): Promise<{ eventId: number; movementId: number | null } | null> {
+    if (!this.config.enabled || !this.canReadLocal(workspaceId) || !this.userId) return null;
+    if (!(await this.resourceContext(workspaceId, "obligations"))) return null;
+    const result = await createObligationPaymentLocal(this.requireDb(), {
+      ...input,
+      workspaceId,
+      userId: this.userId,
+      nowIso: new Date(this.now()).toISOString(),
+    });
+    if (!result) return null;
+    await this.refreshCounts();
+    await this.notifyData(result.movementId != null ? ["movements", "obligation_events"] : ["obligation_events"]);
+    this.scheduleWriteSync();
+    return result;
+  }
+
   async updateMovement(workspaceId: number, id: number, input: MovementUpdateInput): Promise<boolean> {
     if (!this.canReadLocal(workspaceId) || !this.userId) return false;
     if (await this.isCompoundMovement(id) || input.movementType === "subscription_payment") {
@@ -615,6 +640,8 @@ export class OfflineRuntime {
     if (!row) return false;
     const metadata = row.metadata as Record<string, unknown> | null;
     if (row.subscription_id != null || row.movement_type === "subscription_payment" || metadata?.recurring_income_confirmed_arrival) return true;
+    // El movimiento de un pago de deuda va ligado a su evento: editarlo o borrarlo solo aquí los desincronizaría.
+    if (row.movement_type === "obligation_payment" || row.obligation_id != null || metadata?.obligation_event_id != null) return true;
     // Un movimiento antiguo puede estar vinculado al historial sin llevar el metadata nuevo.
     return Boolean(await db.get("select 1 from recurring_income_occurrences where json_extract(data, '$.movement_id') = ? limit 1", [id]));
   }

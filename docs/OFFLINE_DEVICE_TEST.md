@@ -148,3 +148,11 @@ V. **Llegada de un ingreso fijo sin internet:** en modo avión, abre un ingreso 
 W. **Llegada repetida:** anotar dos veces la misma llegada (Guardar de nuevo) no debe duplicarla.
 X. **Llegada rechazada:** si el servidor no la puede aplicar, no debe quedar nada a medias (ni movimiento, ni historial, ni fecha nueva)
    y debe llegar un solo aviso de revisión.
+
+Y. **Pagar o cobrar una deuda sin internet:** en modo avión, abre una deuda y registra un pago/cobro con una cuenta. Debe guardarse al
+   instante: el saldo de la cuenta cambia, el pendiente de la deuda baja y la línea de estado dice "1 cambio" (un pago = un cambio, no
+   dos). Al volver internet debe llegar **una sola vez**: el movimiento en Movimientos y el pago en el historial de la deuda.
+Z. **Sobrepago:** un pago mayor a lo pendiente se avisa antes de guardar, también sin internet.
+AA. **Con comprobantes (fotos):** adjuntar una imagen al pago exige internet (la sube un servicio del servidor): sin red debe decirlo y no
+   guardar nada.
+AB. **Editar o borrar un pago sin internet:** sigue exigiendo internet y lo dice con claridad.

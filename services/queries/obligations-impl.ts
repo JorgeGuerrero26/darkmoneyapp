@@ -2383,14 +2383,40 @@ export type ObligationPaymentInput = {
   /** Si es "receivable" (me deben), textos automáticos usan "cobro". */
   direction?: ObligationDirection;
   attachments?: AttachmentLike[];
+  /** El formulario sube los comprobantes DESPUÉS de guardar (un servicio del servidor): con comprobantes no se guarda sin internet. */
+  hasAttachments?: boolean;
 };
 
 export function useCreateObligationPaymentMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
+  const networkMode = useOfflineNetworkMode(workspaceId);
   return useMutation({
     mutationKey: ["create-obligation-payment"],
+    networkMode,
     mutationFn: async (input: ObligationPaymentInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
+      // Modo sin conexión (beta): el pago (movimiento + evento) se guarda en el teléfono y viaja como un solo grupo. Los adjuntos
+      // los sube un servicio del servidor: con adjuntos se pide internet en vez de guardar el pago sin ellos.
+      if (workspaceId != null) {
+        if (input.hasAttachments || (input.attachments && input.attachments.length > 0)) offlineRuntime.assertCompoundOnline();
+        else {
+          const local = await offlineRuntime.createObligationPayment(workspaceId, {
+            obligationId: input.obligationId,
+            direction: input.direction === "receivable" ? "receivable" : "payable",
+            amount: input.amount,
+            occurredAt: dateStrToISO(input.paymentDate),
+            eventDate: input.paymentDate,
+            accountId: input.createMovement ? input.accountId ?? null : null,
+            installmentNo: input.installmentNo ?? null,
+            description: input.description ?? null,
+            notes: input.notes ?? null,
+          });
+          if (local) {
+            return { id: local.eventId, movementId: local.movementId, workspaceId, installmentNoApplied: input.installmentNo ?? null };
+          }
+          offlineRuntime.assertCompoundOnline();
+        }
+      }
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
       if (workspaceId != null && workspaceId !== wsId) {
         throw new Error("La obligación no pertenece al workspace activo.");

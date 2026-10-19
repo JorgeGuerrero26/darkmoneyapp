@@ -158,7 +158,8 @@ export class SyncEngine {
   // ─── IDs ────────────────────────────────────────────────────────────────────────────────────
 
   private async refillPool(workspaceId: number): Promise<void> {
-    for (const table of ["movements", ...WRITABLE_RESOURCE_TABLES]) {
+    // `obligation_events`: tabla de solo envío (pagos de deudas), no es un recurso editable pero necesita sus IDs reservados.
+    for (const table of ["movements", ...WRITABLE_RESOURCE_TABLES, "obligation_events"]) {
       const wanted = idsToReserve(await poolSize(this.db, workspaceId, table));
       if (wanted === 0) continue;
       try {
@@ -244,7 +245,7 @@ export class SyncEngine {
             await completeOp(tx, op.opId);
             if (op.opId === outcome.culpritId) {
               const result = byId.get(op.opId)!;
-              const row = await getServerShapedRow(tx, op.table, op.rowId);
+              const row = isMirroredTable(op.table) ? await getServerShapedRow(tx, op.table, op.rowId) : null; // las tablas de solo envío (pagos de deudas) no tienen copia local
               await addInbox(tx, {
                 opId: op.opId,
                 table: op.table,
@@ -275,7 +276,7 @@ export class SyncEngine {
         touched.add(op.table);
 
         if (result.status === "rejected") {
-          const row = await getServerShapedRow(tx, op.table, op.rowId);
+          const row = isMirroredTable(op.table) ? await getServerShapedRow(tx, op.table, op.rowId) : null; // las tablas de solo envío (pagos de deudas) no tienen copia local
           await completeOp(tx, op.opId);
           await addInbox(tx, {
             opId: op.opId,

@@ -25,6 +25,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "En créditos y deudas ya no hay que escribir la tasa de interés: sale sola del total que te devolverán. Y «Cuenta de liquidación» pasó a llamarse «Cuenta habitual», con una línea que explica que es la que aparece elegida al registrar un cobro o un pago.",
       "El plan de pagos de un crédito o deuda ahora deja elegir el día de cobro: un día fijo del mes o fin de mes. Antes todas las cuotas caían el mismo día en que empezó la deuda y no se podía cambiar.",
       "Con el modo sin conexión encendido, ya puedes anotar sin internet la llegada de un ingreso fijo: el dinero entra a tu cuenta, el ingreso espera su siguiente fecha y la llegada queda en su historial, todo junto. Cuando vuelve la conexión se envía completo.",
+      "Con el modo sin conexión encendido, ya puedes registrar sin internet un pago o un cobro de un crédito o deuda: el dinero se mueve en tu cuenta al instante, el pendiente de la deuda baja y todo se envía junto cuando vuelve la conexión. Si el pago supera lo que se debe, el servidor lo rechaza y no queda nada a medias. Los comprobantes (fotos) y editar o borrar un pago siguen necesitando internet.",
     ],
   },
   {
