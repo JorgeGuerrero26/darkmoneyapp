@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -134,6 +134,12 @@ export function AttachmentPicker({
   const canUploadAttachments = entitlementQuery.data?.proAccessEnabled ?? false;
   const isCheckingProAccess = Boolean(profile?.id) && entitlementQuery.isLoading && !entitlementQuery.data;
   const isUploadLocked = !isCheckingProAccess && !canUploadAttachments;
+  // Sin internet no se puede subir: se dice en el propio formulario, igual que el bloqueo Pro (no en un aviso flotante).
+  const isOnline = useSyncExternalStore(
+    (listener) => onlineManager.subscribe(listener),
+    () => onlineManager.isOnline(),
+    () => true,
+  );
 
   const remainingSlots = MAX_ATTACHMENTS - attachments.length;
   const hasUploadingItems = uploading || attachments.some((attachment) => attachment.isUploading);
@@ -232,11 +238,9 @@ export function AttachmentPicker({
     return path;
   }
 
-  /** Las fotos se suben en el momento de elegirlas: sin internet se dice claro en vez de fallar con un error de red. */
+  /** Las fotos se suben en el momento de elegirlas: sin internet no se abre la cámara ni la galería (el aviso va dentro del formulario). */
   function requireInternet(): boolean {
-    if (onlineManager.isOnline()) return true;
-    showToast("Sin internet: no se pueden adjuntar fotos ahora. Guarda y agrégalas después, cuando vuelva la conexión.", "warning");
-    return false;
+    return onlineManager.isOnline();
   }
 
   async function pickFromGallery() {
@@ -377,6 +381,7 @@ export function AttachmentPicker({
       showToast("Adjuntar comprobantes es una función exclusiva Pro.", "warning");
       return;
     }
+    if (!isOnline) return; // el botón ya está desactivado y el aviso está a la vista
     setSourceSheetVisible(true);
   }
 
@@ -392,6 +397,15 @@ export function AttachmentPicker({
                 : `${attachments.length} de ${MAX_ATTACHMENTS}`}
             </Text>
           </View>
+
+          {!isOnline && !isUploadLocked ? (
+            <View style={styles.proLockBanner}>
+              <Text style={styles.proLockTitle}>Sin internet</Text>
+              <Text style={styles.proLockBody}>
+                Las fotos se suben en el momento de elegirlas. Guarda ahora y agrégalas después, cuando vuelva la conexión.
+              </Text>
+            </View>
+          ) : null}
 
           {isUploadLocked ? (
             <View style={styles.proLockBanner}>
@@ -459,10 +473,10 @@ export function AttachmentPicker({
                 style={[
                   styles.addCard,
                   attachments.length === 0 && styles.addCardEmpty,
-                  (hasUploadingItems || isUploadLocked || isCheckingProAccess) && styles.addCardDisabled,
+                  (hasUploadingItems || isUploadLocked || isCheckingProAccess || !isOnline) && styles.addCardDisabled,
                 ]}
                 onPress={handleOpenSourceSheet}
-                disabled={hasUploadingItems || isCheckingProAccess}
+                disabled={hasUploadingItems || isCheckingProAccess || !isOnline}
                 activeOpacity={0.86}
               >
                 <View style={styles.addIconWrap}>
@@ -473,7 +487,7 @@ export function AttachmentPicker({
                   )}
                 </View>
                 <Text style={styles.addTitle}>
-                  {isCheckingProAccess ? "Comprobando..." : isUploadLocked ? "Solo Pro" : hasUploadingItems ? "Subiendo..." : "Agregar"}
+                  {isCheckingProAccess ? "Comprobando..." : isUploadLocked ? "Solo Pro" : !isOnline ? "Sin internet" : hasUploadingItems ? "Subiendo..." : "Agregar"}
                 </Text>
                 {/* Solo cuando dice algo distinto al titulo: la caja pintaba "Agregar" dos veces. */}
                 {isUploadLocked ? (
