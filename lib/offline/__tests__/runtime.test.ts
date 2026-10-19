@@ -66,6 +66,11 @@ function setup(overrides: Partial<RuntimeDeps> = {}) {
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 120));
+/** Espera a que algo ocurra (hasta 5 s) en vez de adivinar cuánto tarda: en un servidor de CI cargado un tiempo fijo no alcanza. */
+const until = async (condition: () => boolean, timeoutMs = 5000) => {
+  const limit = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < limit) await new Promise((resolve) => setTimeout(resolve, 10));
+};
 
 describe("OfflineRuntime", () => {
   it("P1: sin red no inicia un pago/llegada ni encola una mitad; apagado mantiene el camino anterior", async () => {
@@ -270,7 +275,7 @@ describe("OfflineRuntime", () => {
   it("varios espacios: descarga los demás en segundo plano y al cambiar de espacio ya está lista la copia", async () => {
     const { runtime, log } = setup();
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2] });
-    await settle();
+    await until(() => log.pulledWs.includes(2));
     expect(new Set(log.pulledWs)).toEqual(new Set([1, 2]));
     expect(runtime.canReadLocal(2)).toBe(false); // todavía no es el espacio abierto
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: 2, workspaceIds: [1, 2] });
@@ -283,7 +288,7 @@ describe("OfflineRuntime", () => {
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: 1, workspaceIds: [1, 2, 3] });
     await settle();
     expect(new Set(log.pulledWs)).toEqual(new Set([1])); // todavía nada de los otros espacios
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await until(() => log.pulledWs.includes(3));
     expect(new Set(log.pulledWs)).toEqual(new Set([1, 2, 3])); // pasado el retardo, se ponen al día
   });
 
