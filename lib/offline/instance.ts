@@ -1,4 +1,4 @@
-import { databaseNameFor, deleteExpoDatabase, isSqliteAvailable, openExpoDriver } from "./expo-driver";
+import { deleteExpoDatabase, isSqliteAvailable, openExpoDriver } from "./expo-driver";
 import { OfflineRuntime } from "./runtime";
 import { supabaseSyncTransport } from "./supabase-transport";
 
@@ -8,7 +8,7 @@ import { supabaseSyncTransport } from "./supabase-transport";
  */
 export const offlineRuntime = new OfflineRuntime({
   isAvailable: isSqliteAvailable,
-  openDriver: (userId) => openExpoDriver(databaseNameFor(userId)),
-  deleteDatabase: (userId) => deleteExpoDatabase(databaseNameFor(userId)),
+  openDriver: (userId) => openExpoDriver(userId),
+  deleteDatabase: (userId) => deleteExpoDatabase(userId),
   transport: supabaseSyncTransport,
 });

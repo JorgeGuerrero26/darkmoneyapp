@@ -1,3 +1,4 @@
+import { isDatabaseEncrypted } from "../../lib/offline/expo-driver";
 import { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -130,6 +131,7 @@ function OfflineScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.3}>Diagnóstico</Text>
             <Line label="Base local" value={status.hydrated ? "Lista" : "Descargando"} />
+            <Line label="Cifrado" value={isDatabaseEncrypted() ? "Activo" : "No (esta versión de la app no lo incluye)"} />
             <Line label="Espacio" value={status.workspaceId != null ? String(status.workspaceId) : "—"} />
             <Line label="Por revisar" value={String(status.review)} />
             <Line label="No guardados" value={String(status.rejected)} />
