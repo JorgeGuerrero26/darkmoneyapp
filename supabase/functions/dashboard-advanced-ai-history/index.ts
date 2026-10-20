@@ -350,8 +350,9 @@ async function requestGeminiReply(apiKey: string, model: string, prompt: string)
           },
         ],
         generationConfig: {
-          temperature: 0.4,
-          topP: 0.9,
+          // Google desaconseja tocar temperature/topP en los 3.x (empeora el razonamiento
+          // y los declara obsoletos): se mandan solo a los modelos anteriores.
+          ...(model.startsWith("gemini-3") ? {} : { temperature: 0.4, topP: 0.9 }),
           // Los modelos que razonan (3.x) descuentan el pensamiento de este
           // mismo presupuesto: con 420 se lo gastaban pensando y devolvian texto
           // vacio, sin error. Se amplia solo para ellos.
