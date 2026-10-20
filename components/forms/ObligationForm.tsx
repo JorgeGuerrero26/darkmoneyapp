@@ -1,3 +1,4 @@
+import { OfflineNotice } from "../ui/OfflineNotice";
 import { ObligationInviteFields } from "../../features/obligations/components/ObligationInviteFields";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { requiredField, positiveAmountField, dateField, emailField, parseFormAmountInput, selectedAccountField } from "../../lib/form-field-rules";
@@ -892,6 +893,16 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         />
 
       </View>
+
+      {/* Lo que no se puede guardar sin internet se avisa al abrir el formulario, no al guardar. */}
+      <OfflineNotice
+        when={!isEditing && openingImpact !== "none"}
+        message="Este tipo de deuda mueve dinero de tu cuenta al crearse, y eso necesita internet. Conéctate para guardarla."
+      />
+      <OfflineNotice
+        when={!isEditing && openingImpact === "none" && interestAmount > 0}
+        message="Registrar el interés necesita internet. Conéctate, o deja el total igual al monto y súmalo después con «Ajustar monto»."
+      />
 
       {/* "Por cobrar" y "Por pagar" son términos de contabilidad y describen la deuda, no la
           relación. Quien registra que le prestó S/ 200 a un amigo piensa "me deben". Y lo

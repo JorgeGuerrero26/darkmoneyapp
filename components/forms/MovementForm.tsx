@@ -1,3 +1,4 @@
+import { OfflineNotice } from "../ui/OfflineNotice";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { requiredField, positiveAmountField, optionalNumberField, dateField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -89,6 +90,20 @@ export type MovementDuplicateSource = Pick<
   | "counterpartyId"
   | "notes"
 >;
+
+/** Movimientos que forman parte de una operación compuesta (pago de deuda, llegada de ingreso, pago de suscripción): editarlos solo aquí los desincronizaría. */
+function isLinkedMovement(movement: MovementRecord | undefined): boolean {
+  if (!movement) return false;
+  const metadata = movement.metadata && typeof movement.metadata === "object" && !Array.isArray(movement.metadata) ? movement.metadata : null;
+  return (
+    movement.movementType === "subscription_payment" ||
+    movement.movementType === "obligation_payment" ||
+    movement.movementType === "obligation_opening" ||
+    movement.subscriptionId != null ||
+    movement.obligationId != null ||
+    Boolean(metadata?.recurring_income_confirmed_arrival)
+  );
+}
 
 export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, defaultType = "expense", initialAccountId, editMovement, duplicateMovement }: Props) {
   const { profile } = useAuth();
@@ -1292,6 +1307,10 @@ export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, d
         </>
       }
     >
+      <OfflineNotice
+        when={isEditing && isLinkedMovement(editMovement)}
+        message="Este movimiento está ligado a un pago, una llegada de ingreso o una suscripción. Editarlo o borrarlo necesita internet."
+      />
       {/* Step indicator · hidden when editing */}
       {!isEditing ? (
         <View

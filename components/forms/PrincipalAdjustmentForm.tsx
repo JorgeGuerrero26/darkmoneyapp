@@ -1,3 +1,4 @@
+import { OfflineNotice } from "../ui/OfflineNotice";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { positiveAmountField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -321,6 +322,8 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
           </>
         }
       >
+        <OfflineNotice message="Ajustar el monto de una deuda necesita internet. Conéctate para guardar el cambio." />
+
         {!isEditMode ? (
           <SegmentedControl options={modeOptions} value={mode} onChange={setMode} />
         ) : null}

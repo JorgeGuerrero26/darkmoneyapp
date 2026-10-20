@@ -22,6 +22,7 @@ import {
   type AttachmentEntityType,
 } from "../../lib/entity-attachments";
 import { onlineManager } from "@tanstack/react-query";
+import { OfflineNotice } from "../ui/OfflineNotice";
 import { useToast } from "../../hooks/useToast";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUserEntitlementQuery } from "../../services/queries/workspace-data";
@@ -398,14 +399,10 @@ export function AttachmentPicker({
             </Text>
           </View>
 
-          {!isOnline && !isUploadLocked ? (
-            <View style={styles.proLockBanner}>
-              <Text style={styles.proLockTitle}>Sin internet</Text>
-              <Text style={styles.proLockBody}>
-                Las fotos se suben en el momento de elegirlas. Guarda ahora y agrégalas después, cuando vuelva la conexión.
-              </Text>
-            </View>
-          ) : null}
+          <OfflineNotice
+            when={!isUploadLocked}
+            message="Las fotos se suben en el momento de elegirlas. Guarda ahora y agrégalas después, cuando vuelva la conexión."
+          />
 
           {isUploadLocked ? (
             <View style={styles.proLockBanner}>

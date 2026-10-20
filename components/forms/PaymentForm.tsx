@@ -1,3 +1,4 @@
+import { OfflineNotice } from "../ui/OfflineNotice";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { positiveAmountField, parseFormAmountInput, dateField, selectedAccountField } from "../../lib/form-field-rules";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -586,6 +587,10 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           </>
         }
        footer={<FormSubmitBar label={isEditMode ? "Guardar cambios" : actionTitle} onSubmit={handleSubmit} loading={createPaymentMutation.isPending || updateEventMutation.isPending} error={submitError} />}>
+      <OfflineNotice
+        when={isEditMode}
+        message="Editar un pago o un cobro ya registrado necesita internet. Conéctate para guardar los cambios."
+      />
       {/* Obligation summary + balance preview — solo en modo crear */}
       {/* El número de cuota se retira: venía precargado con un 8 en una cuenta que registra seis
           pagos, y numerar cuotas exige que existan cuotas — acá se paga 330, 580, 30, 350, 450 y

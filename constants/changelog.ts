@@ -27,6 +27,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Con el modo sin conexión encendido, ya puedes anotar sin internet la llegada de un ingreso fijo: el dinero entra a tu cuenta, el ingreso espera su siguiente fecha y la llegada queda en su historial, todo junto. Cuando vuelve la conexión se envía completo.",
       "Con el modo sin conexión encendido, ya puedes registrar sin internet un pago o un cobro de un crédito o deuda: el dinero se mueve en tu cuenta al instante, el pendiente de la deuda baja y todo se envía junto cuando vuelve la conexión. Si el pago supera lo que se debe, el servidor lo rechaza y no queda nada a medias. Los comprobantes (fotos) y editar o borrar un pago siguen necesitando internet.",
       "Al adjuntar una foto sin internet, el formulario lo dice claro con un aviso dentro del propio formulario y el botón de agregar queda desactivado, en vez de fallar con un error de red.",
+      "Cuando no hay internet, los formularios que necesitan conexión te lo dicen con un aviso amarillo apenas los abres (crear una deuda que mueve dinero de tu cuenta, editar un pago, ajustar el monto de una deuda, o editar un movimiento ligado a un pago), en vez de dejarte descubrirlo al guardar.",
     ],
   },
   {
