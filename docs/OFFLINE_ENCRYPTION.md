@@ -1,6 +1,7 @@
 # Cifrado de la copia local (modo sin conexión)
 
-Estado: **código listo (JS), cifrado todavía NO activo** hasta compilar un binario nuevo con SQLCipher.
+Estado: **código listo (JS, ya publicado por OTA) y configuración nativa preparada en `app.json` (versión 1.2.0)**. El cifrado se activa
+en cada teléfono cuando instala un binario 1.2.0 (APK o IPA) compilado con esta configuración.
 
 ## Qué protege
 

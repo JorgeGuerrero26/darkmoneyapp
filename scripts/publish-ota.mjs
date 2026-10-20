@@ -37,6 +37,10 @@ const CHANNEL = "preview";
  *   1.0.9 — el APK que tienen los compañeros. Mientras no instalen el nuevo, esta es su
  *           única vía de recibir arreglos.
  *
+ *   1.1.0 — el IPA que tiene hoy el iPhone y el primer APK con el motor sin conexión. Pasó a «legado» al
+ *           salir la 1.2.0 (copia local cifrada con SQLCipher): hasta que ese iPhone instale el IPA 1.2.0, esta es su
+ *           única vía de recibir arreglos. Quitarla de aquí antes lo dejaría sin actualizaciones EN SILENCIO.
+ *
  * (1.0.8, el IPA viejo del iPhone, se quitó el 2026-10-14: el dueño confirmó que ningún
  * dispositivo lo corre desde que el iPhone usa el IPA 1.1.0. Sus actualizaciones ya publicadas
  * siguen en EAS, pero no se les publica más.)
@@ -44,7 +48,7 @@ const CHANNEL = "preview";
  * Se quita una entrada de aquí SOLO cuando conste que ya nadie corre ese binario. Dejar una
  * de más solo gasta un publicado; quitarla antes de tiempo deja a alguien tirado en silencio.
  */
-const LEGACY_RUNTIMES = ["1.0.9"];
+const LEGACY_RUNTIMES = ["1.1.0", "1.0.9"];
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");

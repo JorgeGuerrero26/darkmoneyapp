@@ -2,7 +2,7 @@
   "expo": {
     "name": "DarkMoney",
     "slug": "darkmoney",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "scheme": "darkmoney",
     "orientation": "portrait",
     "icon": "./assets/images/icon-billetera.png",
@@ -19,7 +19,7 @@
         "backgroundColor": "#0E0D0C"
       },
       "package": "com.darkmoney.app",
-      "versionCode": 12,
+      "versionCode": 13,
       "googleServicesFile": "./app/google-services.json",
       "permissions": [
         "android.permission.CAMERA",
@@ -40,6 +40,12 @@
     "plugins": [
       "expo-router",
       "./plugins/notification-detection",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
       [
         "expo-splash-screen",
         {

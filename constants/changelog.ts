@@ -10,6 +10,13 @@ export type ChangelogEntry = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    title: "Tus datos sin internet, protegidos",
+    changes: [
+      "Con el modo sin conexión encendido, lo que la app guarda en tu teléfono (movimientos, cuentas, deudas y los cambios que aún no se envían) ahora queda cifrado: sin tu teléfono desbloqueado, nadie puede leer ese archivo. No tienes que hacer nada y no notarás diferencia.",
+    ],
+  },
+  {
     version: "1.1.0",
     title: "Registra sin internet (beta)",
     changes: [

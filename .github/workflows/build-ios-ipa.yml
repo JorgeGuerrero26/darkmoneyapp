@@ -124,11 +124,15 @@ jobs:
           BIN=Payload/DarkMoney.app/DarkMoney
           fail=0
           # grep -c sale con 1 si no hay coincidencias; con pipefail eso mataba el script antes de mostrar el 0.
-          for k in ExpoSQLite ExpoSecureStore ExpoCamera; do
+          for k in ExpoSQLite ExpoSecureStore ExpoCamera ExpoCrypto; do
             n=$(grep -ao "$k" "$BIN" | wc -l | tr -d " " || true)
             echo "$k: $n"
             if [ "${n:-0}" -eq 0 ]; then echo "::error::El módulo $k no está en el binario"; fail=1; fi
           done
+          # Cifrado de la copia local (SQLCipher): sin él, el binario abriría la base sin cifrar sin avisar.
+          n=$(grep -aoi "sqlcipher" "$BIN" | wc -l | tr -d " " || true)
+          echo "SQLCipher: ${n:-0}"
+          if [ "${n:-0}" -eq 0 ]; then echo "::error::SQLCipher no está en el binario: la copia local NO quedaría cifrada"; fail=1; fi
           # Reconocimiento de voz: solo avisa (el asistente de voz está protegido con require y degrada a no-op).
           n=$(grep -ao "ExpoSpeechRecognition" "$BIN" | wc -l | tr -d " " || true)
           echo "ExpoSpeechRecognition: ${n:-0}"
