@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,7 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { History, Mic, Send, Sparkles, Volume2, VolumeX } from "lucide-react-native";
+import { History, Mic, Send, Sparkles, Square, Volume2, VolumeX } from "lucide-react-native";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -35,7 +37,7 @@ import {
   type StoredChat,
 } from "../features/assistant/lib/chat-store";
 import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
-import { THINKING_SEARCH, thinkingLabel } from "../features/assistant/lib/thinking-label";
+import { THINKING_DEFAULT, thinkingLabel, toolStatusLabel } from "../features/assistant/lib/thinking-label";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard, type DraftAmountTone } from "../features/assistant/components/AssistantDraftCard";
 import { draftToMovementInput, draftDedupeKey, draftMovementStatus, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
@@ -44,7 +46,7 @@ import { useToast } from "../hooks/useToast";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import {
-  askAssistant,
+  streamAssistant,
   type AssistantChatMessage,
   type AssistantDraft,
   type AssistantEvidence,
@@ -64,7 +66,7 @@ import {
 } from "../services/queries/subscriptions-recurring-income";
 import { useCreateObligationPaymentMutation, useCreateObligationMutation } from "../services/queries/obligations-impl";
 import { useCreateBudgetMutation } from "../services/queries/budgets";
-import { parseBoldSegments } from "../lib/assistant-text";
+import { closeDanglingBold, parseBoldSegments } from "../lib/assistant-text";
 import { formatCurrency } from "../lib/format-currency";
 import { humanizeError } from "../lib/errors";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
@@ -81,6 +83,10 @@ type ChatItem = {
   recurringDraft?: RecurringDraft;
   draftStatus?: "pending" | "saved" | "discarded";
   savedMovementId?: number;
+  /** Preguntas para seguir; se muestran como botones solo bajo la última respuesta. */
+  suggestions?: string[];
+  /** El usuario tocó Detener: queda lo que alcanzó a escribir y no viaja como historial. */
+  stopped?: boolean;
 };
 
 function normalize(value: string): string {
@@ -151,7 +157,19 @@ function AssistantScreen() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
-  const [thinkingText, setThinkingText] = useState(THINKING_SEARCH);
+  const [thinkingText, setThinkingText] = useState(THINKING_DEFAULT);
+  /** La respuesta mientras se escribe. Vacía = aún no llega texto (se ve el aviso de arriba). */
+  const [liveText, setLiveText] = useState("");
+  const liveTextRef = useRef("");
+  /** Detener: corta la conexión de la pregunta en curso. */
+  const abortRef = useRef<AbortController | null>(null);
+  /** Turno vigente: lo que llegue de una pregunta detenida se descarta aunque llegue tarde. */
+  const turnRef = useRef(0);
+  const listRef = useRef<FlatList<ChatItem>>(null);
+  /** Seguir el final de la lista mientras se escribe, salvo que el usuario haya subido a leer. */
+  const followRef = useRef(true);
+  /** La pregunta en curso, para devolverla al campo si se detiene antes de escribir nada. */
+  const questionRef = useRef("");
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
   const { profile } = useAuth();
   const { showToast, showErrorToast } = useToast();
@@ -234,7 +252,7 @@ function AssistantScreen() {
   useEffect(() => {
     if (!chatLoaded) return; // no pisar lo guardado con el saludo inicial antes de leerlo
     const toStore = items
-      .filter((i) => i.id !== "welcome" && !i.error)
+      .filter((i) => i.id !== "welcome" && !i.error && !i.stopped)
       .slice(-MAX_STORED_ITEMS)
       .map(({ id, role, content }) => ({ id, role, content }));
     setChats((current) => upsertChat(current, activeId, toStore));
@@ -370,18 +388,47 @@ function AssistantScreen() {
          los había guardado: tras registrar un gasto y pedirle lo que faltaba, volvía a ofrecer la
          misma tarjeta. La anotación va solo aquí; lo que se ve en pantalla no cambia. */
       const history: AssistantChatMessage[] = items
-        .filter((item) => item.id !== "welcome" && !item.error)
+        .filter((item) => item.id !== "welcome" && !item.error && !item.stopped)
         .map((item) => ({
           role: item.role,
           content: item.role === "assistant" ? annotateAssistantTurn(item.content, item) : item.content,
         }));
       setItems((current) => [...current, userItem]);
       setInput("");
-      // Qué decir mientras responde: dictar un gasto no es buscar. Ver thinking-label.
+      // Qué decir mientras responde: dictar un gasto no es buscar. Ver thinking-label. Después
+      // manda el servidor: avisa en vivo qué consulta de verdad.
       setThinkingText(thinkingLabel(message));
       setIsThinking(true);
+      liveTextRef.current = "";
+      setLiveText("");
+      followRef.current = true;
+      questionRef.current = message;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      turnRef.current += 1;
+      const turn = turnRef.current;
+      const isCurrent = () => turnRef.current === turn;
       try {
-        const response = await askAssistant({ message, history, workspaceId: activeWorkspaceId });
+        const response = await streamAssistant(
+          { message, history, workspaceId: activeWorkspaceId },
+          {
+            onStatus: (tool) => {
+              if (isCurrent()) setThinkingText(tool ? toolStatusLabel(tool) : thinkingLabel(message));
+            },
+            onDelta: (text) => {
+              if (!isCurrent()) return;
+              liveTextRef.current += text;
+              setLiveText(liveTextRef.current);
+            },
+            onReset: () => {
+              if (!isCurrent()) return;
+              liveTextRef.current = "";
+              setLiveText("");
+            },
+          },
+          controller.signal,
+        );
+        if (!isCurrent()) return; // la detuvo: lo que alcanzó a escribir ya quedó en el chat
         /* Un turno puede traer VARIOS movimientos ("me dieron 5 y gasté 28.50"). Cada uno va en su
            propio mensaje para que tenga su propia tarjeta con Guardar, Editar y Cancelar: así se
            puede guardar uno y corregir el otro. El componente de tarjeta no cambia — sigue siendo
@@ -394,6 +441,7 @@ function AssistantScreen() {
             role: "assistant",
             content: response.reply,
             evidence: response.evidence,
+            ...(response.suggestions.length > 0 ? { suggestions: response.suggestions } : {}),
             ...(primerMovimiento ? { draft: primerMovimiento, draftStatus: "pending" as const } : {}),
             ...(response.budgetDraft ? { budgetDraft: response.budgetDraft, draftStatus: "pending" as const } : {}),
             ...(response.obligationDraft ? { obligationDraft: response.obligationDraft, draftStatus: "pending" as const } : {}),
@@ -415,6 +463,7 @@ function AssistantScreen() {
         setRemainingToday(response.remainingToday);
         if (speakModeRef.current) speakReply(response.reply);
       } catch (error) {
+        if (!isCurrent()) return; // error de la conexión que cortó Detener: no es un fallo
         idRef.current += 1;
         setItems((current) => [
           ...current,
@@ -428,12 +477,46 @@ function AssistantScreen() {
         // Reponer el texto para reintentar sin reescribir.
         setInput(message);
       } finally {
-        setIsThinking(false);
+        if (isCurrent()) {
+          abortRef.current = null;
+          liveTextRef.current = "";
+          setLiveText("");
+          setIsThinking(false);
+        }
       }
     },
     [activeWorkspaceId, isThinking, items, speakReply],
   );
   sendRef.current = send;
+
+  /**
+   * Detener: corta la conexión (el servidor deja de trabajar y no cobra la pregunta) y deja en
+   * el chat lo que alcanzó a escribir. Si no había escrito nada, devuelve la pregunta al campo
+   * para corregirla y volver a mandarla.
+   */
+  const stop = useCallback(() => {
+    const controller = abortRef.current;
+    if (!controller) return;
+    abortRef.current = null;
+    turnRef.current += 1;
+    controller.abort();
+    Speech.stop();
+    const partial = liveTextRef.current.trim();
+    liveTextRef.current = "";
+    setLiveText("");
+    setIsThinking(false);
+    if (!partial) setInput(questionRef.current);
+    idRef.current += 1;
+    setItems((current) => [...current, { id: `s${idRef.current}`, role: "assistant", content: partial, stopped: true }]);
+  }, []);
+
+  // Salir de la pantalla con una respuesta en curso también la corta: nadie la va a leer.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  const trackFollow = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    followRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 80;
+  }, []);
 
   // Insight proactivo: la notificación abre el chat con ?ask= y se auto-envía
   // una sola vez (askToken único por tap evita re-disparos por re-render).
@@ -855,13 +938,16 @@ function AssistantScreen() {
             item.error ? styles.bubbleError : null,
           ]}
         >
-          <Text style={styles.bubbleText}>
-            {parseBoldSegments(item.content).map((segment, index) => (
-              <Text key={index} style={segment.bold ? styles.bubbleTextBold : undefined}>
-                {segment.text}
-              </Text>
-            ))}
-          </Text>
+          {item.content ? (
+            <Text style={styles.bubbleText}>
+              {parseBoldSegments(item.content).map((segment, index) => (
+                <Text key={index} style={segment.bold ? styles.bubbleTextBold : undefined}>
+                  {segment.text}
+                </Text>
+              ))}
+            </Text>
+          ) : null}
+          {item.stopped ? <Text style={styles.stoppedNote}>Detuviste la respuesta.</Text> : null}
           {item.evidence?.map((evidence) => (
             <TouchableOpacity
               key={`${item.id}-${evidence.label}`}
@@ -887,6 +973,11 @@ function AssistantScreen() {
       );
     }
   };
+
+  // Las sugerencias de seguimiento solo van bajo la última respuesta, y no mientras piensa.
+  const lastItem = items[items.length - 1];
+  const followUps =
+    !isThinking && lastItem?.role === "assistant" && !lastItem.error ? lastItem.suggestions ?? [] : [];
 
   return (
     <View style={styles.screen}>
@@ -921,10 +1012,16 @@ function AssistantScreen() {
       />
       <View style={styles.flex}>
         <FlatList
+          ref={listRef}
           data={items}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
+          onScroll={trackFollow}
+          scrollEventThrottle={100}
+          onContentSizeChange={() => {
+            if (isThinking && followRef.current) listRef.current?.scrollToEnd({ animated: true });
+          }}
           ListFooterComponent={
             <>
               {items.length === 1 && !isThinking ? (
@@ -941,15 +1038,41 @@ function AssistantScreen() {
                   ))}
                 </View>
               ) : null}
+              {followUps.length > 0 ? (
+                <View style={styles.suggestions}>
+                  {followUps.map((suggestion) => (
+                    <TouchableOpacity
+                      key={suggestion}
+                      style={styles.suggestionChip}
+                      onPress={() => void send(suggestion)}
+                      accessibilityLabel={`Preguntar: ${suggestion}`}
+                    >
+                      <Text style={styles.suggestionChipText}>{suggestion}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
               {isThinking ? (
                 <View style={styles.assistantRow}>
                   <View style={styles.avatar}>
                     <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
                   </View>
-                  <View style={[styles.bubble, styles.bubbleAssistant, styles.thinkingRow]}>
-                    <ActivityIndicator size="small" color={COLORS.pro} />
-                    <Text style={styles.thinkingText}>{thinkingText}</Text>
-                  </View>
+                  {liveText ? (
+                    <View style={[styles.bubble, styles.bubbleAssistant]}>
+                      <Text style={styles.bubbleText}>
+                        {parseBoldSegments(closeDanglingBold(liveText)).map((segment, index) => (
+                          <Text key={index} style={segment.bold ? styles.bubbleTextBold : undefined}>
+                            {segment.text}
+                          </Text>
+                        ))}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.bubble, styles.bubbleAssistant, styles.thinkingRow]}>
+                      <ActivityIndicator size="small" color={COLORS.pro} />
+                      <Text style={styles.thinkingText}>{thinkingText}</Text>
+                    </View>
+                  )}
                 </View>
               ) : null}
             </>
@@ -985,14 +1108,24 @@ function AssistantScreen() {
               <Mic size={18} color={isListening ? COLORS.void : COLORS.pro} />
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || isThinking) ? styles.sendBtnDisabled : null]}
-            onPress={() => void send(input)}
-            disabled={!input.trim() || isThinking}
-            accessibilityLabel="Enviar pregunta"
-          >
-            <Send size={18} color={COLORS.void} />
-          </TouchableOpacity>
+          {isThinking ? (
+            <TouchableOpacity
+              style={styles.stopBtn}
+              onPress={stop}
+              accessibilityLabel="Detener la respuesta"
+            >
+              <Square size={14} color={COLORS.pro} fill={COLORS.pro} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sendBtn, !input.trim() ? styles.sendBtnDisabled : null]}
+              onPress={() => void send(input)}
+              disabled={!input.trim()}
+              accessibilityLabel="Enviar pregunta"
+            >
+              <Send size={18} color={COLORS.void} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -1181,6 +1314,22 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.4,
+  },
+  /* Mismo tamaño que Enviar, en contorno como el micrófono: se lee como "parar", no "mandar". */
+  stopBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.pro,
+  },
+  stoppedNote: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    fontStyle: "italic",
   },
 });
 

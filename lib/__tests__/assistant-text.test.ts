@@ -19,3 +19,20 @@ describe("parseBoldSegments", () => {
     expect(segments.filter((s) => s.bold).map((s) => s.text)).toEqual(["a", "b"]);
   });
 });
+
+describe("closeDanglingBold", () => {
+  const { closeDanglingBold } = require("../assistant-text");
+
+  it("cierra una negrita abierta mientras se escribe", () => {
+    expect(closeDanglingBold("Gastaste **S/ 1,2")).toBe("Gastaste **S/ 1,2**");
+  });
+
+  it("esconde un marcador recién abierto o a medias", () => {
+    expect(closeDanglingBold("Gastaste **")).toBe("Gastaste ");
+    expect(closeDanglingBold("Gastaste *")).toBe("Gastaste ");
+  });
+
+  it("deja igual un texto con las negritas completas", () => {
+    expect(closeDanglingBold("Total **S/ 5** hoy")).toBe("Total **S/ 5** hoy");
+  });
+});

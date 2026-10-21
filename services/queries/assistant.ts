@@ -1,4 +1,5 @@
-import { invokeEdgeFunction } from "./workspace-data";
+import { createSseDataReader, parseStreamEvent } from "../../features/assistant/lib/live-reply";
+import { invokeEdgeFunction, prepareEdgeFunctionRequest } from "./workspace-data";
 
 /**
  * Cliente del asistente IA de consulta (edge function assistant-chat).
@@ -86,6 +87,8 @@ export type AssistantReply = {
   obligationDraft: ObligationDraft | null;
   recurringDraft: RecurringDraft | null;
   remainingToday: number | null;
+  /** Preguntas para seguir la conversación; se muestran como botones bajo la respuesta. */
+  suggestions: string[];
 };
 
 function parseDraft(raw: unknown): AssistantDraft | null {
@@ -235,17 +238,16 @@ function parseEvidence(raw: unknown): AssistantEvidence[] {
   return out;
 }
 
-export async function askAssistant(input: {
-  message: string;
-  history: AssistantChatMessage[];
-  workspaceId: number;
-}): Promise<AssistantReply> {
-  const response = await invokeEdgeFunction<Record<string, unknown>>("assistant-chat", {
-    message: input.message,
-    history: input.history,
-    workspaceId: input.workspaceId,
-  });
+function parseSuggestions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim())
+    .slice(0, 3);
+}
 
+/** El JSON de la respuesta (directo o en el evento `done`) ya validado. */
+function parseAssistantPayload(response: Record<string, unknown>): AssistantReply {
   if (response.ok === false) {
     throw new Error(String(response.error ?? "No se pudo responder. Inténtalo de nuevo."));
   }
@@ -269,5 +271,135 @@ export async function askAssistant(input: {
     recurringDraft: parseRecurringDraft(response.recurringDraft),
     remainingToday:
       typeof response.remainingToday === "number" ? response.remainingToday : null,
+    suggestions: parseSuggestions(response.suggestions),
   };
+}
+
+type AskInput = {
+  message: string;
+  history: AssistantChatMessage[];
+  workspaceId: number;
+};
+
+export async function askAssistant(input: AskInput): Promise<AssistantReply> {
+  const response = await invokeEdgeFunction<Record<string, unknown>>("assistant-chat", {
+    message: input.message,
+    history: input.history,
+    workspaceId: input.workspaceId,
+  });
+  return parseAssistantPayload(response);
+}
+
+export type AssistantStreamHandlers = {
+  /** Qué está consultando el servidor (null = pensando). */
+  onStatus: (tool: string | null) => void;
+  /** Un trozo nuevo de la respuesta. */
+  onDelta: (text: string) => void;
+  /** Borrar lo mostrado: el servidor reintenta o pasó a consultar datos. */
+  onReset: () => void;
+};
+
+/** Tope de toda la respuesta en vivo; el servidor manda un latido cada 10 s. */
+const STREAM_TIMEOUT_MS = 150_000;
+
+type StreamingFetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  headers: { get(name: string): string | null };
+  body: ReadableStream<Uint8Array> | null;
+  json(): Promise<unknown>;
+}>;
+
+/**
+ * El `fetch` de Expo, que sí deja leer la respuesta mientras llega (el de React Native la
+ * entrega entera al final). Se carga con `require` protegido: si un binario no lo tuviera, el
+ * asistente sigue funcionando por el camino de siempre, solo que sin texto en vivo.
+ */
+function loadStreamingFetch(): StreamingFetch | null {
+  if (typeof TextDecoder === "undefined") return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("expo/fetch") as { fetch?: StreamingFetch };
+    return typeof mod.fetch === "function" ? mod.fetch : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pregunta al asistente y va contando lo que pasa: qué consulta y el texto a medida que se
+ * escribe. Devuelve lo mismo que `askAssistant`; el evento final manda sobre lo mostrado.
+ *
+ * `signal` es el botón Detener: corta la conexión y el servidor deja de trabajar sin cobrar la
+ * pregunta. Quien llama sabe que detuvo, así que el error de esa cancelación lo ignora.
+ */
+export async function streamAssistant(
+  input: AskInput,
+  handlers: AssistantStreamHandlers,
+  signal: AbortSignal,
+): Promise<AssistantReply> {
+  const streamingFetch = loadStreamingFetch();
+  if (!streamingFetch) return askAssistant(input);
+
+  const body = { message: input.message, history: input.history, workspaceId: input.workspaceId };
+  const request = await prepareEdgeFunctionRequest("assistant-chat", body);
+
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal.aborted) abort();
+  signal.addEventListener("abort", abort);
+  const timeout = setTimeout(abort, STREAM_TIMEOUT_MS);
+
+  try {
+    let response: Awaited<ReturnType<StreamingFetch>>;
+    try {
+      response = await streamingFetch(request.endpoint, {
+        method: "POST",
+        headers: request.headers,
+        body: JSON.stringify({ ...body, stream: true }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (controller.signal.aborted) throw new Error("La respuesta tardó demasiado. Intenta de nuevo.");
+      throw new Error("No pudimos conectarnos al servidor. Revisa tu internet e intenta de nuevo.");
+    }
+
+    // Sesión vencida justo ahora: el camino de siempre sabe renovarla y reintentar.
+    if (response.status === 401) return askAssistant(input);
+
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!contentType.includes("text/event-stream") || !response.body) {
+      // Pro, cupo agotado o un error antes de empezar: llegan como JSON, igual que siempre.
+      const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok && json.ok !== false) {
+        throw new Error("No se pudo responder. Inténtalo de nuevo.");
+      }
+      return parseAssistantPayload(json);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const lines = createSseDataReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      for (const data of lines.push(decoder.decode(value, { stream: true }))) {
+        const event = parseStreamEvent(data);
+        if (!event) continue;
+        if (event.type === "status") handlers.onStatus(event.tool);
+        else if (event.type === "delta") handlers.onDelta(event.text);
+        else if (event.type === "reset") handlers.onReset();
+        else if (event.type === "error") throw new Error(event.error);
+        else if (event.type === "done") return parseAssistantPayload(event.payload);
+      }
+    }
+    throw new Error("La respuesta se cortó. Intenta de nuevo.");
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", abort);
+  }
 }
