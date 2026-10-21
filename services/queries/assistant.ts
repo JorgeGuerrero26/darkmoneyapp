@@ -76,6 +76,39 @@ export type RecurringDraft = {
   description: string | null;
 };
 
+/**
+ * Corrección o borrado de un gasto/ingreso ya registrado. El servidor ya validó que se puede y
+ * resolvió los nombres a ids del espacio; la app solo lo muestra y, si el usuario confirma, lo
+ * aplica con la edición o el borrado normales.
+ */
+export type MovementChange = {
+  action: "update" | "delete";
+  movementId: number;
+  movementType: "expense" | "income";
+  currency: string;
+  before: {
+    amount: number;
+    description: string | null;
+    categoryName: string | null;
+    accountName: string | null;
+    counterpartyName: string | null;
+    date: string;
+  };
+  after: {
+    amount?: number;
+    description?: string;
+    notes?: string;
+    categoryId?: number;
+    categoryName?: string;
+    accountId?: number;
+    accountName?: string;
+    counterpartyId?: number;
+    counterpartyName?: string;
+    date?: string;
+    occurredAt?: string;
+  };
+};
+
 export type AssistantReply = {
   reply: string;
   evidence: AssistantEvidence[];
@@ -89,6 +122,8 @@ export type AssistantReply = {
   remainingToday: number | null;
   /** Preguntas para seguir la conversación; se muestran como botones bajo la respuesta. */
   suggestions: string[];
+  /** Correcciones o borrados propuestos; cada uno lleva su tarjeta para confirmar. */
+  movementChanges: MovementChange[];
 };
 
 function parseDraft(raw: unknown): AssistantDraft | null {
@@ -238,6 +273,57 @@ function parseEvidence(raw: unknown): AssistantEvidence[] {
   return out;
 }
 
+function parseMovementChange(raw: unknown): MovementChange | null {
+  if (!raw || typeof raw !== "object") return null;
+  const d = raw as Record<string, unknown>;
+  const movementId = Number(d.movementId);
+  if (d.action !== "update" && d.action !== "delete") return null;
+  if (d.movementType !== "expense" && d.movementType !== "income") return null;
+  if (!Number.isInteger(movementId) || movementId <= 0) return null;
+  const before = (d.before && typeof d.before === "object" ? d.before : {}) as Record<string, unknown>;
+  const after = (d.after && typeof d.after === "object" ? d.after : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const pos = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const parsedAfter: MovementChange["after"] = {};
+  if (pos(after.amount) !== undefined) parsedAfter.amount = pos(after.amount);
+  if (str(after.description)) parsedAfter.description = str(after.description)!;
+  if (str(after.notes)) parsedAfter.notes = str(after.notes)!;
+  if (pos(after.categoryId) !== undefined && str(after.categoryName)) {
+    parsedAfter.categoryId = pos(after.categoryId);
+    parsedAfter.categoryName = str(after.categoryName)!;
+  }
+  if (pos(after.accountId) !== undefined && str(after.accountName)) {
+    parsedAfter.accountId = pos(after.accountId);
+    parsedAfter.accountName = str(after.accountName)!;
+  }
+  if (pos(after.counterpartyId) !== undefined && str(after.counterpartyName)) {
+    parsedAfter.counterpartyId = pos(after.counterpartyId);
+    parsedAfter.counterpartyName = str(after.counterpartyName)!;
+  }
+  if (typeof after.date === "string" && DATE_RE.test(after.date) && str(after.occurredAt)) {
+    parsedAfter.date = after.date;
+    parsedAfter.occurredAt = str(after.occurredAt)!;
+  }
+  // Un update sin cambios válidos no se ofrece: la tarjeta no tendría nada que aplicar.
+  if (d.action === "update" && Object.keys(parsedAfter).length === 0) return null;
+  return {
+    action: d.action,
+    movementId,
+    movementType: d.movementType,
+    currency: str(d.currency) ?? "PEN",
+    before: {
+      amount: Number(before.amount) || 0,
+      description: str(before.description),
+      categoryName: str(before.categoryName),
+      accountName: str(before.accountName),
+      counterpartyName: str(before.counterpartyName),
+      date: typeof before.date === "string" ? before.date : "",
+    },
+    after: parsedAfter,
+  };
+}
+
 function parseSuggestions(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -272,6 +358,9 @@ function parseAssistantPayload(response: Record<string, unknown>): AssistantRepl
     remainingToday:
       typeof response.remainingToday === "number" ? response.remainingToday : null,
     suggestions: parseSuggestions(response.suggestions),
+    movementChanges: Array.isArray(response.movementChanges)
+      ? response.movementChanges.map(parseMovementChange).filter((c): c is MovementChange => c !== null)
+      : [],
   };
 }
 

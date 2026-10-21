@@ -1,6 +1,7 @@
 import type {
   AssistantDraft,
   BudgetDraft,
+  MovementChange,
   ObligationDraft,
   RecurringDraft,
 } from "../../../services/queries/assistant";
@@ -13,6 +14,7 @@ export type DraftTurn = {
   budgetDraft?: BudgetDraft | null;
   obligationDraft?: ObligationDraft | null;
   recurringDraft?: RecurringDraft | null;
+  movementChange?: MovementChange | null;
   draftStatus?: DraftStatus;
 };
 
@@ -60,6 +62,22 @@ function describirMovimiento(d: AssistantDraft): string {
  */
 export function describeDraftTurn(turn: DraftTurn): string | null {
   if (turn.draft) return describirMovimiento(turn.draft);
+  if (turn.movementChange) {
+    const c = turn.movementChange;
+    const tipo = c.movementType === "expense" ? "gasto" : "ingreso";
+    const cual = partes([`${tipo} #${c.movementId}`, c.before.description ? `"${c.before.description}"` : null, monto(c.before.amount, c.currency), c.before.date]);
+    if (c.action === "delete") return `borrar ${cual}`;
+    const cambios = partes([
+      c.after.amount !== undefined ? `monto → ${monto(c.after.amount, c.currency)}` : null,
+      c.after.description !== undefined ? `detalle → "${c.after.description}"` : null,
+      c.after.categoryName ? `categoría → ${c.after.categoryName}` : null,
+      c.after.accountName ? `cuenta → ${c.after.accountName}` : null,
+      c.after.counterpartyName ? `contacto → ${c.after.counterpartyName}` : null,
+      c.after.date ? `fecha → ${c.after.date}` : null,
+      c.after.notes ? "nota nueva" : null,
+    ]);
+    return `corregir ${cual}: ${cambios}`;
+  }
   if (turn.budgetDraft) {
     const b = turn.budgetDraft;
     return partes([`presupuesto "${b.name}" ${monto(b.limitAmount, b.currency)}`, b.categoryName, `${b.periodStart}→${b.periodEnd}`]);

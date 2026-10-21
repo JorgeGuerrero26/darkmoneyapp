@@ -20,6 +20,7 @@ const TOOL_LABELS: Record<string, string> = {
   project_cashflow: "Calculando tu proyección…",
   projection_gaps: "Revisando qué te falta registrar…",
   draft_movement: THINKING_REGISTER,
+  propose_movement_change: "Preparando la corrección…",
   draft_budget: "Preparando el presupuesto…",
   draft_obligation: "Preparando la deuda…",
   draft_recurring: "Preparando el pago recurrente…",

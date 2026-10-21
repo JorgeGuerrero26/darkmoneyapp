@@ -38,6 +38,7 @@ import {
 } from "../features/assistant/lib/chat-store";
 import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
 import { cleanForSpeech, nextSpeakableChunk, unspokenRest } from "../features/assistant/lib/speech-chunks";
+import { movementChangeLines, movementChangeToUpdate } from "../features/assistant/lib/change-to-input";
 import { THINKING_DEFAULT, thinkingLabel, toolStatusLabel } from "../features/assistant/lib/thinking-label";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard, type DraftAmountTone } from "../features/assistant/components/AssistantDraftCard";
@@ -52,11 +53,14 @@ import {
   type AssistantDraft,
   type AssistantEvidence,
   type BudgetDraft,
+  type MovementChange,
   type ObligationDraft,
   type RecurringDraft,
 } from "../services/queries/assistant";
 import {
   useCreateMovementMutation,
+  useDeleteMovementMutation,
+  useUpdateMovementMutation,
   useWorkspaceSnapshotQuery,
   type WorkspaceSnapshot,
 } from "../services/queries/workspace-data";
@@ -82,6 +86,8 @@ type ChatItem = {
   budgetDraft?: BudgetDraft;
   obligationDraft?: ObligationDraft;
   recurringDraft?: RecurringDraft;
+  /** Corregir o borrar un movimiento ya registrado (el asistente lo propone; el usuario confirma). */
+  movementChange?: MovementChange;
   draftStatus?: "pending" | "saved" | "discarded";
   savedMovementId?: number;
   /** Preguntas para seguir; se muestran como botones solo bajo la última respuesta. */
@@ -178,6 +184,8 @@ function AssistantScreen() {
   const { showToast, showErrorToast } = useToast();
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
+  const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
+  const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
   const markSubPaid = useMarkSubscriptionPaidMutation(activeWorkspaceId);
   const payObligation = useCreateObligationPaymentMutation(activeWorkspaceId);
   const createBudget = useCreateBudgetMutation(activeWorkspaceId);
@@ -473,6 +481,11 @@ function AssistantScreen() {
             draft: movimiento,
             draftStatus: "pending",
           });
+        }
+        // Cada corrección o borrado lleva su propia tarjeta, igual que los movimientos de arriba.
+        for (const change of response.movementChanges) {
+          idRef.current += 1;
+          nuevos.push({ id: `a${idRef.current}`, role: "assistant", content: "", movementChange: change, draftStatus: "pending" });
         }
         setItems((current) => [...current, ...nuevos]);
         setRemainingToday(response.remainingToday);
@@ -808,6 +821,50 @@ function AssistantScreen() {
     };
   }
 
+  /**
+   * Aplica la corrección o el borrado con la MISMA edición y el mismo borrado que la pantalla de
+   * Movimientos (incluido el modo sin conexión). El servidor ya validó que es un gasto o ingreso
+   * suelto y resolvió categoría, cuenta y contacto a ids del espacio.
+   */
+  async function applyMovementChange(item: ChatItem) {
+    const change = item.movementChange;
+    if (!change || !activeWorkspaceId) return;
+    const kind = change.movementType === "expense" ? "Gasto" : "Ingreso";
+    setSavingDraftId(item.id);
+    try {
+      if (change.action === "delete") {
+        await deleteMovement.mutateAsync(change.movementId);
+        showToast(`${kind} borrado`, "success");
+      } else {
+        await updateMovement.mutateAsync({ id: change.movementId, input: movementChangeToUpdate(change) });
+        showToast(`${kind} corregido`, "success");
+      }
+      setDraftStatus(item.id, "saved");
+    } catch (error) {
+      showErrorToast(change.action === "delete" ? `No se pudo borrar el ${kind.toLowerCase()}` : `No se pudo corregir el ${kind.toLowerCase()}`, error);
+    } finally {
+      setSavingDraftId(null);
+    }
+  }
+
+  function movementChangeCardProps(item: ChatItem) {
+    const change = item.movementChange!;
+    const kind = change.movementType === "expense" ? "gasto" : "ingreso";
+    const money = (amount: number) => formatCurrency(amount, change.currency);
+    const amount = change.after.amount ?? change.before.amount;
+    const isDelete = change.action === "delete";
+    return {
+      title: isDelete ? `Borrar ${kind}` : `Corregir ${kind}`,
+      amountLabel: money(amount),
+      amountTone: (change.movementType === "expense" ? "expense" : "income") as DraftAmountTone,
+      lines: movementChangeLines(change, money),
+      saveLabel: isDelete ? "Borrar" : "Aplicar",
+      savingLabel: isDelete ? "Borrando…" : "Aplicando…",
+      savedTitle: isDelete ? `${kind[0].toUpperCase()}${kind.slice(1)} borrado` : `${kind[0].toUpperCase()}${kind.slice(1)} corregido`,
+      savedSubtitle: change.after.description ?? change.before.description ?? change.before.date,
+    };
+  }
+
   function budgetCardProps(item: ChatItem) {
     const b = item.budgetDraft!;
     const money = formatCurrency(b.limitAmount, b.currency);
@@ -858,8 +915,55 @@ function AssistantScreen() {
     };
   }
 
+  /**
+   * La respuesta y su tarjeta juntas. Antes una respuesta con tarjeta mostraba solo la tarjeta y su
+   * texto se perdía; con la respuesta en vivo, además, aparecía escribiéndose para desaparecer.
+   */
   const renderItem = ({ item }: { item: ChatItem }) => {
+    const hasCard = Boolean(item.draft || item.budgetDraft || item.obligationDraft || item.recurringDraft || item.movementChange);
+    if (!hasCard || !item.content.trim()) return renderTurn({ item });
+    const textOnly: ChatItem = {
+      ...item,
+      draft: undefined,
+      budgetDraft: undefined,
+      obligationDraft: undefined,
+      recurringDraft: undefined,
+      movementChange: undefined,
+    };
+    return (
+      <View style={styles.turnWithCard}>
+        {renderTurn({ item: textOnly })}
+        {renderTurn({ item })}
+      </View>
+    );
+  };
+
+  const renderTurn = ({ item }: { item: ChatItem }) => {
     {
+      if (item.movementChange) {
+        const props = movementChangeCardProps(item);
+        const change = item.movementChange;
+        return (
+          <View style={styles.assistantRow}>
+            <View style={styles.avatar}>
+              <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
+            </View>
+            <AssistantDraftCard
+              {...props}
+              status={item.draftStatus ?? "pending"}
+              isSaving={savingDraftId === item.id}
+              destructive={change.action === "delete"}
+              onSave={() => void applyMovementChange(item)}
+              onCancel={() => setDraftStatus(item.id, "discarded")}
+              onViewMovement={
+                change.action === "update"
+                  ? () => router.push(`/movement/${change.movementId}?from=assistant` as never)
+                  : undefined
+              }
+            />
+          </View>
+        );
+      }
       if (item.recurringDraft) {
         const { title, amountLabel, lines } = recurringCardProps(item);
         return (
@@ -1344,6 +1448,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   /* Mismo tamaño que Enviar, en contorno como el micrófono: se lee como "parar", no "mandar". */
+  turnWithCard: { gap: SPACING.sm },
   stopBtn: {
     width: 40,
     height: 40,

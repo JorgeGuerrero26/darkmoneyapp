@@ -20,9 +20,15 @@ type Props = {
   status: DraftCardStatus;
   isSaving: boolean;
   onSave: () => void;
-  onEdit: () => void;
+  /** Sin él no hay botón Editar (una corrección se aplica o se cancela). */
+  onEdit?: () => void;
   onCancel: () => void;
   onViewMovement?: () => void;
+  /** Texto del botón principal ("Guardar" por defecto) y mientras trabaja ("Guardando…"). */
+  saveLabel?: string;
+  savingLabel?: string;
+  /** Borrar: el botón principal va en rojo, porque no se puede deshacer. */
+  destructive?: boolean;
 };
 
 /**
@@ -43,6 +49,9 @@ export function AssistantDraftCard({
   onEdit,
   onCancel,
   onViewMovement,
+  saveLabel = "Guardar",
+  savingLabel = "Guardando…",
+  destructive = false,
 }: Props) {
   const amountStyle =
     amountTone === "expense" ? styles.amountExpense : amountTone === "income" ? styles.amountIncome : null;
@@ -84,16 +93,18 @@ export function AssistantDraftCard({
       {status === "pending" ? (
         <View style={styles.actions}>
           <TouchableOpacity
-            style={[styles.btn, styles.btnPrimary]}
+            style={[styles.btn, destructive ? styles.btnDanger : styles.btnPrimary]}
             onPress={onSave}
             disabled={isSaving}
-            accessibilityLabel="Guardar movimiento"
+            accessibilityLabel={saveLabel}
           >
-            <Text style={styles.btnPrimaryText}>{isSaving ? "Guardando…" : "Guardar"}</Text>
+            <Text style={destructive ? styles.btnDangerText : styles.btnPrimaryText}>{isSaving ? savingLabel : saveLabel}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btn} onPress={onEdit} disabled={isSaving} accessibilityLabel="Editar antes de guardar">
-            <Text style={styles.btnText}>Editar</Text>
-          </TouchableOpacity>
+          {onEdit ? (
+            <TouchableOpacity style={styles.btn} onPress={onEdit} disabled={isSaving} accessibilityLabel="Editar antes de guardar">
+              <Text style={styles.btnText}>Editar</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.btn} onPress={onCancel} disabled={isSaving} accessibilityLabel="Cancelar">
             <Text style={styles.btnText}>Cancelar</Text>
           </TouchableOpacity>
@@ -148,6 +159,9 @@ const styles = StyleSheet.create({
      y pasaba a significar "botón" — que es justo lo que rompe la regla del color. */
   btnPrimary: { backgroundColor: COLORS.action, borderColor: COLORS.action },
   btnPrimaryText: { color: COLORS.actionText, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  /* El mismo "peligro" que el botón compartido (Button variant="danger"). */
+  btnDanger: { backgroundColor: SURFACE.dangerBg, borderColor: SURFACE.dangerBorder },
+  btnDangerText: { color: COLORS.rosewood, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   savedCard: {
     flexDirection: "row",
     alignItems: "center",
