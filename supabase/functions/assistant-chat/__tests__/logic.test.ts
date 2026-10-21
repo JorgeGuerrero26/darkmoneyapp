@@ -395,3 +395,60 @@ describe("isSmallTalk", () => {
     }
   });
 });
+
+describe("clampMovementChangeParams", () => {
+  const { clampMovementChangeParams } = require("../logic");
+
+  it("borrar solo necesita id y acción", () => {
+    expect(clampMovementChangeParams({ movementId: 12, action: "delete", amount: 5 })).toEqual({ movementId: 12, action: "delete" });
+  });
+
+  it("un update guarda solo lo que cambia y redondea el monto", () => {
+    expect(clampMovementChangeParams({ movementId: "12", action: "update", amount: 25.004, categoryName: " Comida " })).toEqual({
+      movementId: 12, action: "update", amount: 25, categoryName: "Comida",
+    });
+  });
+
+  it("rechaza ids raros, montos no positivos, fechas mal escritas y updates vacíos", () => {
+    expect(clampMovementChangeParams({ movementId: 0, action: "delete" })).toBeNull();
+    expect(clampMovementChangeParams({ movementId: 3, action: "editar" })).toBeNull();
+    expect(clampMovementChangeParams({ movementId: 3, action: "update", amount: -4 })).toBeNull();
+    expect(clampMovementChangeParams({ movementId: 3, action: "update", occurredAt: "ayer" })).toBeNull();
+    expect(clampMovementChangeParams({ movementId: 3, action: "update" })).toBeNull();
+  });
+});
+
+describe("movementChangeBlockReason", () => {
+  const { movementChangeBlockReason } = require("../logic");
+
+  it("deja corregir gastos e ingresos sueltos", () => {
+    expect(movementChangeBlockReason({ movement_type: "expense", status: "posted", obligation_id: null, subscription_id: null, metadata: {} })).toBeNull();
+    expect(movementChangeBlockReason({ movement_type: "income", status: "planned" })).toBeNull();
+  });
+
+  it("no toca pagos de deudas o suscripciones, transferencias ni anulados", () => {
+    expect(movementChangeBlockReason({ movement_type: "expense", obligation_id: 4 })).toMatch(/deuda/);
+    expect(movementChangeBlockReason({ movement_type: "expense", subscription_id: 9 })).toMatch(/suscripción/);
+    expect(movementChangeBlockReason({ movement_type: "income", metadata: { obligation_event_id: 7 } })).toMatch(/deuda/);
+    expect(movementChangeBlockReason({ movement_type: "transfer" })).toMatch(/transferencia/);
+    expect(movementChangeBlockReason({ movement_type: "expense", status: "voided" })).toMatch(/anulado/);
+  });
+});
+
+describe("pickByName", () => {
+  const { pickByName } = require("../logic");
+  const cats = [{ id: 1, name: "Comida" }, { id: 2, name: "Comida rápida" }, { id: 3, name: "Tecnología" }];
+
+  it("prefiere el nombre exacto aunque otro lo contenga", () => {
+    expect(pickByName(cats, "comida")).toEqual({ row: cats[0] });
+  });
+
+  it("acepta un trozo único y sin tildes", () => {
+    expect(pickByName(cats, "tecnologia")).toEqual({ row: cats[2] });
+  });
+
+  it("si calzan varios o ninguno, no adivina", () => {
+    expect(pickByName([{ name: "BCP Soles" }, { name: "BCP Dólares" }], "bcp")).toEqual({ row: null, options: ["BCP Soles", "BCP Dólares"] });
+    expect(pickByName(cats, "viajes")).toEqual({ row: null, options: [] });
+  });
+});

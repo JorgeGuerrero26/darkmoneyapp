@@ -585,6 +585,99 @@ export function isSmallTalk(text: string): boolean {
   return words.length > 0 && words.length <= 6 && words.every((w) => SMALL_TALK_WORDS.has(w));
 }
 
+export type MovementChangeParams = {
+  movementId: number;
+  action: "update" | "delete";
+  amount?: number;
+  description?: string;
+  categoryName?: string;
+  accountName?: string;
+  counterpartyName?: string;
+  occurredAt?: string;
+  notes?: string;
+};
+
+/**
+ * Valida lo que pidió el modelo para corregir o borrar. null = no se puede armar (falta el id o
+ * la acción, o un update que no cambia nada): el modelo recibe el error y pregunta.
+ */
+export function clampMovementChangeParams(raw: Record<string, unknown>): MovementChangeParams | null {
+  const movementId = Number(raw.movementId);
+  if (!Number.isInteger(movementId) || movementId <= 0) return null;
+  if (raw.action !== "update" && raw.action !== "delete") return null;
+  if (raw.action === "delete") return { movementId, action: "delete" };
+
+  const text = (value: unknown, max: number) =>
+    typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined;
+  const params: MovementChangeParams = { movementId, action: "update" };
+  const amount = Number(raw.amount);
+  if (raw.amount !== undefined && raw.amount !== null) {
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    params.amount = Math.round(amount * 100) / 100;
+  }
+  const description = text(raw.description, 200);
+  if (description) params.description = description;
+  const categoryName = text(raw.categoryName, 80);
+  if (categoryName) params.categoryName = categoryName;
+  const accountName = text(raw.accountName, 80);
+  if (accountName) params.accountName = accountName;
+  const counterpartyName = text(raw.counterpartyName, 80);
+  if (counterpartyName) params.counterpartyName = counterpartyName;
+  const notes = text(raw.notes, 500);
+  if (notes) params.notes = notes;
+  if (typeof raw.occurredAt === "string" && raw.occurredAt.trim()) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw.occurredAt.trim())) return null;
+    params.occurredAt = raw.occurredAt.trim();
+  }
+  const changes = Object.keys(params).filter((key) => key !== "movementId" && key !== "action");
+  return changes.length > 0 ? params : null;
+}
+
+/**
+ * Por qué el asistente NO puede tocar este movimiento, o null si puede.
+ *
+ * Solo gastos e ingresos sueltos. Un pago de deuda o de suscripción mueve además el saldo de esa
+ * deuda o el próximo cobro, y una transferencia toca dos cuentas: corregirlos desde el chat sin
+ * esa lógica dejaría las cifras descuadradas. Para eso está la pantalla del movimiento.
+ */
+export function movementChangeBlockReason(row: {
+  movement_type?: unknown;
+  status?: unknown;
+  obligation_id?: unknown;
+  subscription_id?: unknown;
+  metadata?: unknown;
+}): string | null {
+  if (row.status === "voided") return "Ese movimiento está anulado.";
+  if (row.obligation_id != null) return "Ese movimiento está ligado a una deuda o crédito: se corrige desde la app, en el movimiento o en la deuda.";
+  if (row.subscription_id != null) return "Ese movimiento es el pago de una suscripción: se corrige desde la app.";
+  const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {};
+  if (metadata.obligation_event_id != null) return "Ese movimiento está ligado a un pago de deuda: se corrige desde la app.";
+  if (row.movement_type !== "expense" && row.movement_type !== "income") {
+    return "Solo puedo corregir o borrar gastos e ingresos sueltos; ese movimiento (transferencia u otro tipo) se corrige desde la app.";
+  }
+  return null;
+}
+
+/**
+ * Elige UNA fila por nombre (categoría, cuenta, contacto), sin tildes ni mayúsculas.
+ * Primero el nombre exacto; si no, el que lo contiene. Si calzan varios, no adivina: devuelve
+ * las opciones para que el modelo pregunte. Corregir dinero hacia la categoría equivocada es
+ * peor que preguntar.
+ */
+export function pickByName<T extends { name?: unknown }>(
+  rows: T[],
+  name: string,
+): { row: T } | { row: null; options: string[] } {
+  const needle = normalizeName(name);
+  if (!needle) return { row: null, options: [] };
+  const named = rows.filter((row) => typeof row.name === "string" && row.name.trim());
+  const exact = named.filter((row) => normalizeName(String(row.name)) === needle);
+  if (exact.length === 1) return { row: exact[0] };
+  const partial = exact.length > 1 ? exact : named.filter((row) => normalizeName(String(row.name)).includes(needle));
+  if (partial.length === 1) return { row: partial[0] };
+  return { row: null, options: partial.slice(0, 6).map((row) => String(row.name)) };
+}
+
 /** Valida el hecho a recordar: frase corta, sin saltos raros, 3-300 chars. */
 export function clampFact(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -817,6 +910,33 @@ export const ASSISTANT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "propose_movement_change",
+      description:
+        "PROPONE (no aplica) CORREGIR o BORRAR un movimiento YA registrado: 'el taxi de ayer era 25, no 20', 'ese gasto era de comida', 'cámbialo a la cuenta BCP', 'borra el gasto de 40 de ayer'. " +
+        "Primero ubícalo con search_movements y pasa su id; si hay varios candidatos, NO llames esta tool: pregunta cuál, mostrando fecha y monto de cada uno. " +
+        "La app muestra una tarjeta con el antes y el después y el usuario confirma: nunca digas que ya lo cambiaste o borraste. " +
+        "Solo sirve para gastos e ingresos sueltos; si responde que el movimiento está ligado a una deuda, una suscripción o es una transferencia, explícale que eso se corrige desde la app. " +
+        "En update pasa SOLO los campos que cambian.",
+      parameters: {
+        type: "object",
+        properties: {
+          movementId: { type: "number", description: "id del movimiento, tal como lo devolvió search_movements" },
+          action: { type: "string", enum: ["update", "delete"] },
+          amount: { type: "number", description: "Monto nuevo (positivo)" },
+          description: { type: "string" },
+          categoryName: { type: "string", description: "Categoría nueva, del contexto" },
+          accountName: { type: "string", description: "Cuenta nueva, del contexto (misma moneda)" },
+          counterpartyName: { type: "string", description: "Contacto nuevo, del contexto" },
+          occurredAt: { type: "string", description: "Fecha nueva YYYY-MM-DD (no futura)" },
+          notes: { type: "string" },
+        },
+        required: ["movementId", "action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "draft_budget",
       description:
         "PROPONE crear un presupuesto (límite de gasto por período). Úsala cuando el usuario pida 'ponme un presupuesto/límite de X en Y', 'quiero gastar máximo Z en...'. NUNCA lo creas tú: la app muestra una tarjeta y el usuario confirma. Si menciona una categoría, pásala en categoryName (debe existir en el CONTEXTO DEL WORKSPACE). Si no dice el monto, pídeselo; no llames la tool sin monto.",
@@ -931,6 +1051,7 @@ export function buildSystemPrompt(nowLong: string, timeZone = "America/Lima"): s
     "VARIOS EN UNA FRASE: si el usuario menciona más de un movimiento ('me dieron 5 y gasté 28.50'), llama draft_movement UNA VEZ POR CADA UNO, en el orden en que los dijo. La app pinta una tarjeta por movimiento y el usuario confirma cada una. No los fusiones ni elijas uno: proponer de menos es perder un dato que el usuario ya te dio.",
     "MEMORIA DE TUS PROPUESTAS: en el historial, tus turnos pueden traer una nota entre corchetes con lo que propusiste y en qué quedó — [Propuse: ... — el usuario lo GUARDÓ / lo DESCARTÓ / sigue SIN CONFIRMAR]. Es tu registro de lo ya hecho: NO vuelvas a proponer algo marcado como GUARDADO. Si el usuario dice que faltó algo, mira esa nota para saber qué quedó pendiente.",
     "Si para registrar falta la cuenta, o hay varias suscripciones/deudas/contrapartes que coinciden, NO llames draft_movement: pregunta en texto ofreciendo las opciones concretas del contexto.",
+    "CORREGIR O BORRAR lo ya registrado ('el taxi de ayer era 25', 'ese gasto no era mío, bórralo', 'era de comida'): ubica el movimiento con search_movements y, si es UNO, llama propose_movement_change con su id y solo lo que cambia. Si hay varios que calzan, pregunta cuál (fecha y monto de cada uno). Nunca digas que ya lo cambiaste o borraste: la app muestra el antes y el después y el usuario confirma. Si el usuario dijo un monto o dato nuevo para algo que TÚ propusiste en esta conversación y aún no se guardó, no es una corrección: vuelve a proponerlo con draft_movement.",
     "'pagué Netflix' → pay_subscription con su id; 'pagué 80 a Juan' → pay_debt con el id de la deuda de Juan; nunca lo conviertas en gasto suelto si existe la entidad.",
     "PRESUPUESTOS: si el usuario pide poner un límite/presupuesto de gasto ('ponme S/500 de límite en comida', 'quiero gastar máximo X en Y'), llama draft_budget (monto en limitAmount, categoría en categoryName si la menciona). NO lo creas tú; la app pide confirmación. Si no dice el monto, pídeselo. Nunca escribes directo, igual que en el registro.",
     "DEUDAS/CRÉDITOS: 'le presté 200 a Juan' / 'me deben X' → draft_obligation direction=receivable; 'le debo 500' / 'debo X' → direction=payable. Pon el nombre en counterpartyName. NO lo creas tú; la app confirma. Solo registra la deuda: NO mueve dinero de cuentas (si además salió/entró efectivo, el usuario lo registra aparte). Pide el monto si falta o si no queda claro si te deben o debes.",
@@ -940,7 +1061,7 @@ export function buildSystemPrompt(nowLong: string, timeZone = "America/Lima"): s
     "Formato: texto plano; marca montos, ganancias y márgenes con **negritas**. Prohibido el resto del Markdown (#, ---, __, tablas).",
     "En desgloses de cálculo empieza CADA línea con un emoji que indique la operación, nunca con signos sueltos '+'/'-' ni con '- ' de lista (se ven feos como '- +'): 💰 saldo o base, ➕ lo que suma, ➖ lo que resta, 🟰 el total. Ejemplo: '💰 Saldo actual: **S/ 1,601.97**' / '➕ Sueldo: **S/ 2,630.50**' / '➖ Gasto proyectado: **S/ 3,087**' / '🟰 Total: **S/ 1,145.47**'. Fuera de los desgloses, sin emojis decorativos.",
     "Sé conciso por defecto (~120 palabras). Cuando entregues un análisis con cálculos, puedes extenderte hasta ~200.",
-    "SUGERENCIAS: termina cada respuesta con UNA línea aparte que empiece exactamente con [[SIGUE]] seguida de 2 o 3 preguntas cortas (máximo 60 caracteres cada una) separadas por ' | ', escritas como las diría el usuario, que tengan sentido justo después de tu respuesta y que puedas contestar con sus datos. Ejemplo: '[[SIGUE]] ¿Y el mes pasado? | ¿En qué categoría gasté más?'. NO pongas esa línea cuando propusiste algo para confirmar (tarjeta de registro, presupuesto, deuda o pago recurrente) ni cuando le estás pidiendo un dato. La app la convierte en botones: nunca la menciones ni la expliques.",
+    "SUGERENCIAS: termina cada respuesta con UNA línea aparte que empiece exactamente con [[SIGUE]] seguida de 2 o 3 preguntas cortas (máximo 60 caracteres cada una) separadas por ' | ', escritas como las diría el usuario, que tengan sentido justo después de tu respuesta y que puedas contestar con sus datos. Ejemplo: '[[SIGUE]] ¿Y el mes pasado? | ¿En qué categoría gasté más?'. NO pongas esa línea cuando propusiste algo para confirmar (tarjeta de registro, corrección o borrado, presupuesto, deuda o pago recurrente) ni cuando le estás pidiendo un dato. La app la convierte en botones: nunca la menciones ni la expliques.",
   ].join("\n");
 }
 

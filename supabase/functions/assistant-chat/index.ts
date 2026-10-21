@@ -33,6 +33,9 @@ import {
   buildEvidence,
   buildSystemPrompt,
   clampFact,
+  clampMovementChangeParams,
+  movementChangeBlockReason,
+  pickByName,
   isDeepQuestion,
   isSmallTalk,
   clampSearchParams,
@@ -49,7 +52,7 @@ import {
   normalizeName,
   type AssistantEvidence,
 } from "./logic.ts";
-import { dayRangeUtc, longDateInZone, resolveTimeZone, todayInZone } from "./time-zone.ts";
+import { dayRangeUtc, dayStartUtc, longDateInZone, resolveTimeZone, todayInZone } from "./time-zone.ts";
 import {
   createChatStreamAccumulator,
   createMarkerFilter,
@@ -323,13 +326,15 @@ type CompactMovement = {
 };
 
 // deno-lint-ignore no-explicit-any
-function compactRow(row: any): CompactMovement {
+function compactRow(row: any, timeZone: string): CompactMovement {
   const amount = Number(row.source_amount ?? row.destination_amount ?? 0);
   const currency =
     row.source_account?.currency_code ?? row.destination_account?.currency_code ?? "PEN";
   return {
     id: Number(row.id),
-    date: String(row.occurred_at ?? "").slice(0, 10),
+    // El día en la zona del perfil: con slice(0, 10) era el día UTC, y un gasto de las 9 p. m.
+    // de Lima le aparecía al modelo con la fecha de mañana.
+    date: row.occurred_at ? todayInZone(timeZone, new Date(row.occurred_at)) : "",
     type: String(row.movement_type ?? ""),
     amount,
     currency: String(currency),
@@ -401,7 +406,7 @@ async function runSearchMovements(
 
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []).map(compactRow);
+  const rows = (data ?? []).map((row) => compactRow(row, timeZone));
 
   // Híbrido: si la keyword encontró poco y hay texto, sumar búsqueda semántica.
   // Es una mejora best-effort: si Gemini/pgvector fallan, la keyword ya respondió.
@@ -425,7 +430,7 @@ async function runSearchMovements(
           .select(MOVEMENT_SELECT)
           .eq("workspace_id", workspaceId)
           .in("id", semanticIds);
-        const byId = new Map((semanticRows ?? []).map((row) => [Number(row.id), compactRow(row)]));
+        const byId = new Map((semanticRows ?? []).map((row) => [Number(row.id), compactRow(row, timeZone)]));
         for (const id of semanticIds) {
           const row = byId.get(id);
           if (row) rows.push(row);
@@ -481,7 +486,7 @@ async function runSummarizeMovements(
 
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []).map(compactRow);
+  const rows = (data ?? []).map((row) => compactRow(row, timeZone));
 
   const byCurrency = new Map<string, { total: number; count: number }>();
   const groups = new Map<string, { total: number; count: number }>();
@@ -555,7 +560,7 @@ async function runComparePeriods(
     if (categoryIds) query = query.in("category_id", categoryIds);
     const { data, error } = await query;
     if (error) throw error;
-    return (data ?? []).map(compactRow);
+    return (data ?? []).map((row) => compactRow(row, timeZone));
   };
 
   const [currentRows, previousRows] = await Promise.all([
@@ -614,7 +619,7 @@ async function runAnalyzeTrade(
 
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []).map(compactRow);
+  const rows = (data ?? []).map((row) => compactRow(row, timeZone));
 
   const analysis = buildTradeAnalysis(rows);
   const buys = rows.filter((r) => r.type === "expense").sort((a, b) => b.amount - a.amount).slice(0, 10);
@@ -1285,6 +1290,161 @@ async function runForgetFact(
  * categorías y contrapartes frecuentes. Evita que el modelo gaste rondas
  * descubriendo lo básico. Los nombres listados son DATOS del usuario.
  */
+/** Lo que la app necesita para pintar la tarjeta de corrección o borrado y aplicarla. */
+type MovementChangeCard = {
+  action: "update" | "delete";
+  movementId: number;
+  movementType: "expense" | "income";
+  currency: string;
+  before: {
+    amount: number;
+    description: string | null;
+    categoryName: string | null;
+    accountName: string | null;
+    counterpartyName: string | null;
+    date: string;
+  };
+  after: {
+    amount?: number;
+    description?: string;
+    notes?: string;
+    categoryId?: number;
+    categoryName?: string;
+    accountId?: number;
+    accountName?: string;
+    counterpartyId?: number;
+    counterpartyName?: string;
+    date?: string;
+    occurredAt?: string;
+  };
+};
+
+/**
+ * Propone corregir o borrar un gasto/ingreso ya registrado. NO toca la BD: valida que se pueda,
+ * resuelve los nombres contra los datos reales del espacio (con RLS) y devuelve la tarjeta. La
+ * app aplica el cambio con la misma edición y el mismo borrado que la pantalla de Movimientos.
+ */
+async function runProposeMovementChange(
+  client: ReturnType<typeof userClient>,
+  workspaceId: number,
+  rawArgs: Record<string, unknown>,
+  timeZone: string,
+): Promise<{ result: Record<string, unknown>; change: MovementChangeCard | null }> {
+  const params = clampMovementChangeParams(rawArgs);
+  if (!params) {
+    return { result: { error: "Falta el id del movimiento, la acción (update o delete) o algún cambio válido." }, change: null };
+  }
+  const { data: row } = await client
+    .from("movements")
+    .select(`id, movement_type, status, occurred_at, description, notes, source_amount, destination_amount,
+      obligation_id, subscription_id, metadata,
+      category:categories(name),
+      counterparty:counterparties(name),
+      source_account:accounts!movements_source_account_id_fkey(name, currency_code),
+      destination_account:accounts!movements_destination_account_id_fkey(name, currency_code)`)
+    .eq("workspace_id", workspaceId)
+    .eq("id", params.movementId)
+    .maybeSingle();
+  if (!row) {
+    return { result: { error: "No encontré ese movimiento. Búscalo con search_movements y usa su id." }, change: null };
+  }
+  // deno-lint-ignore no-explicit-any
+  const movement = row as any;
+  const blocked = movementChangeBlockReason(movement);
+  if (blocked) return { result: { error: blocked }, change: null };
+
+  const isExpense = movement.movement_type === "expense";
+  const account = isExpense ? movement.source_account : movement.destination_account;
+  const currency = String(account?.currency_code ?? "PEN");
+  const before: MovementChangeCard["before"] = {
+    amount: Number(isExpense ? movement.source_amount : movement.destination_amount) || 0,
+    description: movement.description ?? null,
+    categoryName: movement.category?.name ?? null,
+    accountName: account?.name ?? null,
+    counterpartyName: movement.counterparty?.name ?? null,
+    date: todayInZone(timeZone, new Date(movement.occurred_at)),
+  };
+  const base = {
+    movementId: Number(movement.id),
+    movementType: movement.movement_type as "expense" | "income",
+    currency,
+    before,
+  };
+
+  if (params.action === "delete") {
+    const change: MovementChangeCard = { action: "delete", ...base, after: {} };
+    return { result: { ok: true, change, note: "Borrado propuesto. La app pedirá confirmación; NO está borrado." }, change };
+  }
+
+  const after: MovementChangeCard["after"] = {};
+  const ambiguous = (what: string, options: string[]) => ({
+    result: {
+      error: options.length > 0
+        ? `Hay varias ${what} que calzan: ${options.join(", ")}. Pregunta cuál.`
+        : `No hay ninguna ${what} con ese nombre. Pregunta cuál, con las del contexto.`,
+    },
+    change: null,
+  });
+
+  if (params.amount !== undefined && params.amount !== before.amount) after.amount = params.amount;
+  if (params.description !== undefined && params.description !== before.description) after.description = params.description;
+  if (params.notes !== undefined && params.notes !== (movement.notes ?? undefined)) after.notes = params.notes;
+
+  if (params.categoryName) {
+    const { data } = await client.from("categories").select("id, name").eq("workspace_id", workspaceId).limit(300);
+    const pick = pickByName(data ?? [], params.categoryName);
+    if (!pick.row) return ambiguous("categorías", pick.options);
+    if (pick.row.name !== before.categoryName) {
+      after.categoryId = Number(pick.row.id);
+      after.categoryName = String(pick.row.name);
+    }
+  }
+  if (params.counterpartyName) {
+    const { data } = await client.from("counterparties").select("id, name").eq("workspace_id", workspaceId).limit(300);
+    const pick = pickByName(data ?? [], params.counterpartyName);
+    if (!pick.row) return ambiguous("personas o comercios", pick.options);
+    if (pick.row.name !== before.counterpartyName) {
+      after.counterpartyId = Number(pick.row.id);
+      after.counterpartyName = String(pick.row.name);
+    }
+  }
+  if (params.accountName) {
+    const { data } = await client
+      .from("accounts")
+      .select("id, name, currency_code, is_archived")
+      .eq("workspace_id", workspaceId)
+      .limit(100);
+    const pick = pickByName((data ?? []).filter((item) => !item.is_archived), params.accountName);
+    if (!pick.row) return ambiguous("cuentas", pick.options);
+    if (String(pick.row.currency_code) !== currency) {
+      return {
+        result: {
+          error: `La cuenta ${pick.row.name} es en ${pick.row.currency_code} y el movimiento en ${currency}: cambiar de moneda se hace desde la app.`,
+        },
+        change: null,
+      };
+    }
+    if (pick.row.name !== before.accountName) {
+      after.accountId = Number(pick.row.id);
+      after.accountName = String(pick.row.name);
+    }
+  }
+  if (params.occurredAt && params.occurredAt !== before.date) {
+    if (movement.status === "posted" && params.occurredAt > todayInZone(timeZone)) {
+      return { result: { error: "No puedo pasar un movimiento ya hecho a una fecha futura; eso se hace desde la app." }, change: null };
+    }
+    after.date = params.occurredAt;
+    // Mediodía de ese día en la zona del perfil: lejos de la medianoche, no cambia de día.
+    after.occurredAt = new Date(Date.parse(dayStartUtc(params.occurredAt, timeZone)) + 12 * 3_600_000).toISOString();
+  }
+
+  if (Object.keys(after).length === 0) {
+    return { result: { note: "El movimiento ya está así: no hay nada que cambiar. Díselo al usuario." }, change: null };
+  }
+  const change: MovementChangeCard = { action: "update", ...base, after };
+  return { result: { ok: true, change, note: "Corrección propuesta. La app pedirá confirmación; NO está aplicada." }, change };
+}
+
 async function buildWorkspaceContext(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
@@ -1425,6 +1585,7 @@ Deno.serve(async (req) => {
       let pendingBudgetDraft: ReturnType<typeof normalizeBudgetDraft> = null;
       let pendingObligationDraft: ReturnType<typeof normalizeObligationDraft> = null;
       let pendingRecurringDraft: ReturnType<typeof normalizeRecurringDraft> = null;
+      const pendingChanges: MovementChangeCard[] = [];
 
       for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
         throwIfAborted(signal);
@@ -1534,7 +1695,12 @@ Deno.serve(async (req) => {
                   : { ok: false, error: "No pude armar el movimiento; pide al usuario el dato faltante." },
                 movementIds: [],
               };
-            } else if (name === "draft_budget") {
+            } else if (name === "propose_movement_change") {
+            // Solo PROPONE: no toca la BD. La app muestra el antes y el después y el usuario confirma.
+            const proposal = await runProposeMovementChange(rls, workspaceId, args, timeZone);
+            if (proposal.change) pendingChanges.push(proposal.change);
+            output = { result: proposal.result, movementIds: [] };
+          } else if (name === "draft_budget") {
               // Solo PROPONE: no toca la BD. El cliente confirma y crea el presupuesto.
               const budgetDraft = normalizeBudgetDraft(args, todayYmd);
               pendingBudgetDraft = budgetDraft;
@@ -1585,7 +1751,7 @@ Deno.serve(async (req) => {
       // más potente (Gemini Pro) sobre los datos que Flash ya reunió con las tools.
       // Una sola llamada extra, sin tools → profundidad sin el timeout del loop.
       const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
-      if (geminiKey && escalationPlanned && reply && pendingDrafts.length === 0 && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
+      if (geminiKey && escalationPlanned && reply && pendingDrafts.length === 0 && pendingChanges.length === 0 && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
         try {
           const proModel = Deno.env.get("ASSISTANT_GEMINI_PRO_MODEL")?.trim() || "gemini-2.5-pro";
           const synth = await callGemini(
@@ -1617,7 +1783,7 @@ Deno.serve(async (req) => {
       throwIfAborted(signal);
       /* Las sugerencias viajan aparte: el texto queda limpio también para la app vieja. Si hay
          algo por confirmar, lo siguiente es esa tarjeta, no un botón más. */
-      const hasPendingCard = pendingDrafts.length > 0 ||
+      const hasPendingCard = pendingDrafts.length > 0 || pendingChanges.length > 0 ||
         Boolean(pendingBudgetDraft || pendingObligationDraft || pendingRecurringDraft);
       const split = splitSuggestions(reply);
       reply = split.reply || reply;
@@ -1667,6 +1833,7 @@ Deno.serve(async (req) => {
         budgetDraft: pendingBudgetDraft,
         obligationDraft: pendingObligationDraft,
         recurringDraft: pendingRecurringDraft,
+        movementChanges: pendingChanges,
         remainingToday: Math.max(0, DAILY_LIMIT - (usedToday ?? 0) - (smallTalk ? 0 : 1)),
       };
     };
