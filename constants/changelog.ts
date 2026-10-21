@@ -18,6 +18,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Debajo de cada respuesta del asistente aparecen 2 o 3 preguntas para seguir la conversación: tócalas y se envían solas. (Pro)",
       "Saludar o agradecer al asistente ya no gasta una de tus preguntas del día. Y ahora entiende «hoy» y «este mes» con la zona horaria de tu Configuración: un gasto hecho en la noche del último día del mes ya no se le escapa. (Pro)",
       "Pídele al asistente que corrija o borre un gasto o ingreso que ya registraste («el taxi de ayer era 25», «ese gasto era de comida», «borra el gasto de 40»): te muestra el antes y el después, y solo cambia algo si tú lo confirmas. Si algo falla, toca «Reintentar» en el mismo mensaje. Y en modo hablante empieza a leerte la respuesta mientras la escribe. (Pro)",
+      "Mantén presionada una respuesta del asistente para copiarla y pegarla donde quieras, por ejemplo en WhatsApp. (Pro)",
     ],
   },
   {
