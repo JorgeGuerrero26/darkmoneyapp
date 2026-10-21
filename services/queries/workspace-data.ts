@@ -3377,7 +3377,12 @@ export {
 
 // ─── Edge Function helper ─────────────────────────────────────────────────────
 
-export async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+/**
+ * Sesión lista para llamar a una edge function: renueva el token si vence pronto o es de otro
+ * proyecto y lo valida contra Supabase. La comparten `invokeEdgeFunction` y las llamadas que
+ * necesitan su propio `fetch` (el asistente en vivo), para que ambas renueven igual.
+ */
+async function resolveEdgeFunctionSession(name: string, body: Record<string, unknown>) {
   if (!supabase) throw new Error("Supabase no está configurado.");
   let accessToken: string | null = null;
   let activeSession: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
@@ -3549,6 +3554,33 @@ export async function invokeEdgeFunction<T>(name: string, body: Record<string, u
   accessToken = activeSession?.access_token ?? accessToken;
   tokenPayload = decodeJwtPayload(accessToken);
   tokenProjectRef = extractJwtProjectRef(tokenPayload);
+
+  if (!accessToken) throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
+  return { activeSession, accessToken, tokenPayload, tokenProjectRef, configuredProjectRef };
+}
+
+/** URL y cabeceras para llamar a una edge function con `fetch` propio. */
+export async function prepareEdgeFunctionRequest(name: string, body: Record<string, unknown>) {
+  const { accessToken } = await resolveEdgeFunctionSession(name, body);
+  if (!supabaseUrl || !supabaseAnonKey) throw new Error("Falta configurar Supabase en esta app.");
+  return {
+    endpoint: `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${name}`,
+    headers: {
+      "Content-Type": "application/json",
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  };
+}
+
+export async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const session = await resolveEdgeFunctionSession(name, body);
+  let { activeSession, accessToken, tokenPayload, tokenProjectRef } = session;
+  const { configuredProjectRef } = session;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Falta configurar Supabase en esta app.");
+  }
 
   const endpoint = `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${name}`;
   const fetchEdgeResponse = async (token: string) => {
