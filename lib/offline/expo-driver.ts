@@ -1,3 +1,4 @@
+import { hasNativeModule } from "../native-module";
 import { copyDatabase, hasUserTables } from "./db-copy";
 import { deleteDatabaseKey, getOrCreateDatabaseKey, sqlcipherKeyPragma } from "./db-key";
 import { serializeDriver, type RawSqlDriver, type SqlDriver, type SqlParam } from "./sql-driver";
@@ -27,6 +28,11 @@ export function isDatabaseEncrypted(): boolean {
 
 export function loadExpoSqlite(): ExpoSqliteModule | null {
   if (cached !== undefined) return cached;
+  // Antes del require: sin esto, un binario sin el módulo nativo se CIERRA (ver lib/native-module.ts).
+  if (!hasNativeModule("ExpoSQLite")) {
+    cached = null;
+    return cached;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require("expo-sqlite") as ExpoSqliteModule;

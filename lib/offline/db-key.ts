@@ -9,10 +9,14 @@
  * los traiga no rompe la app, simplemente no cifra.
  */
 
+import { hasNativeModule } from "../native-module";
+
 type SecureStoreModule = typeof import("expo-secure-store");
 type CryptoModule = { getRandomBytes?: (count: number) => Uint8Array };
 
 function loadSecureStore(): SecureStoreModule | null {
+  // Antes del require: sin esto, un binario sin el módulo nativo se CIERRA (ver lib/native-module.ts).
+  if (!hasNativeModule("ExpoSecureStore")) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require("expo-secure-store") as SecureStoreModule;
@@ -23,6 +27,8 @@ function loadSecureStore(): SecureStoreModule | null {
 }
 
 function loadRandomBytes(): ((count: number) => Uint8Array) | null {
+  // El IPA 1.1.0 no trae expo-crypto: el require a secas cerraba la app tras el Face ID (2026-10-21).
+  if (!hasNativeModule("ExpoCrypto")) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require("expo-crypto") as CryptoModule;

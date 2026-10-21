@@ -1,4 +1,5 @@
 import { createSseDataReader, parseStreamEvent } from "../../features/assistant/lib/live-reply";
+import { hasNativeModule } from "../../lib/native-module";
 import { invokeEdgeFunction, prepareEdgeFunctionRequest } from "./workspace-data";
 
 /**
@@ -409,6 +410,8 @@ type StreamingFetch = (
  */
 function loadStreamingFetch(): StreamingFetch | null {
   if (typeof TextDecoder === "undefined") return null;
+  // Antes del require: sin esto, un binario sin el módulo nativo se CIERRA (ver lib/native-module.ts).
+  if (!hasNativeModule("ExpoFetchModule")) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require("expo/fetch") as { fetch?: StreamingFetch };
