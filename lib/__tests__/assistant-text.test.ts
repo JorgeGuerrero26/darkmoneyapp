@@ -36,3 +36,11 @@ describe("closeDanglingBold", () => {
     expect(closeDanglingBold("Total **S/ 5** hoy")).toBe("Total **S/ 5** hoy");
   });
 });
+
+describe("textForClipboard", () => {
+  const { textForClipboard } = require("../assistant-text");
+
+  it("quita las negritas y conserva emojis y saltos de línea", () => {
+    expect(textForClipboard("💰 Saldo: **S/ 1,200**\n🟰 Total: **S/ 900** ")).toBe("💰 Saldo: S/ 1,200\n🟰 Total: S/ 900");
+  });
+});

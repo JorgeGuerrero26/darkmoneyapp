@@ -38,3 +38,8 @@ export function closeDanglingBold(text: string): string {
   if (markers % 2 === 0) return trimmed;
   return trimmed.endsWith("**") ? trimmed.slice(0, -2) : `${trimmed}**`;
 }
+
+/** Texto para copiar una respuesta: sin los ** de las negritas, que en WhatsApp se verían sueltos. */
+export function textForClipboard(text: string): string {
+  return text.replace(/\*\*([^*]+)\*\*/g, "$1").trim();
+}

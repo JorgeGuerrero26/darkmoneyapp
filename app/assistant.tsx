@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
+  Pressable,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   StyleSheet,
@@ -14,6 +15,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { History, Mic, RotateCcw, Send, Sparkles, Square, Volume2, VolumeX } from "lucide-react-native";
 import * as Speech from "expo-speech";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
@@ -71,7 +74,7 @@ import {
 } from "../services/queries/subscriptions-recurring-income";
 import { useCreateObligationPaymentMutation, useCreateObligationMutation } from "../services/queries/obligations-impl";
 import { useCreateBudgetMutation } from "../services/queries/budgets";
-import { closeDanglingBold, parseBoldSegments } from "../lib/assistant-text";
+import { closeDanglingBold, parseBoldSegments, textForClipboard } from "../lib/assistant-text";
 import { formatCurrency } from "../lib/format-currency";
 import { humanizeError } from "../lib/errors";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
@@ -865,6 +868,19 @@ function AssistantScreen() {
     };
   }
 
+  /** Mantener presionado un mensaje lo copia, para pasar una cifra o un análisis por WhatsApp. */
+  async function copyMessage(item: ChatItem) {
+    const text = textForClipboard(item.content);
+    if (!text) return;
+    try {
+      await Clipboard.setStringAsync(text);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      showToast(item.role === "user" ? "Pregunta copiada" : "Respuesta copiada", "success");
+    } catch (error) {
+      showErrorToast("No se pudo copiar", error);
+    }
+  }
+
   function budgetCardProps(item: ChatItem) {
     const b = item.budgetDraft!;
     const money = formatCurrency(b.limitAmount, b.currency);
@@ -1053,12 +1069,14 @@ function AssistantScreen() {
         );
       }
       const bubble = (
-        <View
+        <Pressable
           style={[
             styles.bubble,
             item.role === "user" ? styles.bubbleUser : styles.bubbleAssistant,
             item.error ? styles.bubbleError : null,
           ]}
+          onLongPress={item.content.trim() && !item.error ? () => void copyMessage(item) : undefined}
+          accessibilityHint={item.content.trim() && !item.error ? "Mantén presionado para copiar" : undefined}
         >
           {item.content ? (
             <Text style={styles.bubbleText}>
@@ -1092,7 +1110,7 @@ function AssistantScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </Pressable>
       );
       if (item.role === "user") return bubble;
       return (
