@@ -379,3 +379,19 @@ describe("buildEvidence", () => {
     expect(buildEvidence("x", [])).toBeNull();
   });
 });
+
+describe("isSmallTalk", () => {
+  const { isSmallTalk } = require("../logic");
+
+  it("reconoce saludos y agradecimientos sueltos", () => {
+    for (const text of ["Hola", "hola!", "Buenas noches", "¿Qué tal?", "gracias 🙏", "Ok, perfecto", "muchas gracias", "Chau, hasta mañana"]) {
+      expect(isSmallTalk(text)).toBe(true);
+    }
+  });
+
+  it("una consulta con saludo, un número o una palabra de datos ya cuenta", () => {
+    for (const text of ["hola, ¿cuánto gasté?", "gracias, ahora anota 40 de taxi", "ok 50", "hola qué puedes hacer", "", "   "]) {
+      expect(isSmallTalk(text)).toBe(false);
+    }
+  });
+});

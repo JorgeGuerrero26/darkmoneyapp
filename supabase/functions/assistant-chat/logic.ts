@@ -564,6 +564,27 @@ export function isDeepQuestion(text: string): boolean {
   return DEEP_PATTERNS.some((p) => t.includes(p));
 }
 
+/** Palabras de cortesía: un mensaje hecho SOLO de estas es un saludo, no una consulta. */
+const SMALL_TALK_WORDS = new Set([
+  "hola", "holi", "hey", "buenas", "buenos", "buen", "dia", "dias", "tardes", "noches", "que", "tal",
+  "como", "estas", "esta", "va", "todo", "bien", "gracias", "muchas", "mil", "ok", "okay", "oki", "okey",
+  "vale", "listo", "perfecto", "genial", "excelente", "chevere", "bacan", "super", "entendido", "claro",
+  "dale", "adios", "chau", "chao", "hasta", "luego", "pronto", "manana", "nos", "vemos", "saludos",
+  "y", "tu", "muy", "amigo", "jaja", "jajaja", "si", "no",
+]);
+
+/**
+ * "Hola", "gracias", "ok, perfecto": no descuentan de las preguntas del día y se responden sin
+ * herramientas (más rápido). Conservador: con un número o cualquier palabra fuera de la lista
+ * ("hola, ¿cuánto gasté?") ya es una consulta y cuenta como siempre.
+ */
+export function isSmallTalk(text: string): boolean {
+  const t = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  if (/\d/.test(t) || t.length > 40) return false;
+  const words = t.split(/[^a-z]+/).filter(Boolean);
+  return words.length > 0 && words.length <= 6 && words.every((w) => SMALL_TALK_WORDS.has(w));
+}
+
 /** Valida el hecho a recordar: frase corta, sin saltos raros, 3-300 chars. */
 export function clampFact(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -919,6 +940,7 @@ export function buildSystemPrompt(nowLong: string, timeZone = "America/Lima"): s
     "Formato: texto plano; marca montos, ganancias y márgenes con **negritas**. Prohibido el resto del Markdown (#, ---, __, tablas).",
     "En desgloses de cálculo empieza CADA línea con un emoji que indique la operación, nunca con signos sueltos '+'/'-' ni con '- ' de lista (se ven feos como '- +'): 💰 saldo o base, ➕ lo que suma, ➖ lo que resta, 🟰 el total. Ejemplo: '💰 Saldo actual: **S/ 1,601.97**' / '➕ Sueldo: **S/ 2,630.50**' / '➖ Gasto proyectado: **S/ 3,087**' / '🟰 Total: **S/ 1,145.47**'. Fuera de los desgloses, sin emojis decorativos.",
     "Sé conciso por defecto (~120 palabras). Cuando entregues un análisis con cálculos, puedes extenderte hasta ~200.",
+    "SUGERENCIAS: termina cada respuesta con UNA línea aparte que empiece exactamente con [[SIGUE]] seguida de 2 o 3 preguntas cortas (máximo 60 caracteres cada una) separadas por ' | ', escritas como las diría el usuario, que tengan sentido justo después de tu respuesta y que puedas contestar con sus datos. Ejemplo: '[[SIGUE]] ¿Y el mes pasado? | ¿En qué categoría gasté más?'. NO pongas esa línea cuando propusiste algo para confirmar (tarjeta de registro, presupuesto, deuda o pago recurrente) ni cuando le estás pidiendo un dato. La app la convierte en botones: nunca la menciones ni la expliques.",
   ].join("\n");
 }
 

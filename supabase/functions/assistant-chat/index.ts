@@ -34,6 +34,7 @@ import {
   buildSystemPrompt,
   clampFact,
   isDeepQuestion,
+  isSmallTalk,
   clampSearchParams,
   clampSummarizeParams,
   clampComparePeriodsParams,
@@ -49,6 +50,13 @@ import {
   type AssistantEvidence,
 } from "./logic.ts";
 import { dayRangeUtc, longDateInZone, resolveTimeZone, todayInZone } from "./time-zone.ts";
+import {
+  createChatStreamAccumulator,
+  createMarkerFilter,
+  createSseLineReader,
+  splitSuggestions,
+  sseEvent,
+} from "./stream.ts";
 
 const DAILY_LIMIT = 30;
 const FEATURE_KEY = "assistant_chat";
@@ -116,6 +124,30 @@ async function userIsPro(
   return row.pro_access_enabled === true || row.plan_code === "pro";
 }
 
+/** El usuario tocó "Detener" o cerró la app: se deja de trabajar y no se cobra la pregunta. */
+class AssistantAborted extends Error {
+  constructor() {
+    super("Respuesta detenida.");
+    this.name = "AssistantAborted";
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new AssistantAborted();
+}
+
+/** Timeout del modelo combinado con la cancelación del cliente. */
+function modelSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([timeout, signal]) : timeout;
+}
+
+type ModelHooks = {
+  /** Con él, la respuesta se pide en vivo y cada trozo de texto llega aquí. */
+  onDelta?: (text: string) => void;
+  signal?: AbortSignal;
+};
+
 /** Llama a Gemini vía su endpoint OpenAI-compat. withTools=false fuerza respuesta
  * final de texto (para la síntesis profunda con Pro sobre datos ya reunidos). */
 async function callGemini(
@@ -124,6 +156,7 @@ async function callGemini(
   messages: ChatMessage[],
   withTools: boolean,
   timeoutMs: number,
+  hooks: ModelHooks = {},
 ) {
   /* Los modelos 3.x razonan siempre y descuentan ese pensamiento del MISMO presupuesto, así
      que con 1100 se lo gastan pensando y devuelven texto vacío, sin error. Las funciones del
@@ -131,6 +164,7 @@ async function callGemini(
      pasar de gemini-2.5 a 3.5 se habría quedado mudo.
      Y `temperature` deja de estar recomendada en 3.5: se manda solo a los que la usan. */
   const isReasoning = model.startsWith("gemini-3");
+  const stream = Boolean(hooks.onDelta);
   const body: Record<string, unknown> = {
     model,
     messages,
@@ -141,19 +175,46 @@ async function callGemini(
     body.tools = ASSISTANT_TOOLS;
     body.tool_choice = "auto";
   }
+  if (stream) body.stream = true;
   const response = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: modelSignal(timeoutMs, hooks.signal),
     },
   );
   if (!response.ok) throw new Error(`Gemini respondió ${response.status}`);
-  const json = await response.json();
-  const message = json?.choices?.[0]?.message;
-  if (!message) throw new Error("Gemini no devolvió mensaje.");
+
+  if (!stream || !response.body) {
+    const json = await response.json();
+    const message = json?.choices?.[0]?.message;
+    if (!message) throw new Error("Gemini no devolvió mensaje.");
+    if (stream && typeof message.content === "string" && message.content) hooks.onDelta!(message.content);
+    return message;
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  const lines = createSseLineReader();
+  const accumulator = createChatStreamAccumulator();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    for (const data of lines.push(value)) {
+      if (data === "[DONE]") continue;
+      let chunk: unknown;
+      try {
+        chunk = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      const text = accumulator.push(chunk);
+      if (text) hooks.onDelta!(text);
+    }
+  }
+  const message = accumulator.message();
+  if (!message.content && !message.tool_calls) throw new Error("Gemini no devolvió mensaje.");
   return message;
 }
 
@@ -167,10 +228,18 @@ async function callGemini(
  * DeepSeek. El usuario solo ve un error si también falla el respaldo. Forzar
  * DeepSeek de entrada con ASSISTANT_PROVIDER=deepseek.
  *
+ * En vivo: solo el PRIMER intento a Gemini va en stream. El segundo y DeepSeek usan el camino
+ * sin stream, el probado: si el stream fallara por algo propio, el usuario no se queda sin
+ * respuesta. Si el primero ya había mostrado texto, `onReset` lo borra antes de reintentar.
+ *
  * Modelo configurable por secret (ASSISTANT_GEMINI_MODEL; el default del código
  * queda en gemini-2.5-flash por prudencia).
  */
-async function callModel(messages: ChatMessage[]) {
+async function callModel(
+  messages: ChatMessage[],
+  options: { withTools?: boolean; onDelta?: (text: string) => void; onReset?: () => void; signal?: AbortSignal } = {},
+): Promise<{ message: Record<string, unknown>; model: string; streamed: boolean }> {
+  const withTools = options.withTools ?? true;
   const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
   const forceDeepseek = Deno.env.get("ASSISTANT_PROVIDER")?.trim() === "deepseek";
 
@@ -185,10 +254,23 @@ async function callModel(messages: ChatMessage[]) {
     // Dos intentos: los 503 de Gemini ("modelo sobrecargado") son frecuentes y
     // pasajeros, y antes cualquiera de ellos llegaba al usuario como un error.
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      throwIfAborted(options.signal);
+      const streamThisAttempt = attempt === 1 && Boolean(options.onDelta);
+      let shown = false;
       try {
-        const message = await callGemini(geminiKey, model, messages, true, timeoutMs);
-        return { message, model };
+        const message = await callGemini(geminiKey, model, messages, withTools, timeoutMs, {
+          signal: options.signal,
+          onDelta: streamThisAttempt
+            ? (text) => {
+              shown = true;
+              options.onDelta!(text);
+            }
+            : undefined,
+        });
+        return { message, model, streamed: streamThisAttempt };
       } catch (error) {
+        if (options.signal?.aborted) throw new AssistantAborted();
+        if (shown) options.onReset?.();
         geminiError = error;
         console.warn(`[assistant-chat] gemini intento ${attempt}/2 falló`, error);
         if (attempt === 1) await new Promise((r) => setTimeout(r, 800));
@@ -203,6 +285,7 @@ async function callModel(messages: ChatMessage[]) {
     if (geminiError) throw geminiError;
     throw new Error("Falta GEMINI_API_KEY o DEEPSEEK_API_KEY.");
   }
+  throwIfAborted(options.signal);
   // deepseek-chat y deepseek-reasoner se descontinuaron el 2026-07-24.
   const model = Deno.env.get("ASSISTANT_DEEPSEEK_MODEL")?.trim() || "deepseek-v4-flash";
   const response = await fetch("https://api.deepseek.com/chat/completions", {
@@ -211,18 +294,20 @@ async function callModel(messages: ChatMessage[]) {
     body: JSON.stringify({
       model,
       messages,
-      tools: ASSISTANT_TOOLS,
-      tool_choice: "auto",
+      ...(withTools ? { tools: ASSISTANT_TOOLS, tool_choice: "auto" } : {}),
       temperature: 0.2,
       max_tokens: 800,
     }),
-    signal: AbortSignal.timeout(25_000),
+    signal: modelSignal(25_000, options.signal),
+  }).catch((error) => {
+    if (options.signal?.aborted) throw new AssistantAborted();
+    throw error;
   });
   if (!response.ok) throw new Error(`DeepSeek respondió ${response.status}`);
   const json = await response.json();
   const message = json?.choices?.[0]?.message;
   if (!message) throw new Error("DeepSeek no devolvió mensaje.");
-  return { message, model };
+  return { message, model, streamed: false };
 }
 
 type CompactMovement = {
@@ -1319,219 +1404,334 @@ Deno.serve(async (req) => {
       { role: "user", content: message },
     ];
 
-    const evidence: AssistantEvidence[] = [];
-    const toolsUsed: string[] = [];
-    let reply = "";
-    let modelUsed = "";
-    const aiStartedAt = Date.now();
-    /* Lista, no variable suelta: una frase puede traer dos movimientos ("me dieron 5 y gasté
-       28.50") y el modelo llama a draft_movement una vez por cada uno. Cuando esto era un solo
-       hueco, el segundo pisaba al primero y el usuario solo veía uno — sin que nada avisara. */
-    const pendingDrafts: NonNullable<ReturnType<typeof normalizeDraft>>[] = [];
-    let pendingBudgetDraft: ReturnType<typeof normalizeBudgetDraft> = null;
-    let pendingObligationDraft: ReturnType<typeof normalizeObligationDraft> = null;
-    let pendingRecurringDraft: ReturnType<typeof normalizeRecurringDraft> = null;
+    const smallTalk = isSmallTalk(message);
+    const escalationPlanned = Deno.env.get("ASSISTANT_DISABLE_ESCALATION")?.trim() !== "1" &&
+      isDeepQuestion(message);
+    /* Con la segunda vuelta de Pro la respuesta final no es la de Flash: mostrar Flash en vivo y
+       luego cambiarla confundiría. En ese caso solo viajan los avisos de qué está consultando. */
+    const streamText = body.stream === true && !escalationPlanned;
 
-    for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-      const { message: aiMessage, model } = await callModel(messages);
-      modelUsed = model;
-      const toolCalls = Array.isArray(aiMessage.tool_calls) ? aiMessage.tool_calls : [];
+    type Emit = (event: Record<string, unknown>) => void;
+    const runTurn = async (emit: Emit, signal: AbortSignal) => {
+      const evidence: AssistantEvidence[] = [];
+      const toolsUsed: string[] = [];
+      let reply = "";
+      let modelUsed = "";
+      const aiStartedAt = Date.now();
+      /* Lista, no variable suelta: una frase puede traer dos movimientos ("me dieron 5 y gasté
+         28.50") y el modelo llama a draft_movement una vez por cada uno. Cuando esto era un solo
+         hueco, el segundo pisaba al primero y el usuario solo veía uno — sin que nada avisara. */
+      const pendingDrafts: NonNullable<ReturnType<typeof normalizeDraft>>[] = [];
+      let pendingBudgetDraft: ReturnType<typeof normalizeBudgetDraft> = null;
+      let pendingObligationDraft: ReturnType<typeof normalizeObligationDraft> = null;
+      let pendingRecurringDraft: ReturnType<typeof normalizeRecurringDraft> = null;
 
-      if (toolCalls.length === 0 || round === MAX_TOOL_ROUNDS) {
-        reply = typeof aiMessage.content === "string" && aiMessage.content.trim()
-          ? aiMessage.content.trim()
-          : "No pude armar una respuesta. Intenta reformular la pregunta.";
-        break;
-      }
-
-      messages.push(aiMessage as ChatMessage);
-      for (const call of toolCalls) {
-        const name = call?.function?.name as string;
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(call?.function?.arguments ?? "{}");
-        } catch {
-          // args inválidos: la tool responde con error y el modelo se corrige
-        }
-        toolsUsed.push(name);
-        let output: { result: Record<string, unknown>; movementIds: number[] };
-        try {
-          if (name === "search_movements") {
-            output = await runSearchMovements(rls, admin, workspaceId, args, timeZone);
-            const label = typeof args.text === "string" && args.text.trim()
-              ? `Resultados: ${args.text.trim()}`
-              : "Movimientos encontrados";
-            const item = buildEvidence(label, output.movementIds);
-            if (item) evidence.push(item);
-          } else if (name === "summarize_movements") {
-            output = await runSummarizeMovements(rls, workspaceId, args, timeZone);
-            const item = buildEvidence(
-              `Período ${String(args.dateFrom ?? "")} – ${String(args.dateTo ?? "")}`,
-              output.movementIds,
-            );
-            if (item) evidence.push(item);
-          } else if (name === "compare_periods") {
-            output = await runComparePeriods(rls, workspaceId, args, timeZone);
-            const item = buildEvidence(
-              `Comparación ${String(args.previousFrom ?? "")}…${String(args.previousTo ?? "")} vs ${String(args.currentFrom ?? "")}…${String(args.currentTo ?? "")}`,
-              output.movementIds,
-            );
-            if (item) evidence.push(item);
-          } else if (name === "analyze_trade") {
-            output = await runAnalyzeTrade(rls, workspaceId, args, timeZone);
-            const item = buildEvidence(
-              `Compra/venta: ${String(args.text ?? "")}`.trim(),
-              output.movementIds,
-            );
-            if (item) evidence.push(item);
-          } else if (name === "list_obligations") {
-            output = { result: await runListObligations(rls, workspaceId, args), movementIds: [] };
-          } else if (name === "list_subscriptions") {
-            output = { result: await runListSubscriptions(rls, workspaceId), movementIds: [] };
-          } else if (name === "list_budgets") {
-            output = { result: await runListBudgets(rls, workspaceId), movementIds: [] };
-          } else if (name === "list_recurring_income") {
-            output = { result: await runListRecurringIncome(rls, workspaceId), movementIds: [] };
-          } else if (name === "project_cashflow") {
-            output = { result: await runProjectCashflow(rls, workspaceId, args, timeZone), movementIds: [] };
-          } else if (name === "projection_gaps") {
-            output = { result: await runProjectionGaps(rls, workspaceId, timeZone), movementIds: [] };
-          } else if (name === "remember_fact") {
-            output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
-          } else if (name === "forget_fact") {
-            output = { result: await runForgetFact(rls, workspaceId, args), movementIds: [] };
-          } else if (name === "draft_movement") {
-            // Solo PROPONE: no toca la BD. El cliente confirma y guarda.
-            const draft = normalizeDraft(args);
-            if (draft) pendingDrafts.push(draft);
-            output = {
-              result: draft
-                ? { ok: true, draft, note: "Borrador propuesto. La app pedirá confirmación; NO está registrado." }
-                : { ok: false, error: "No pude armar el movimiento; pide al usuario el dato faltante." },
-              movementIds: [],
-            };
-          } else if (name === "draft_budget") {
-            // Solo PROPONE: no toca la BD. El cliente confirma y crea el presupuesto.
-            const budgetDraft = normalizeBudgetDraft(args, todayYmd);
-            pendingBudgetDraft = budgetDraft;
-            output = {
-              result: budgetDraft
-                ? { ok: true, budgetDraft, note: "Presupuesto propuesto. La app pedirá confirmación; NO está creado." }
-                : { ok: false, error: "Falta el monto del presupuesto; pídeselo al usuario." },
-              movementIds: [],
-            };
-          } else if (name === "draft_obligation") {
-            // Solo PROPONE: no toca la BD ni mueve dinero. El cliente confirma y crea la deuda.
-            const obligationDraft = normalizeObligationDraft(args, todayYmd);
-            pendingObligationDraft = obligationDraft;
-            output = {
-              result: obligationDraft
-                ? { ok: true, obligationDraft, note: "Deuda/crédito propuesto. La app pedirá confirmación; NO está creado." }
-                : { ok: false, error: "Falta el monto o la dirección (te deben vs debes); pregúntaselo al usuario." },
-              movementIds: [],
-            };
-          } else if (name === "draft_recurring") {
-            // Solo PROPONE: no toca la BD. El cliente confirma y crea la suscripción/ingreso fijo.
-            const recurringDraft = normalizeRecurringDraft(args, todayYmd);
-            pendingRecurringDraft = recurringDraft;
-            output = {
-              result: recurringDraft
-                ? { ok: true, recurringDraft, note: "Pago recurrente propuesto. La app pedirá confirmación; NO está creado." }
-                : { ok: false, error: "Falta el tipo, el nombre o el monto; pregúntaselo al usuario." },
-              movementIds: [],
-            };
-          } else {
-            output = { result: { error: `Herramienta desconocida: ${name}` }, movementIds: [] };
+      for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+        throwIfAborted(signal);
+        /* En vivo, el texto pasa por un filtro que nunca deja ver la línea de sugerencias. Si la
+           ronda termina pidiendo consultas, lo mostrado era un preámbulo y se borra (reset). */
+        const filter = createMarkerFilter();
+        let shownThisRound = false;
+        const showDelta = (text: string) => {
+          const visible = filter.push(text);
+          if (visible) {
+            shownThisRound = true;
+            emit({ type: "delta", text: visible });
           }
-        } catch (toolError) {
-          output = {
-            result: { error: toolError instanceof Error ? toolError.message : "Error ejecutando la consulta." },
-            movementIds: [],
-          };
-        }
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: JSON.stringify(output.result),
+        };
+        const resetShown = () => {
+          if (shownThisRound) emit({ type: "reset" });
+          shownThisRound = false;
+        };
+        const { message: aiMessage, model, streamed } = await callModel(messages, {
+          withTools: !smallTalk,
+          onDelta: streamText ? showDelta : undefined,
+          onReset: resetShown,
+          signal,
         });
-      }
-    }
+        modelUsed = model;
+        const toolCalls = Array.isArray(aiMessage.tool_calls) ? aiMessage.tool_calls : [];
 
-    // Enrutado de modelo: preguntas de análisis se re-sintetizan con un modelo
-    // más potente (Gemini Pro) sobre los datos que Flash ya reunió con las tools.
-    // Una sola llamada extra, sin tools → profundidad sin el timeout del loop.
-    const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
-    const escalationOff = Deno.env.get("ASSISTANT_DISABLE_ESCALATION")?.trim() === "1";
-    if (geminiKey && !escalationOff && isDeepQuestion(message) && reply && pendingDrafts.length === 0 && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
-      try {
-        const proModel = Deno.env.get("ASSISTANT_GEMINI_PRO_MODEL")?.trim() || "gemini-2.5-pro";
-        const synth = await callGemini(
-          geminiKey,
-          proModel,
-          [
-            ...messages,
-            {
-              role: "user",
-              content:
-                "Con los datos ya reunidos arriba, da la mejor respuesta final a mi pregunta con tu análisis experto: correlaciona, saca conclusiones y recomienda. Mismo formato (emojis de operación 💰➕➖🟰 en desgloses, **negritas** en cifras). No inventes cifras nuevas; usa solo las de arriba.",
-            },
-          ],
-          false,
-          40_000,
-        ).then((m) => (typeof m.content === "string" ? m.content.trim() : ""));
-        if (synth) {
-          reply = synth;
-          modelUsed = proModel;
+        if (toolCalls.length === 0 || round === MAX_TOOL_ROUNDS) {
+          reply = typeof aiMessage.content === "string" && aiMessage.content.trim()
+            ? aiMessage.content.trim()
+            : "No pude armar una respuesta. Intenta reformular la pregunta.";
+          // Sin stream (reintento o DeepSeek) la respuesta llega entera: se muestra de una vez.
+          if (streamText && !streamed) showDelta(reply);
+          if (streamText) {
+            const rest = filter.flush();
+            if (rest) emit({ type: "delta", text: rest });
+          }
+          break;
         }
-      } catch (escalationError) {
-        // Best-effort: si Pro falla o tarda, se queda la respuesta de Flash.
-        console.warn("[assistant-chat] escalation failed", escalationError);
+
+        resetShown();
+        messages.push(aiMessage as ChatMessage);
+        for (const call of toolCalls) {
+          const name = call?.function?.name as string;
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(call?.function?.arguments ?? "{}");
+          } catch {
+            // args inválidos: la tool responde con error y el modelo se corrige
+          }
+          toolsUsed.push(name);
+          throwIfAborted(signal);
+          emit({ type: "status", tool: name });
+          let output: { result: Record<string, unknown>; movementIds: number[] };
+          try {
+            if (name === "search_movements") {
+              output = await runSearchMovements(rls, admin, workspaceId, args, timeZone);
+              const label = typeof args.text === "string" && args.text.trim()
+                ? `Resultados: ${args.text.trim()}`
+                : "Movimientos encontrados";
+              const item = buildEvidence(label, output.movementIds);
+              if (item) evidence.push(item);
+            } else if (name === "summarize_movements") {
+              output = await runSummarizeMovements(rls, workspaceId, args, timeZone);
+              const item = buildEvidence(
+                `Período ${String(args.dateFrom ?? "")} – ${String(args.dateTo ?? "")}`,
+                output.movementIds,
+              );
+              if (item) evidence.push(item);
+            } else if (name === "compare_periods") {
+              output = await runComparePeriods(rls, workspaceId, args, timeZone);
+              const item = buildEvidence(
+                `Comparación ${String(args.previousFrom ?? "")}…${String(args.previousTo ?? "")} vs ${String(args.currentFrom ?? "")}…${String(args.currentTo ?? "")}`,
+                output.movementIds,
+              );
+              if (item) evidence.push(item);
+            } else if (name === "analyze_trade") {
+              output = await runAnalyzeTrade(rls, workspaceId, args, timeZone);
+              const item = buildEvidence(
+                `Compra/venta: ${String(args.text ?? "")}`.trim(),
+                output.movementIds,
+              );
+              if (item) evidence.push(item);
+            } else if (name === "list_obligations") {
+              output = { result: await runListObligations(rls, workspaceId, args), movementIds: [] };
+            } else if (name === "list_subscriptions") {
+              output = { result: await runListSubscriptions(rls, workspaceId), movementIds: [] };
+            } else if (name === "list_budgets") {
+              output = { result: await runListBudgets(rls, workspaceId), movementIds: [] };
+            } else if (name === "list_recurring_income") {
+              output = { result: await runListRecurringIncome(rls, workspaceId), movementIds: [] };
+            } else if (name === "project_cashflow") {
+              output = { result: await runProjectCashflow(rls, workspaceId, args, timeZone), movementIds: [] };
+            } else if (name === "projection_gaps") {
+              output = { result: await runProjectionGaps(rls, workspaceId, timeZone), movementIds: [] };
+            } else if (name === "remember_fact") {
+              output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
+            } else if (name === "forget_fact") {
+              output = { result: await runForgetFact(rls, workspaceId, args), movementIds: [] };
+            } else if (name === "draft_movement") {
+              // Solo PROPONE: no toca la BD. El cliente confirma y guarda.
+              const draft = normalizeDraft(args);
+              if (draft) pendingDrafts.push(draft);
+              output = {
+                result: draft
+                  ? { ok: true, draft, note: "Borrador propuesto. La app pedirá confirmación; NO está registrado." }
+                  : { ok: false, error: "No pude armar el movimiento; pide al usuario el dato faltante." },
+                movementIds: [],
+              };
+            } else if (name === "draft_budget") {
+              // Solo PROPONE: no toca la BD. El cliente confirma y crea el presupuesto.
+              const budgetDraft = normalizeBudgetDraft(args, todayYmd);
+              pendingBudgetDraft = budgetDraft;
+              output = {
+                result: budgetDraft
+                  ? { ok: true, budgetDraft, note: "Presupuesto propuesto. La app pedirá confirmación; NO está creado." }
+                  : { ok: false, error: "Falta el monto del presupuesto; pídeselo al usuario." },
+                movementIds: [],
+              };
+            } else if (name === "draft_obligation") {
+              // Solo PROPONE: no toca la BD ni mueve dinero. El cliente confirma y crea la deuda.
+              const obligationDraft = normalizeObligationDraft(args, todayYmd);
+              pendingObligationDraft = obligationDraft;
+              output = {
+                result: obligationDraft
+                  ? { ok: true, obligationDraft, note: "Deuda/crédito propuesto. La app pedirá confirmación; NO está creado." }
+                  : { ok: false, error: "Falta el monto o la dirección (te deben vs debes); pregúntaselo al usuario." },
+                movementIds: [],
+              };
+            } else if (name === "draft_recurring") {
+              // Solo PROPONE: no toca la BD. El cliente confirma y crea la suscripción/ingreso fijo.
+              const recurringDraft = normalizeRecurringDraft(args, todayYmd);
+              pendingRecurringDraft = recurringDraft;
+              output = {
+                result: recurringDraft
+                  ? { ok: true, recurringDraft, note: "Pago recurrente propuesto. La app pedirá confirmación; NO está creado." }
+                  : { ok: false, error: "Falta el tipo, el nombre o el monto; pregúntaselo al usuario." },
+                movementIds: [],
+              };
+            } else {
+              output = { result: { error: `Herramienta desconocida: ${name}` }, movementIds: [] };
+            }
+          } catch (toolError) {
+            output = {
+              result: { error: toolError instanceof Error ? toolError.message : "Error ejecutando la consulta." },
+              movementIds: [],
+            };
+          }
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify(output.result),
+          });
+        }
       }
+
+      // Enrutado de modelo: preguntas de análisis se re-sintetizan con un modelo
+      // más potente (Gemini Pro) sobre los datos que Flash ya reunió con las tools.
+      // Una sola llamada extra, sin tools → profundidad sin el timeout del loop.
+      const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+      if (geminiKey && escalationPlanned && reply && pendingDrafts.length === 0 && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
+        try {
+          const proModel = Deno.env.get("ASSISTANT_GEMINI_PRO_MODEL")?.trim() || "gemini-2.5-pro";
+          const synth = await callGemini(
+            geminiKey,
+            proModel,
+            [
+              ...messages,
+              {
+                role: "user",
+                content:
+                  "Con los datos ya reunidos arriba, da la mejor respuesta final a mi pregunta con tu análisis experto: correlaciona, saca conclusiones y recomienda. Mismo formato (emojis de operación 💰➕➖🟰 en desgloses, **negritas** en cifras). No inventes cifras nuevas; usa solo las de arriba.",
+              },
+            ],
+            false,
+            40_000,
+            { signal },
+          ).then((m) => (typeof m.content === "string" ? m.content.trim() : ""));
+          if (synth) {
+            reply = synth;
+            modelUsed = proModel;
+          }
+        } catch (escalationError) {
+          throwIfAborted(signal);
+          // Best-effort: si Pro falla o tarda, se queda la respuesta de Flash.
+          console.warn("[assistant-chat] escalation failed", escalationError);
+        }
+      }
+
+      throwIfAborted(signal);
+      /* Las sugerencias viajan aparte: el texto queda limpio también para la app vieja. Si hay
+         algo por confirmar, lo siguiente es esa tarjeta, no un botón más. */
+      const hasPendingCard = pendingDrafts.length > 0 ||
+        Boolean(pendingBudgetDraft || pendingObligationDraft || pendingRecurringDraft);
+      const split = splitSuggestions(reply);
+      reply = split.reply || reply;
+      const suggestions = hasPendingCard ? [] : split.suggestions;
+
+      // Un saludo no descuenta de las preguntas del día (ver isSmallTalk).
+      if (!smallTalk) await admin.from("ai_feature_daily_usage").insert({
+        feature_key: FEATURE_KEY,
+        user_id: user.id,
+        usage_date: usageDate,
+        workspace_id: workspaceId,
+        model: modelUsed || null,
+      });
+
+      /* Y en la tabla común, la misma que usan las funciones de DeepSeek: solo así se pueden
+         comparar los dos proveedores en una consulta. `modelUsed` es el que DE VERDAD respondió
+         -- el asistente cae a DeepSeek cuando Gemini falla dos veces, y esa caída era invisible. */
+      await recordAiUsage({
+        client: admin,
+        userId: user.id,
+        workspaceId,
+        featureKey: FEATURE_KEY,
+        model: modelUsed || "desconocido",
+        surface: "assistant",
+        status: "success",
+        latencyMs: Date.now() - aiStartedAt,
+      });
+
+      // Auditoría minimizada (logs de la función, retención de Supabase).
+      console.log("[assistant-chat]", JSON.stringify({
+        userId: user.id,
+        workspaceId,
+        questionChars: message.length,
+        tools: toolsUsed,
+        evidenceCount: evidence.reduce((total, item) => total + item.movementIds.length, 0),
+      }));
+
+      return {
+        ok: true,
+        reply,
+        suggestions,
+        evidence,
+        /* `draft` se mantiene por compatibilidad: un teléfono con JS viejo solo lee este campo,
+           y quitarlo lo dejaría sin poder registrar nada. Los clientes al día leen `drafts`. */
+        draft: pendingDrafts[0] ?? null,
+        drafts: pendingDrafts,
+        budgetDraft: pendingBudgetDraft,
+        obligationDraft: pendingObligationDraft,
+        recurringDraft: pendingRecurringDraft,
+        remainingToday: Math.max(0, DAILY_LIMIT - (usedToday ?? 0) - (smallTalk ? 0 : 1)),
+      };
+    };
+
+    /* Sin `stream`: JSON como siempre (la app vieja y la web). Con `stream`: avisos en vivo por
+       SSE y al final el mismo JSON en el evento `done`. Las validaciones de arriba (Pro, cuota)
+       siguen respondiendo JSON con su código, también en este modo. */
+    if (body.stream !== true) {
+      return jsonResponse(await runTurn(() => {}, req.signal));
     }
 
-    await admin.from("ai_feature_daily_usage").insert({
-      feature_key: FEATURE_KEY,
-      user_id: user.id,
-      usage_date: usageDate,
-      workspace_id: workspaceId,
-      model: modelUsed || null,
+    const encoder = new TextEncoder();
+    // "Detener" en la app cierra la conexión: cancel() lo marca aunque req.signal no se entere.
+    const cancelled = new AbortController();
+    const turnSignal = AbortSignal.any([req.signal, cancelled.signal]);
+    const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled.abort();
+      },
+      async start(controller) {
+        let open = true;
+        const write = (chunk: string) => {
+          if (!open) return;
+          try {
+            controller.enqueue(encoder.encode(chunk));
+          } catch {
+            open = false; // el cliente se fue
+          }
+        };
+        const emit: Emit = (event) => write(sseEvent(event));
+        // Un comentario SSE cada 10 s: que ningún intermediario corte la conexión por silencio
+        // mientras el modelo piensa o una consulta tarda.
+        const heartbeat = setInterval(() => write(": ping\n\n"), 10_000);
+        try {
+          emit({ type: "status", tool: null });
+          const payload = await runTurn(emit, turnSignal);
+          emit({ type: "done", ...payload });
+        } catch (error) {
+          if (error instanceof AssistantAborted || turnSignal.aborted) {
+            console.log("[assistant-chat] detenida por el usuario");
+          } else {
+            console.error("[assistant-chat]", error);
+            emit({
+              type: "error",
+              error: error instanceof Error ? error.message : "No se pudo responder. Inténtalo de nuevo.",
+            });
+          }
+        } finally {
+          clearInterval(heartbeat);
+          open = false;
+          try {
+            controller.close();
+          } catch {
+            /* ya cerrado */
+          }
+        }
+      },
     });
-
-    /* Y en la tabla común, la misma que usan las funciones de DeepSeek: solo así se pueden
-       comparar los dos proveedores en una consulta. `modelUsed` es el que DE VERDAD respondió
-       -- el asistente cae a DeepSeek cuando Gemini falla dos veces, y esa caída era invisible. */
-    await recordAiUsage({
-      client: admin,
-      userId: user.id,
-      workspaceId,
-      featureKey: FEATURE_KEY,
-      model: modelUsed || "desconocido",
-      surface: "assistant",
-      status: "success",
-      latencyMs: Date.now() - aiStartedAt,
-    });
-
-    // Auditoría minimizada (logs de la función, retención de Supabase).
-    console.log("[assistant-chat]", JSON.stringify({
-      userId: user.id,
-      workspaceId,
-      questionChars: message.length,
-      tools: toolsUsed,
-      evidenceCount: evidence.reduce((total, item) => total + item.movementIds.length, 0),
-    }));
-
-    return jsonResponse({
-      ok: true,
-      reply,
-      evidence,
-      /* `draft` se mantiene por compatibilidad: un teléfono con JS viejo solo lee este campo,
-         y quitarlo lo dejaría sin poder registrar nada. Los clientes al día leen `drafts`. */
-      draft: pendingDrafts[0] ?? null,
-      drafts: pendingDrafts,
-      budgetDraft: pendingBudgetDraft,
-      obligationDraft: pendingObligationDraft,
-      recurringDraft: pendingRecurringDraft,
-      remainingToday: Math.max(0, DAILY_LIMIT - (usedToday ?? 0) - 1),
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+      },
     });
   } catch (error) {
     console.error("[assistant-chat]", error);
