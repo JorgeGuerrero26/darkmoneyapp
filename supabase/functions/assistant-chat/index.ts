@@ -48,6 +48,7 @@ import {
   normalizeName,
   type AssistantEvidence,
 } from "./logic.ts";
+import { dayRangeUtc, longDateInZone, resolveTimeZone, todayInZone } from "./time-zone.ts";
 
 const DAILY_LIMIT = 30;
 const FEATURE_KEY = "assistant_chat";
@@ -289,6 +290,7 @@ async function runSearchMovements(
   admin: ReturnType<typeof serviceClient>,
   workspaceId: number,
   rawArgs: Record<string, unknown>,
+  timeZone: string,
 ): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
   const params = clampSearchParams(rawArgs);
   let query = client
@@ -300,8 +302,8 @@ async function runSearchMovements(
     .limit(params.limit);
 
   if (params.movementType) query = query.eq("movement_type", params.movementType);
-  if (params.dateFrom) query = query.gte("occurred_at", params.dateFrom);
-  if (params.dateTo) query = query.lte("occurred_at", `${params.dateTo}T23:59:59`);
+  if (params.dateFrom) query = query.gte("occurred_at", dayRangeUtc(params.dateFrom, params.dateFrom, timeZone).gte);
+  if (params.dateTo) query = query.lt("occurred_at", dayRangeUtc(params.dateTo, params.dateTo, timeZone).lt);
   if (params.minAmount != null) query = query.gte("source_amount", params.minAmount);
   if (params.maxAmount != null) query = query.lte("source_amount", params.maxAmount);
   if (params.text) {
@@ -366,6 +368,7 @@ async function runSummarizeMovements(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
   rawArgs: Record<string, unknown>,
+  timeZone: string,
 ): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
   const params = clampSummarizeParams(rawArgs);
   if (!params) {
@@ -376,8 +379,8 @@ async function runSummarizeMovements(
     .from("movements")
     .select(MOVEMENT_SELECT)
     .eq("workspace_id", workspaceId)
-    .gte("occurred_at", params.dateFrom)
-    .lte("occurred_at", `${params.dateTo}T23:59:59`)
+    .gte("occurred_at", dayRangeUtc(params.dateFrom, params.dateTo, timeZone).gte)
+    .lt("occurred_at", dayRangeUtc(params.dateFrom, params.dateTo, timeZone).lt)
     .order("occurred_at", { ascending: false })
     // ponytail: agregación en JS sobre ≤1000 filas; si un workspace supera eso
     // por período consultado, mover la agregación a SQL/RPC.
@@ -436,6 +439,7 @@ async function runComparePeriods(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
   rawArgs: Record<string, unknown>,
+  timeZone: string,
 ): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
   const params = clampComparePeriodsParams(rawArgs);
   if (!params) {
@@ -458,8 +462,8 @@ async function runComparePeriods(
       .from("movements")
       .select(MOVEMENT_SELECT)
       .eq("workspace_id", workspaceId)
-      .gte("occurred_at", from)
-      .lte("occurred_at", `${to}T23:59:59`)
+      .gte("occurred_at", dayRangeUtc(from, to, timeZone).gte)
+      .lt("occurred_at", dayRangeUtc(from, to, timeZone).lt)
       // ponytail: agregación en JS sobre ≤1000 filas/período; a SQL/RPC si un workspace lo supera.
       .limit(1000);
     if (params.movementType) query = query.eq("movement_type", params.movementType);
@@ -489,6 +493,7 @@ async function runAnalyzeTrade(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
   rawArgs: Record<string, unknown>,
+  timeZone: string,
 ): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
   const params = clampAnalyzeTradeParams(rawArgs);
   if (!params) {
@@ -503,8 +508,8 @@ async function runAnalyzeTrade(
     // ponytail: keyword only, ≤200 filas; si compra y venta usan nombres muy distintos
     // el modelo amplía `text` o usa search_movements. Semántico si hace falta después.
     .limit(200);
-  if (params.dateFrom) query = query.gte("occurred_at", params.dateFrom);
-  if (params.dateTo) query = query.lte("occurred_at", `${params.dateTo}T23:59:59`);
+  if (params.dateFrom) query = query.gte("occurred_at", dayRangeUtc(params.dateFrom, params.dateFrom, timeZone).gte);
+  if (params.dateTo) query = query.lt("occurred_at", dayRangeUtc(params.dateTo, params.dateTo, timeZone).lt);
 
   const pattern = `*${escapeIlike(params.text).replace(/\s+/g, "*")}*`;
   const orParts = [`description.ilike.${pattern}`, `notes.ilike.${pattern}`];
@@ -678,6 +683,7 @@ async function runProjectCashflow(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
   rawArgs: Record<string, unknown>,
+  timeZone: string,
 ): Promise<Record<string, unknown>> {
   const requested = Number(rawArgs.months);
   const months = Number.isFinite(requested) ? Math.min(12, Math.max(1, Math.floor(requested))) : 6;
@@ -822,8 +828,10 @@ async function runProjectCashflow(
     };
   });
 
+  // Hoy en la zona del perfil: con la hora del servidor (UTC) pasaba a mañana desde las 7 p. m.
+  const fromDate = todayInZone(timeZone);
+  // Instante actual: para comparar contra occurred_at de los planificados no importa la zona.
   const today = new Date();
-  const fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   // Los cobros con fecha: sin ellos no se sabe qué cuotas quedan, y la regla de "lo cobrado antes
   // del plan no adelanta cuotas" necesita saber CUÁNDO entró cada uno.
@@ -943,8 +951,9 @@ async function runProjectCashflow(
 async function runProjectionGaps(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
+  timeZone: string,
 ): Promise<Record<string, unknown>> {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayInZone(timeZone);
 
   const [balances, income, subs, obligations] = await Promise.all([
     client.from("v_account_balances").select("name, type, currency_code, current_balance").eq("workspace_id", workspaceId),
@@ -1292,16 +1301,19 @@ Deno.serve(async (req) => {
           }))
       : [];
 
-    const nowLima = new Date().toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "full" });
-    // en-CA da formato ISO (YYYY-MM-DD): base para resolver períodos de presupuesto en Lima.
-    const nowLimaYmd = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    /* "Hoy" y los rangos de fechas van en la zona horaria del perfil (Configuración), no en la
+       del servidor. Sin perfil o con un valor raro, Lima. La cuota diaria sigue en Lima. */
+    const { data: profileRow } = await admin.from("profiles").select("timezone").eq("id", user.id).maybeSingle();
+    const timeZone = resolveTimeZone((profileRow as { timezone?: string | null } | null)?.timezone);
+    const nowLong = longDateInZone(timeZone);
+    const todayYmd = todayInZone(timeZone);
     const workspaceContext = await buildWorkspaceContext(rls, workspaceId);
     const messages: ChatMessage[] = [
       {
         role: "system",
         content: workspaceContext
-          ? `${buildSystemPrompt(nowLima)}\n\n${workspaceContext}`
-          : buildSystemPrompt(nowLima),
+          ? `${buildSystemPrompt(nowLong, timeZone)}\n\n${workspaceContext}`
+          : buildSystemPrompt(nowLong, timeZone),
       },
       ...history,
       { role: "user", content: message },
@@ -1345,28 +1357,28 @@ Deno.serve(async (req) => {
         let output: { result: Record<string, unknown>; movementIds: number[] };
         try {
           if (name === "search_movements") {
-            output = await runSearchMovements(rls, admin, workspaceId, args);
+            output = await runSearchMovements(rls, admin, workspaceId, args, timeZone);
             const label = typeof args.text === "string" && args.text.trim()
               ? `Resultados: ${args.text.trim()}`
               : "Movimientos encontrados";
             const item = buildEvidence(label, output.movementIds);
             if (item) evidence.push(item);
           } else if (name === "summarize_movements") {
-            output = await runSummarizeMovements(rls, workspaceId, args);
+            output = await runSummarizeMovements(rls, workspaceId, args, timeZone);
             const item = buildEvidence(
               `Período ${String(args.dateFrom ?? "")} – ${String(args.dateTo ?? "")}`,
               output.movementIds,
             );
             if (item) evidence.push(item);
           } else if (name === "compare_periods") {
-            output = await runComparePeriods(rls, workspaceId, args);
+            output = await runComparePeriods(rls, workspaceId, args, timeZone);
             const item = buildEvidence(
               `Comparación ${String(args.previousFrom ?? "")}…${String(args.previousTo ?? "")} vs ${String(args.currentFrom ?? "")}…${String(args.currentTo ?? "")}`,
               output.movementIds,
             );
             if (item) evidence.push(item);
           } else if (name === "analyze_trade") {
-            output = await runAnalyzeTrade(rls, workspaceId, args);
+            output = await runAnalyzeTrade(rls, workspaceId, args, timeZone);
             const item = buildEvidence(
               `Compra/venta: ${String(args.text ?? "")}`.trim(),
               output.movementIds,
@@ -1381,9 +1393,9 @@ Deno.serve(async (req) => {
           } else if (name === "list_recurring_income") {
             output = { result: await runListRecurringIncome(rls, workspaceId), movementIds: [] };
           } else if (name === "project_cashflow") {
-            output = { result: await runProjectCashflow(rls, workspaceId, args), movementIds: [] };
+            output = { result: await runProjectCashflow(rls, workspaceId, args, timeZone), movementIds: [] };
           } else if (name === "projection_gaps") {
-            output = { result: await runProjectionGaps(rls, workspaceId), movementIds: [] };
+            output = { result: await runProjectionGaps(rls, workspaceId, timeZone), movementIds: [] };
           } else if (name === "remember_fact") {
             output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
           } else if (name === "forget_fact") {
@@ -1400,7 +1412,7 @@ Deno.serve(async (req) => {
             };
           } else if (name === "draft_budget") {
             // Solo PROPONE: no toca la BD. El cliente confirma y crea el presupuesto.
-            const budgetDraft = normalizeBudgetDraft(args, nowLimaYmd);
+            const budgetDraft = normalizeBudgetDraft(args, todayYmd);
             pendingBudgetDraft = budgetDraft;
             output = {
               result: budgetDraft
@@ -1410,7 +1422,7 @@ Deno.serve(async (req) => {
             };
           } else if (name === "draft_obligation") {
             // Solo PROPONE: no toca la BD ni mueve dinero. El cliente confirma y crea la deuda.
-            const obligationDraft = normalizeObligationDraft(args, nowLimaYmd);
+            const obligationDraft = normalizeObligationDraft(args, todayYmd);
             pendingObligationDraft = obligationDraft;
             output = {
               result: obligationDraft
@@ -1420,7 +1432,7 @@ Deno.serve(async (req) => {
             };
           } else if (name === "draft_recurring") {
             // Solo PROPONE: no toca la BD. El cliente confirma y crea la suscripción/ingreso fijo.
-            const recurringDraft = normalizeRecurringDraft(args, nowLimaYmd);
+            const recurringDraft = normalizeRecurringDraft(args, todayYmd);
             pendingRecurringDraft = recurringDraft;
             output = {
               result: recurringDraft
