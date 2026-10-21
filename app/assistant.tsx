@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { History, Mic, Send, Sparkles, Square, Volume2, VolumeX } from "lucide-react-native";
+import { History, Mic, RotateCcw, Send, Sparkles, Square, Volume2, VolumeX } from "lucide-react-native";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -37,6 +37,7 @@ import {
   type StoredChat,
 } from "../features/assistant/lib/chat-store";
 import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
+import { cleanForSpeech, nextSpeakableChunk, unspokenRest } from "../features/assistant/lib/speech-chunks";
 import { THINKING_DEFAULT, thinkingLabel, toolStatusLabel } from "../features/assistant/lib/thinking-label";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard, type DraftAmountTone } from "../features/assistant/components/AssistantDraftCard";
@@ -87,6 +88,8 @@ type ChatItem = {
   suggestions?: string[];
   /** El usuario tocó Detener: queda lo que alcanzó a escribir y no viaja como historial. */
   stopped?: boolean;
+  /** En un error: la pregunta que falló y su burbuja, para el botón Reintentar. */
+  retry?: { text: string; userItemId: string };
 };
 
 function normalize(value: string): string {
@@ -321,15 +324,10 @@ function AssistantScreen() {
   }, [showToast]);
 
   // Limpia markdown/emojis para que la voz suene natural.
-  const speakReply = useCallback((text: string) => {
-    const clean = text
-      .replace(/\*\*/g, "")
-      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, "")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    if (!clean) return;
-    Speech.stop();
-    Speech.speak(clean, { language: "es-PE" });
+  /** Encola un trozo para leer en voz alta, sin cortar lo que ya está leyendo. */
+  const speakChunk = useCallback((text: string) => {
+    const clean = cleanForSpeech(text);
+    if (clean) Speech.speak(clean, { language: "es-PE" });
   }, []);
 
   // Voz: dictado on-device (expo-speech-recognition). El transcript va al input;
@@ -376,9 +374,13 @@ function AssistantScreen() {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, retryOf?: ChatItem) => {
       const message = text.trim();
       if (!message || isThinking || !activeWorkspaceId) return;
+      /* Reintentar quita el error y la pregunta que falló, y la manda de nuevo como si fuera la
+         primera vez: así no queda duplicada en pantalla ni en el historial que ve el modelo. */
+      const dropIds = new Set(retryOf?.retry ? [retryOf.id, retryOf.retry.userItemId] : []);
+      const baseItems = dropIds.size > 0 ? items.filter((item) => !dropIds.has(item.id)) : items;
       Speech.stop(); // corta cualquier respuesta hablada anterior al mandar una nueva
       idRef.current += 1;
       const userItem: ChatItem = { id: `u${idRef.current}`, role: "user", content: message };
@@ -387,13 +389,13 @@ function AssistantScreen() {
          `role` y `content`, así que el modelo no veía ni sus propios borradores ni si el usuario
          los había guardado: tras registrar un gasto y pedirle lo que faltaba, volvía a ofrecer la
          misma tarjeta. La anotación va solo aquí; lo que se ve en pantalla no cambia. */
-      const history: AssistantChatMessage[] = items
+      const history: AssistantChatMessage[] = baseItems
         .filter((item) => item.id !== "welcome" && !item.error && !item.stopped)
         .map((item) => ({
           role: item.role,
           content: item.role === "assistant" ? annotateAssistantTurn(item.content, item) : item.content,
         }));
-      setItems((current) => [...current, userItem]);
+      setItems((current) => [...current.filter((item) => !dropIds.has(item.id)), userItem]);
       setInput("");
       // Qué decir mientras responde: dictar un gasto no es buscar. Ver thinking-label. Después
       // manda el servidor: avisa en vivo qué consulta de verdad.
@@ -408,6 +410,9 @@ function AssistantScreen() {
       turnRef.current += 1;
       const turn = turnRef.current;
       const isCurrent = () => turnRef.current === turn;
+      /* Modo hablante: cada frase se lee apenas termina de llegar. `spokenUpTo` marca hasta dónde
+         del texto en vivo ya se mandó a la voz. */
+      let spokenUpTo = 0;
       try {
         const response = await streamAssistant(
           { message, history, workspaceId: activeWorkspaceId },
@@ -419,9 +424,19 @@ function AssistantScreen() {
               if (!isCurrent()) return;
               liveTextRef.current += text;
               setLiveText(liveTextRef.current);
+              if (speakModeRef.current) {
+                const { chunk, next } = nextSpeakableChunk(liveTextRef.current, spokenUpTo);
+                if (chunk) {
+                  speakChunk(chunk);
+                  spokenUpTo = next;
+                }
+              }
             },
             onReset: () => {
               if (!isCurrent()) return;
+              // Lo mostrado era un preámbulo descartado: callar lo que se estaba leyendo de él.
+              if (spokenUpTo > 0) Speech.stop();
+              spokenUpTo = 0;
               liveTextRef.current = "";
               setLiveText("");
             },
@@ -461,7 +476,9 @@ function AssistantScreen() {
         }
         setItems((current) => [...current, ...nuevos]);
         setRemainingToday(response.remainingToday);
-        if (speakModeRef.current) speakReply(response.reply);
+        if (speakModeRef.current) {
+          speakChunk(unspokenRest(response.reply, liveTextRef.current.slice(0, spokenUpTo)));
+        }
       } catch (error) {
         if (!isCurrent()) return; // error de la conexión que cortó Detener: no es un fallo
         idRef.current += 1;
@@ -472,6 +489,7 @@ function AssistantScreen() {
             role: "assistant",
             content: humanizeError(error),
             error: true,
+            retry: { text: message, userItemId: userItem.id },
           },
         ]);
         // Reponer el texto para reintentar sin reescribir.
@@ -485,7 +503,7 @@ function AssistantScreen() {
         }
       }
     },
-    [activeWorkspaceId, isThinking, items, speakReply],
+    [activeWorkspaceId, isThinking, items, speakChunk],
   );
   sendRef.current = send;
 
@@ -948,6 +966,16 @@ function AssistantScreen() {
             </Text>
           ) : null}
           {item.stopped ? <Text style={styles.stoppedNote}>Detuviste la respuesta.</Text> : null}
+          {item.retry && item.id === items[items.length - 1]?.id && !isThinking ? (
+            <TouchableOpacity
+              style={styles.retryChip}
+              onPress={() => void send(item.retry!.text, item)}
+              accessibilityLabel="Reintentar la pregunta"
+            >
+              <RotateCcw size={13} color={COLORS.pro} strokeWidth={2.2} />
+              <Text style={styles.retryChipText}>Reintentar</Text>
+            </TouchableOpacity>
+          ) : null}
           {item.evidence?.map((evidence) => (
             <TouchableOpacity
               key={`${item.id}-${evidence.label}`}
@@ -1324,6 +1352,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: COLORS.pro,
+  },
+  retryChip: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.pro,
+  },
+  retryChipText: {
+    color: COLORS.pro,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
   },
   stoppedNote: {
     color: COLORS.textMuted,
