@@ -52,6 +52,9 @@ const LEGACY_RUNTIMES = ["1.1.0", "1.0.9"];
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+// `--solo-actual`: publica SOLO en el runtime actual (app.json) y no en los legados. Para cambios que solo tienen sentido en el binario nuevo
+// y que no conviene arriesgar en los que ya están en uso (p. ej. algo que depende de un módulo nativo que los binarios viejos no traen).
+const onlyCurrent = args.includes("--solo-actual");
 const message = args.filter((a) => !a.startsWith("--")).join(" ").trim();
 
 if (!message) {
@@ -113,7 +116,7 @@ function quote(value) {
 const original = readFileSync(APP_JSON, "utf8");
 const version = readVersion(original);
 
-const pending = LEGACY_RUNTIMES.filter((runtime) => runtime !== version);
+const pending = onlyCurrent ? [] : LEGACY_RUNTIMES.filter((runtime) => runtime !== version);
 
 console.log(`Mensaje:  ${message}`);
 console.log(`Runtimes: ${[version, ...pending].join(", ")}`);

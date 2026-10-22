@@ -13,7 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
-      "Con el modo sin conexión encendido, lo que la app guarda en tu teléfono (movimientos, cuentas, deudas y los cambios que aún no se envían) ahora queda cifrado: sin tu teléfono desbloqueado, nadie puede leer ese archivo. No tienes que hacer nada y no notarás diferencia.",
+      "Con el modo sin conexión encendido, lo que la app guarda en tu teléfono (movimientos, cuentas, deudas y los cambios que aún no se envían) ahora queda cifrado (también la copia que la app usa para abrir al instante): sin tu teléfono desbloqueado, nadie puede leer esos archivos. No tienes que hacer nada y no notarás diferencia.",
       "El asistente ahora te dice qué está revisando (tus deudas, tus presupuestos, tus movimientos…) y su respuesta va apareciendo mientras la escribe, en vez de llegar de golpe al final. Si te equivocaste al preguntar, toca el botón de detener: esa pregunta no se descuenta de las del día. (Pro)",
       "Debajo de cada respuesta del asistente aparecen 2 o 3 preguntas para seguir la conversación: tócalas y se envían solas. (Pro)",
       "Saludar o agradecer al asistente ya no gasta una de tus preguntas del día. Y ahora entiende «hoy» y «este mes» con la zona horaria de tu Configuración: un gasto hecho en la noche del último día del mes ya no se le escapa. (Pro)",

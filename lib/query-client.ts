@@ -1,7 +1,7 @@
 import { MutationCache, QueryCache, QueryClient, onlineManager } from "@tanstack/react-query";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { cacheStorage } from "./cache-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState } from "react-native";
 
@@ -201,7 +201,8 @@ function persistFirstPageOnly(data: unknown) {
 }
 
 const asyncStoragePersister = createAsyncStoragePersister({
-  storage: AsyncStorage,
+  // Cifrada en los binarios que lo permiten (ver lib/secure-cache-storage.ts); en los demás, AsyncStorage tal cual.
+  storage: cacheStorage,
   key: "darkmoney/query-cache/v1",
   throttleTime: 2_000,
 });

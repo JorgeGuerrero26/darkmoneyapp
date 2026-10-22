@@ -59,10 +59,20 @@ export function sqlcipherKeyPragma(hexKey: string): string {
  * NO se debe abrir otra base «sin cifrar» a escondidas, simplemente no está disponible por ahora.
  */
 export async function getOrCreateDatabaseKey(userId: string): Promise<string | null> {
+  return getOrCreateSecret(keyNameFor(userId));
+}
+
+/** Bytes aleatorios del sistema (expo-crypto), o `null` si este binario no los trae. */
+export function randomBytesOrNull(count: number): Uint8Array | null {
+  const random = loadRandomBytes();
+  return random ? random(count) : null;
+}
+
+/** Un secreto aleatorio de 256 bits (64 hex) guardado en el llavero con ese nombre; lo crea la primera vez. Misma semántica que la llave de la base. */
+export async function getOrCreateSecret(name: string): Promise<string | null> {
   const store = loadSecureStore();
   const random = loadRandomBytes();
   if (!store || !random) return null;
-  const name = keyNameFor(userId);
   const existing = await store.getItemAsync(name);
   if (existing && /^[0-9a-f]{64}$/.test(existing)) return existing;
   const created = bytesToHex(random(32));

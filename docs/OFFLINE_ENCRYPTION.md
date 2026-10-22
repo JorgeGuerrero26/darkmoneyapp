@@ -35,8 +35,10 @@ Quien copie el archivo (copia de seguridad, teléfono perdido sin desbloquear, h
 
 ## Límites conocidos (lo que el cifrado NO cubre todavía)
 
-- **La caché de React Query en AsyncStorage** (primera página de movimientos, resumen del espacio, notificaciones) sigue sin cifrar.
-  Es el siguiente paso si se quiere cerrar el tema por completo.
+- **La caché de React Query en AsyncStorage** (primera página de movimientos, resumen del espacio, notificaciones) también se cifra
+  (`lib/secure-cache-storage.ts`, ChaCha20-Poly1305 con `@noble/ciphers`, llave propia en el llavero). Lo que ya estaba en claro se lee igual y
+  la siguiente escritura va cifrada. Con el llavero bloqueado no se guarda nada en claro. Un binario sin `expo-crypto` la deja como siempre.
+  Se publica con `npm run ota -- "..." --solo-actual` para no tocar los binarios en uso.
 - Los datos que ya están en pantalla o en memoria, y los comprobantes que se descargan, no pasan por esta base.
 - El cifrado no protege con el teléfono desbloqueado y la app abierta.
 
