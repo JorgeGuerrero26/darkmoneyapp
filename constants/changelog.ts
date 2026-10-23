@@ -20,6 +20,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Pídele al asistente que corrija o borre un gasto o ingreso que ya registraste («el taxi de ayer era 25», «ese gasto era de comida», «borra el gasto de 40»): te muestra el antes y el después, y solo cambia algo si tú lo confirmas. Si algo falla, toca «Reintentar» en el mismo mensaje. Y en modo hablante empieza a leerte la respuesta mientras la escribe. (Pro)",
       "Mantén presionada una respuesta del asistente para copiarla y pegarla donde quieras, por ejemplo en WhatsApp. (Pro)",
       "Al registrar un movimiento detectado con el modo sin conexión encendido, ya no se pierde el aprendizaje de la categoría que elegiste, y Deshacer funciona también si el movimiento todavía no se ha enviado.",
+      "Al guardar un movimiento detectado con el modo sin conexión encendido, su aviso desaparece del inicio al instante, aunque el movimiento todavía no se haya enviado. Si tocas Deshacer, el aviso vuelve.",
       "Con el modo sin conexión encendido, la pantalla de inicio ya cuenta lo que registras sin internet: los gastos e ingresos del mes, los gráficos, el historial del año y el detalle de cada día se ponen al día al instante, sin esperar a que vuelva la conexión.",
     ],
   },
