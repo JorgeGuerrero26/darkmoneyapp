@@ -38,11 +38,12 @@ let mockOnline = true;
 const mockPending = jest.fn().mockResolvedValue([] as number[]);
 const mockHasPending = jest.fn().mockResolvedValue(false);
 const mockLocalDelete = jest.fn().mockResolvedValue(true);
+let mockRequestSync: () => Promise<unknown> = () => Promise.resolve();
 jest.mock("../../../../lib/offline/instance", () => ({
   offlineRuntime: {
     getState: () => ({ online: mockOnline }),
     pendingRowIds: (...args: unknown[]) => mockPending(...args),
-    requestSync: () => Promise.resolve(),
+    requestSync: () => mockRequestSync(),
     hasPendingInsert: (...args: unknown[]) => mockHasPending(...args),
     deleteMovement: (...args: unknown[]) => mockLocalDelete(...args),
   },
@@ -417,7 +418,7 @@ describe("detección por correo: la verificación de PRO al guardar", () => {
 });
 
 describe("con el modo sin conexión, el movimiento guardado aún solo está en el teléfono", () => {
-  afterEach(() => { mockOnline = true; mockPending.mockResolvedValue([]); mockHasPending.mockResolvedValue(false); mockLocalDelete.mockResolvedValue(true); });
+  afterEach(() => { mockRequestSync = () => Promise.resolve(); mockOnline = true; mockPending.mockResolvedValue([]); mockHasPending.mockResolvedValue(false); mockLocalDelete.mockResolvedValue(true); });
 
   it("no marca la detección ni guarda el aprendizaje antes de que llegue al servidor (chocaban con la llave foránea en cada registro)", async () => {
     mockOnline = false;
@@ -428,6 +429,17 @@ describe("con el modo sin conexión, el movimiento guardado aún solo está en e
     expect(mockMark).not.toHaveBeenCalled();
     expect(mockMutation.mutateAsync).not.toHaveBeenCalledWith(expect.objectContaining({ movementId: 13 }));
     expect(mockResolved).toHaveBeenCalledWith(7, "registered"); // guardar sí terminó
+  });
+
+  it("guardar no espera a que el movimiento llegue al servidor (antes tardaba hasta 8 s con una sincronización lenta)", async () => {
+    mockPending.mockResolvedValue([13]); // con internet, pero el envío tarda
+    mockRequestSync = () => new Promise(() => {}); // una sincronización que no termina
+    const started = Date.now();
+    await act(async () => { current.setAccountId(1); current.selectCategoryManually(2); });
+    await act(async () => { await current.submit(); });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(mockResolved).toHaveBeenCalledWith(7, "registered");
+    expect(mockToast.showRichToast).toHaveBeenCalled();
   });
 
   it("con el movimiento ya en el servidor marca la detección como siempre", async () => {

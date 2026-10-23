@@ -801,7 +801,8 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
           // (app abierta + overlay), la segunda recibe el movimiento ya creado.
           dedupeKey: `suggestion:${suggestion.id}`,
         }));
-        await markRegistered(created.id);
+        // En segundo plano: espera a que el movimiento llegue al servidor y no debe frenar el guardado.
+        void markRegistered(created.id);
         if (profile?.id && activeWorkspaceId) {
           void recordSuggestionAction({
             userId: profile.id,
@@ -939,7 +940,9 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   async function finishRegistration(movementId: number, feedbackIntent: CategoryFeedbackIntent | null, options?: { alreadyResolved?: boolean }) {
     if (!suggestion) return;
     // La división la resuelve el servidor dentro de su transacción: no se vuelve a marcar.
-    if (!options?.alreadyResolved) await markRegistered(movementId);
+    // En segundo plano: espera a que el movimiento llegue al servidor (con el modo sin conexión puede tardar unos segundos) y
+    // no debe frenar el guardado ni el aviso de «Movimiento guardado».
+    if (!options?.alreadyResolved) void markRegistered(movementId);
     if (profile?.id && activeWorkspaceId) {
       if (feedbackIntent) {
         const isAccept = feedbackIntent.kind === "accepted_category_suggestion";
@@ -982,22 +985,28 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
         metadata: { movementType, financialAppKey: suggestion.financialAppKey },
       });
     }
-    if (categoryId != null && feedbackIntent && (await movementOnServer(movementId))) {
-      void persistLearningFeedback.mutateAsync({
-        movementId,
-        feedbackKind: feedbackIntent.kind,
-        normalizedDescription: normalizeAnalyticsText(description.trim() || suggestion.description) || null,
-        previousCategoryId: null,
-        acceptedCategoryId: categoryId,
-        confidence: feedbackIntent.confidence ?? (feedbackIntent.kind === "accepted_category_suggestion" ? 0.7 : null),
-        source: feedbackIntent.source === "deepseek" ? "notification-form-ai" : "notification-form",
-        metadata: {
-          categoryName: feedbackIntent.categoryName ?? null,
-          reasons: feedbackIntent.reasons ?? [],
-          aiProvider: feedbackIntent.source === "deepseek" ? "deepseek" : null,
-          suggestionId: suggestion.id,
-          financialAppKey: suggestion.financialAppKey,
-        },
+    if (categoryId != null && feedbackIntent) {
+      const learnedCategoryId = categoryId;
+      const learnedDescription = description.trim() || suggestion.description;
+      const learnedSuggestion = suggestion;
+      void movementOnServer(movementId).then((onServer) => {
+        if (!onServer) return;
+        void persistLearningFeedback.mutateAsync({
+          movementId,
+          feedbackKind: feedbackIntent.kind,
+          normalizedDescription: normalizeAnalyticsText(learnedDescription) || null,
+          previousCategoryId: null,
+          acceptedCategoryId: learnedCategoryId,
+          confidence: feedbackIntent.confidence ?? (feedbackIntent.kind === "accepted_category_suggestion" ? 0.7 : null),
+          source: feedbackIntent.source === "deepseek" ? "notification-form-ai" : "notification-form",
+          metadata: {
+            categoryName: feedbackIntent.categoryName ?? null,
+            reasons: feedbackIntent.reasons ?? [],
+            aiProvider: feedbackIntent.source === "deepseek" ? "deepseek" : null,
+            suggestionId: learnedSuggestion.id,
+            financialAppKey: learnedSuggestion.financialAppKey,
+          },
+        });
       });
     }
     if (notificationId) markNotificationRead.mutate(notificationId);
