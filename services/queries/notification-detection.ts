@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { STALE } from "../../lib/query-client";
+import { STALE, queryClient } from "../../lib/query-client";
+import { offlineRuntime } from "../../lib/offline/instance";
 import { supabase } from "../../lib/supabase";
 import {
   FINANCIAL_APPS,
@@ -14,6 +15,12 @@ import { parseDuplicateVerdict, type DuplicateAiResult } from "../../features/no
 import { requestDetectedRegistrationUndo, type DetectionUndoInput } from "../../features/detected-movements/lib/detection-undo";
 import { requestDetectedSplit, type DetectedSplitInput } from "../../features/detected-movements/lib/detection-split";
 import { detectionDuplicateBounds } from "../../features/detected-movements/lib/duplicate-day";
+import {
+  forgetLocallyRegistered,
+  rememberLocallyRegistered,
+  stillLocalRegistrations,
+  withoutLocallyRegistered,
+} from "../../features/detected-movements/lib/locallyRegistered";
 
 export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate" | "needs_review";
 export type DetectedMovementConfidence = "high" | "medium" | "low";
@@ -435,6 +442,8 @@ export function usePendingDetectedMovementsQuery(userId: string | null, workspac
     enabled: Boolean(supabase && userId && workspaceId && enabled),
     refetchInterval: enabled ? 30_000 : false,
     queryFn: async () => {
+      // Antes de pedir la lista: qué registros hechos en el teléfono siguen sin enviar (ver locallyRegistered).
+      const checkedLocal = await stillLocalRegistrations((movementId) => offlineRuntime.hasPendingInsert(workspaceId!, "movements", movementId));
       const reconciliation = await reconcileDetectedMovements(workspaceId!);
       if (reconciliation.resolvedIds.length) {
         void queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -446,9 +455,28 @@ export function usePendingDetectedMovementsQuery(userId: string | null, workspac
         .select("*").eq("user_id", userId!).eq("workspace_id", workspaceId!)
         .in("status", ["pending", "needs_review"]).order("created_at", { ascending: false });
       if (error) throw new Error("No se pudieron cargar los movimientos por revisar.");
-      return (data ?? []).map((row) => ({ ...mapSuggestion(row), duplicateCandidate: reconciliation.candidates.get(Number(row.id)) ?? null }));
+      const list = (data ?? []).map((row) => ({ ...mapSuggestion(row), duplicateCandidate: reconciliation.candidates.get(Number(row.id)) ?? null }));
+      return withoutLocallyRegistered(list, checkedLocal);
     },
   });
+}
+
+/**
+ * Registrada en el teléfono: la tarjeta «Movimiento detectado» se quita YA, sin esperar a que el movimiento llegue al
+ * servidor (con el modo sin conexión tarda unos segundos, o hasta que vuelva el internet) y sigue oculta mientras no salga.
+ */
+export function hideLocallyRegisteredSuggestion(suggestion: Pick<DetectedMovementSuggestion, "id" | "userId" | "workspaceId">, movementId: number) {
+  rememberLocallyRegistered(suggestion.id, movementId);
+  queryClient.setQueriesData<DetectedMovementSuggestion[]>(
+    { queryKey: ["pending-detected-movements", suggestion.userId, suggestion.workspaceId] },
+    (previous) => previous?.filter((item) => item.id !== suggestion.id),
+  );
+}
+
+/** Deshacer un registro: la detección vuelve a la lista. */
+export function showSuggestionAgain(suggestion: Pick<DetectedMovementSuggestion, "id" | "userId" | "workspaceId">) {
+  forgetLocallyRegistered(suggestion.id);
+  void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", suggestion.userId, suggestion.workspaceId] });
 }
 
 export async function reconcileDetectedMovements(workspaceId: number, suggestionId?: number) {

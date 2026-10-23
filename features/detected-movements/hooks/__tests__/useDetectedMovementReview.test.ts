@@ -63,7 +63,11 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
   countSameDayDetectionSignals: (...args: unknown[]) => mockCounts(...args),
   confirmDuplicateWithAi: (...args: unknown[]) => mockDuplicateAi(...args),
   recordSuggestionAction: jest.fn().mockResolvedValue(null),
+  hideLocallyRegisteredSuggestion: (...args: unknown[]) => mockHide(...args),
+  showSuggestionAgain: (...args: unknown[]) => mockShowAgain(...args),
 }));
+const mockHide = jest.fn();
+const mockShowAgain = jest.fn();
 jest.mock("../../../../services/queries/workspace-data", () => ({
   useWorkspaceSnapshotQuery: () => ({ data: mockSnapshot }),
   useCreateMovementMutation: () => ({ ...mockMutation, mutateAsync: mockCreate }),
@@ -455,6 +459,14 @@ describe("con el modo sin conexión, el movimiento guardado aún solo está en e
     await act(async () => { banner.onUndo(); });
     expect(mockLocalDelete).toHaveBeenCalledWith(9, 13);
     expect(mockUndo).not.toHaveBeenCalled();
+    expect(mockShowAgain).toHaveBeenCalledWith({ id: 7, userId: "tester", workspaceId: 9 }); // la detección vuelve a la lista
+  });
+
+  it("al guardar, la tarjeta «Movimiento detectado» se quita al instante aunque el movimiento no haya salido", async () => {
+    mockPending.mockResolvedValue([13]);
+    mockRequestSync = () => new Promise(() => {});
+    await act(async () => { await current.submit(); });
+    expect(mockHide).toHaveBeenCalledWith(expect.objectContaining({ id: 7, userId: "tester", workspaceId: 9 }), 13);
   });
 });
 

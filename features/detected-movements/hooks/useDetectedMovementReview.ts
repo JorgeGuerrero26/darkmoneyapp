@@ -11,7 +11,7 @@ import { useAuth } from "../../../lib/auth-context";
 import { useWorkspace } from "../../../lib/workspace-context";
 import { useToast } from "../../../hooks/useToast";
 import { useHaptics } from "../../../hooks/useHaptics";
-import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation, useRegisterDetectedSplitMutation } from "../../../services/queries/notification-detection";
+import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation, useRegisterDetectedSplitMutation, hideLocallyRegisteredSuggestion, showSuggestionAgain } from "../../../services/queries/notification-detection";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../../lib/notification-detection-apps";
 import { useCreateCategoryMutation, useCreateCounterpartyMutation, useCreateMovementMutation, useCreateRecurringIncomeMutation, useCreateSubscriptionMutation, useMarkNotificationReadMutation, usePersistLearningFeedbackMutation, useUserEntitlementQuery, useWorkspaceSnapshotQuery } from "../../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../../services/queries/movement-patterns";
@@ -942,7 +942,11 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     // La división la resuelve el servidor dentro de su transacción: no se vuelve a marcar.
     // En segundo plano: espera a que el movimiento llegue al servidor (con el modo sin conexión puede tardar unos segundos) y
     // no debe frenar el guardado ni el aviso de «Movimiento guardado».
-    if (!options?.alreadyResolved) void markRegistered(movementId);
+    if (!options?.alreadyResolved) {
+      // La tarjeta del inicio se quita al instante; si no, seguía ahí hasta que el servidor recibía el movimiento.
+      hideLocallyRegisteredSuggestion(suggestion, movementId);
+      void markRegistered(movementId);
+    }
     if (profile?.id && activeWorkspaceId) {
       if (feedbackIntent) {
         const isAccept = feedbackIntent.kind === "accepted_category_suggestion";
@@ -1032,11 +1036,13 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
       // pendiente). Con el movimiento ya en el servidor se usa la operación atómica de siempre.
       if (await offlineRuntime.hasPendingInsert(workspaceId, "movements", movementId).catch(() => false)) {
         if (await offlineRuntime.deleteMovement(workspaceId, movementId).catch(() => false)) {
+          showSuggestionAgain({ id: suggestionId, userId, workspaceId });
           void suggestionQuery.refetch();
           showToast("Registro deshecho", "success");
           return;
         }
       }
+      showSuggestionAgain({ id: suggestionId, userId, workspaceId });
       await undoDetectedRegistration.mutateAsync({ movementId, suggestionId, workspaceId, userId });
     })().catch((error) => showErrorToast("No se pudo deshacer el registro", error));
   }
