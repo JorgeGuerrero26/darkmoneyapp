@@ -34,6 +34,19 @@ jest.mock("../../../../components/ui/BottomSheet", () => ({ BottomSheet: ({ titl
 jest.mock("../../components/DetectedMovementExtras", () => ({ DetectedMovementExtras: () => null }));
 jest.mock("../../../movements/components/form/SplitCategoriesSheet", () => ({ SplitCategoriesSheet: () => null }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
+let mockOnline = true;
+const mockPending = jest.fn().mockResolvedValue([] as number[]);
+const mockHasPending = jest.fn().mockResolvedValue(false);
+const mockLocalDelete = jest.fn().mockResolvedValue(true);
+jest.mock("../../../../lib/offline/instance", () => ({
+  offlineRuntime: {
+    getState: () => ({ online: mockOnline }),
+    pendingRowIds: (...args: unknown[]) => mockPending(...args),
+    requestSync: () => Promise.resolve(),
+    hasPendingInsert: (...args: unknown[]) => mockHasPending(...args),
+    deleteMovement: (...args: unknown[]) => mockLocalDelete(...args),
+  },
+}));
 jest.mock("../../../../lib/auth-context", () => ({ useAuth: () => ({ profile: { id: "tester", email: "tester@test.invalid" } }) }));
 jest.mock("../../../../lib/workspace-context", () => ({ useWorkspace: () => ({ activeWorkspaceId: mockWorkspaceId, activeWorkspace: { baseCurrencyCode: "PEN" } }) }));
 jest.mock("../../../../hooks/useToast", () => ({ useToast: () => mockToast }));
@@ -400,6 +413,36 @@ describe("detección por correo: la verificación de PRO al guardar", () => {
     mockProCheck = () => Promise.reject(new Error("La detección por correo requiere DarkMoney PRO activo."));
     await act(async () => { await current.submit(); });
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("con el modo sin conexión, el movimiento guardado aún solo está en el teléfono", () => {
+  afterEach(() => { mockOnline = true; mockPending.mockResolvedValue([]); mockHasPending.mockResolvedValue(false); mockLocalDelete.mockResolvedValue(true); });
+
+  it("no marca la detección ni guarda el aprendizaje antes de que llegue al servidor (chocaban con la llave foránea en cada registro)", async () => {
+    mockOnline = false;
+    mockPending.mockResolvedValue([13]); // el movimiento 13 sigue sin enviar
+    await act(async () => { current.setAccountId(1); current.selectCategoryManually(2); });
+    await act(async () => { await current.submit(); });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockMark).not.toHaveBeenCalled();
+    expect(mockMutation.mutateAsync).not.toHaveBeenCalledWith(expect.objectContaining({ movementId: 13 }));
+    expect(mockResolved).toHaveBeenCalledWith(7, "registered"); // guardar sí terminó
+  });
+
+  it("con el movimiento ya en el servidor marca la detección como siempre", async () => {
+    await act(async () => { current.setAccountId(1); current.selectCategoryManually(2); });
+    await act(async () => { await current.submit(); });
+    expect(mockMark).toHaveBeenCalledWith(expect.objectContaining({ suggestionId: 7, status: "registered", movementId: 13 }));
+  });
+
+  it("Deshacer un registro que aún no salió del teléfono lo borra allí y no llama al servidor", async () => {
+    mockHasPending.mockResolvedValue(true);
+    await act(async () => { await current.submit(); });
+    const banner = mockToast.showRichToast.mock.calls[0][0];
+    await act(async () => { banner.onUndo(); });
+    expect(mockLocalDelete).toHaveBeenCalledWith(9, 13);
+    expect(mockUndo).not.toHaveBeenCalled();
   });
 });
 

@@ -18,6 +18,8 @@ import { useMovementPatternsQuery } from "../../../services/queries/movement-pat
 import { useDetectionLearningQuery } from "../../../services/queries/detection-learning";
 import { learningObject, proposeFromPersonalHistory, receiptAccountHints } from "../lib/personal-learning";
 import { EMAIL_SOURCE_PACKAGE } from "../../../services/queries/inbound-email-alias";
+import { offlineRuntime } from "../../../lib/offline/instance";
+import { waitUntilSent } from "../../../lib/offline/ensure-sent";
 import { assertEmailDetectionProAccess, ProAccessUnverifiedError, useEmailDetectionProAccessQuery } from "../../../services/queries/email-detection-access";
 import { normalizeAnalyticsText } from "../../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../../hooks/useMovementCategoryAiSuggestion";
@@ -980,7 +982,7 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
         metadata: { movementType, financialAppKey: suggestion.financialAppKey },
       });
     }
-    if (categoryId != null && feedbackIntent) {
+    if (categoryId != null && feedbackIntent && (await movementOnServer(movementId))) {
       void persistLearningFeedback.mutateAsync({
         movementId,
         feedbackKind: feedbackIntent.kind,
@@ -1015,12 +1017,35 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
    */
   function undoRegistration(movementId: number) {
     if (!suggestion) return;
-    void undoDetectedRegistration.mutateAsync({ movementId, suggestionId: suggestion.id, workspaceId: suggestion.workspaceId, userId: suggestion.userId })
-      .catch((error) => showErrorToast("No se pudo deshacer el registro", error));
+    const { workspaceId, id: suggestionId, userId } = suggestion;
+    void (async () => {
+      // Si el movimiento todavía no salió del teléfono, deshacer es borrarlo AQUÍ (el servidor no lo conoce y la detección sigue
+      // pendiente). Con el movimiento ya en el servidor se usa la operación atómica de siempre.
+      if (await offlineRuntime.hasPendingInsert(workspaceId, "movements", movementId).catch(() => false)) {
+        if (await offlineRuntime.deleteMovement(workspaceId, movementId).catch(() => false)) {
+          void suggestionQuery.refetch();
+          showToast("Registro deshecho", "success");
+          return;
+        }
+      }
+      await undoDetectedRegistration.mutateAsync({ movementId, suggestionId, workspaceId, userId });
+    })().catch((error) => showErrorToast("No se pudo deshacer el registro", error));
+  }
+
+  /**
+   * ¿Ya existe este movimiento en el servidor? Con el modo sin conexión el movimiento se guarda primero en el teléfono y
+   * viaja un instante después: marcar la detección o guardar el aprendizaje ANTES chocaba con la llave foránea
+   * (movement_id → movements) y fallaba en cada registro. Si no ha llegado (sin internet), se omite: el servidor resuelve la
+   * detección al recibir el movimiento (su clave `suggestion:<id>`).
+   */
+  async function movementOnServer(movementId: number): Promise<boolean> {
+    if (!suggestion) return true;
+    return waitUntilSent(offlineRuntime, suggestion.workspaceId, "movements", movementId).catch(() => true);
   }
 
   async function markRegistered(movementId: number) {
     if (!suggestion) return;
+    if (!(await movementOnServer(movementId))) return;
     try {
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId });
     } catch (error) {
