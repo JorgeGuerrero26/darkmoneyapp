@@ -452,3 +452,23 @@ describe("pickByName", () => {
     expect(pickByName(cats, "viajes")).toEqual({ row: null, options: [] });
   });
 });
+
+describe("criterios profesionales en las instrucciones", () => {
+  const { buildSystemPrompt, FINANCIAL_CRITERIA } = require("../logic");
+  const prompt: string = buildSystemPrompt("jueves, 23 de octubre de 2026", "America/Lima");
+
+  it("van dentro de las instrucciones, antes del formato", () => {
+    for (const rule of FINANCIAL_CRITERIA) expect(prompt).toContain(rule);
+    expect(prompt.indexOf("CRITERIOS PROFESIONALES")).toBeLessThan(prompt.indexOf("Formato: texto plano"));
+  });
+
+  it("un colchón de 1 mes no pasa por fondo de emergencia completo", () => {
+    expect(prompt).toContain("3 meses si tiene un sueldo fijo");
+    expect(prompt).toContain("1 mes NO es un fondo de emergencia completo");
+  });
+
+  it("siempre dice qué criterio usa y el del usuario manda", () => {
+    expect(prompt).toContain("di en UNA línea qué criterio usas");
+    expect(prompt).toContain("MANDA el suyo");
+  });
+});
