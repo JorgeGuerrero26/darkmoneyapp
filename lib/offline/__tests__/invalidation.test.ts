@@ -1,8 +1,11 @@
 import { queryRootsToRefresh } from "../invalidation";
 
 describe("qué se vuelve a leer cuando cambian los datos locales", () => {
-  it("un movimiento nuevo refresca la lista, el detalle, Categorías, los presupuestos, la analítica de cuenta y Categorizar", () => {
-    expect(queryRootsToRefresh(["movements"]).sort()).toEqual(["account-analytics", "budget-scope-movements", "categories-overview", "movement", "movements", "uncategorized-movements"]);
+  it("un movimiento nuevo refresca la lista, el detalle, Categorías, los presupuestos, la analítica de cuenta, Categorizar y el inicio", () => {
+    expect(queryRootsToRefresh(["movements"]).sort()).toEqual([
+      "account-analytics", "budget-scope-movements", "categories-overview", "dashboard-movements", "dashboard-year-movements",
+      "movement", "movements", "projection-history", "uncategorized-movements",
+    ]);
   });
 
   it("una categoría o una suscripción refresca el resumen de Categorías", () => {

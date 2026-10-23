@@ -29,6 +29,7 @@ import { withLocalRows } from "../../lib/offline/local-rows";
 import { withLocalBudgetRows } from "./offline-budgets";
 import { withLocalObligations } from "./offline-obligations";
 import { useOfflineLocalReady, useOfflineFlag } from "../../lib/offline/react";
+import { localDashboardMovements, type LocalDashboardRange } from "../../features/dashboard/lib/localDashboardMovements";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -1728,6 +1729,16 @@ export type PersistLearningFeedbackInput = {
  */
 export const DASHBOARD_MOVEMENTS_WINDOW_DAYS = 90;
 
+/**
+ * Modo sin conexión (beta): con la copia local lista, los movimientos del inicio salen de ella. Incluyen lo que aún
+ * no se envió y no esperan a la red. `null` = no hay copia lista (modo apagado o tabla sin descargar): servidor.
+ */
+async function localDashboardRowsOrNull(workspaceId: number, range: LocalDashboardRange): Promise<DashboardMovementRow[] | null> {
+  if (!offlineRuntime.canReadLocal(workspaceId)) return null;
+  const rows = await offlineRuntime.listRows(workspaceId, "movements").catch(() => null);
+  return rows ? localDashboardMovements(rows, range) : null;
+}
+
 export function useDashboardMovementsQuery(
   workspaceId: number | null,
   // Obligatorio a proposito, aunque acepte undefined: forma parte de la queryKey, asi que un
@@ -1735,12 +1746,18 @@ export function useDashboardMovementsQuery(
   // compilador es mas fiable que recordarlo.
   userScopeKey: string | null | undefined,
 ) {
+  const localReady = useOfflineLocalReady(workspaceId);
   return useQuery({
     queryKey: ["dashboard-movements", userScopeKey ?? null, workspaceId],
+    // Leyendo del teléfono no hay que esperar a la red (React Query pausa las consultas sin ella).
+    networkMode: localReady ? "always" : "online",
     queryFn: async (): Promise<DashboardMovementRow[]> => {
-      if (!supabase || !workspaceId) return [];
+      if (!workspaceId) return [];
       const since = new Date();
       since.setDate(since.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
+      const local = await localDashboardRowsOrNull(workspaceId, { from: since.toISOString() });
+      if (local) return local;
+      if (!supabase) return [];
       const { data, error } = await supabase
         .from("movements")
         .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")
@@ -1789,12 +1806,17 @@ export function useDashboardYearMovementsQuery(
   // compilador es mas fiable que recordarlo.
   userScopeKey: string | null | undefined,
 ) {
+  const localReady = useOfflineLocalReady(workspaceId);
   return useQuery({
     queryKey: ["dashboard-year-movements", userScopeKey ?? null, workspaceId, year],
+    networkMode: localReady ? "always" : "online",
     queryFn: async (): Promise<DashboardMovementRow[]> => {
-      if (!supabase || !workspaceId) return [];
+      if (!workspaceId) return [];
       const from = `${year - 1}-01-01T00:00:00.000Z`;
       const to = `${year + 1}-01-01T00:00:00.000Z`;
+      const local = await localDashboardRowsOrNull(workspaceId, { from, until: to });
+      if (local) return local;
+      if (!supabase) return [];
       const { data, error } = await supabase
         .from("movements")
         .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")
@@ -1854,10 +1876,15 @@ export function useProjectionHistoryQuery(
 ) {
   const from = projectionHistoryStart();
   const fromKey = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}`;
+  const localReady = useOfflineLocalReady(workspaceId);
   return useQuery({
     queryKey: ["projection-history", userScopeKey ?? null, workspaceId, fromKey],
+    networkMode: localReady ? "always" : "online",
     queryFn: async (): Promise<DashboardMovementRow[]> => {
-      if (!supabase || !workspaceId) return [];
+      if (!workspaceId) return [];
+      const local = await localDashboardRowsOrNull(workspaceId, { from: from.toISOString() });
+      if (local) return local;
+      if (!supabase) return [];
       const { data, error } = await supabase
         .from("movements")
         .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")

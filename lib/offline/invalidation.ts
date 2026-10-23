@@ -7,7 +7,11 @@
  * `tables` vacío = cambió todo (descarga completa).
  */
 const KEYS_BY_TABLE: Record<string, string[]> = {
-  movements: ["movements", "movement", "categories-overview", "budget-scope-movements", "account-analytics", "uncategorized-movements"],
+  // Inicio: los movimientos de 90 días (y el detalle de un día, misma raíz), el historial anual y el de la proyección.
+  movements: [
+    "movements", "movement", "categories-overview", "budget-scope-movements", "account-analytics", "uncategorized-movements",
+    "dashboard-movements", "dashboard-year-movements", "projection-history",
+  ],
   categories: ["categories-overview"],
   subscriptions: ["categories-overview"],
   spend_types: ["spend-types"],

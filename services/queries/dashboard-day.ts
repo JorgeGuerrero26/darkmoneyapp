@@ -3,6 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
 import type { DashboardMovementRow } from "../../features/dashboard/lib/dashboard-row";
 import { dayMovementBounds } from "../../features/dashboard/lib/day-movements-model";
+import { selectLocalDashboardRows, toDashboardDayRow } from "../../features/dashboard/lib/localDashboardMovements";
+import { offlineRuntime } from "../../lib/offline/instance";
+import { useOfflineLocalReady } from "../../lib/offline/react";
 
 export type DashboardDayMovement = Omit<DashboardMovementRow, "sourceAmount" | "destinationAmount"> & {
   sourceAmount: number | null;
@@ -51,11 +54,25 @@ export async function fetchDashboardDayMovements(client: Pick<SupabaseClient, "f
   }
 }
 
+/** El día completo desde la copia del teléfono (modo sin conexión, beta); `null` = no hay copia lista. */
+export async function localDashboardDayMovements(workspaceId: number, day: string): Promise<DashboardDayMovement[] | null> {
+  if (!offlineRuntime.canReadLocal(workspaceId)) return null;
+  const rows = await offlineRuntime.listRows(workspaceId, "movements").catch(() => null);
+  if (!rows) return null;
+  const { from, until } = dayMovementBounds(day);
+  return selectLocalDashboardRows(rows, { from, until, postedOnly: true }).map(toDashboardDayRow);
+}
+
 export function useDashboardDayMovementsQuery(workspaceId: number | null, userId: string | null | undefined, day: string | null) {
+  const localReady = useOfflineLocalReady(workspaceId);
   return useQuery({
     queryKey: ["dashboard-movements", userId ?? null, workspaceId, "day", day],
-    queryFn: ({ signal }) => {
-      if (!supabase || !workspaceId || !userId || !day) throw new Error("No se puede consultar este día.");
+    networkMode: localReady ? "always" : "online",
+    queryFn: async ({ signal }) => {
+      if (!workspaceId || !userId || !day) throw new Error("No se puede consultar este día.");
+      const local = await localDashboardDayMovements(workspaceId, day);
+      if (local) return local;
+      if (!supabase) throw new Error("No se puede consultar este día.");
       return fetchDashboardDayMovements(supabase, workspaceId, day, signal);
     },
     enabled: Boolean(workspaceId && userId && day),
