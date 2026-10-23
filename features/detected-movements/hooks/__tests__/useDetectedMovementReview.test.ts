@@ -424,14 +424,15 @@ describe("detección por correo: la verificación de PRO al guardar", () => {
 describe("con el modo sin conexión, el movimiento guardado aún solo está en el teléfono", () => {
   afterEach(() => { mockRequestSync = () => Promise.resolve(); mockOnline = true; mockPending.mockResolvedValue([]); mockHasPending.mockResolvedValue(false); mockLocalDelete.mockResolvedValue(true); });
 
-  it("no marca la detección ni guarda el aprendizaje antes de que llegue al servidor (chocaban con la llave foránea en cada registro)", async () => {
+  it("no marca la detección antes de que llegue al servidor (chocaba con la llave foránea) y el aprendizaje queda encargado", async () => {
     mockOnline = false;
     mockPending.mockResolvedValue([13]); // el movimiento 13 sigue sin enviar
     await act(async () => { current.setAccountId(1); current.selectCategoryManually(2); });
     await act(async () => { await current.submit(); });
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(mockMark).not.toHaveBeenCalled();
-    expect(mockMutation.mutateAsync).not.toHaveBeenCalledWith(expect.objectContaining({ movementId: 13 }));
+    // La mutación del aprendizaje espera sola a que el movimiento salga (whenSent); antes se perdía sin internet.
+    expect(mockMutation.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ movementId: 13, acceptedCategoryId: 2 }));
     expect(mockResolved).toHaveBeenCalledWith(7, "registered"); // guardar sí terminó
   });
 

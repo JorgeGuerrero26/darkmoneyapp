@@ -24,6 +24,7 @@ import { displayCategoryName } from "../../lib/category-display-name";
 import { notificationDetection } from "../../lib/notification-detection-native";
 import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
 import { offlineRuntime } from "../../lib/offline/instance";
+import { whenSent } from "../../lib/offline/ensure-sent";
 import { withLocalBalanceRows } from "../../lib/offline/local-balances";
 import { withLocalRows } from "../../lib/offline/local-rows";
 import { withLocalBudgetRows } from "./offline-budgets";
@@ -2575,10 +2576,16 @@ export function usePersistDashboardAnalyticsMutation(workspaceId: number | null)
     mutationKey: ["persist-dashboard-analytics"],
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {
       if (!supabase || !workspaceId) return { persisted: false };
+      // Modo sin conexión: son estadísticas que el inicio recalcula solo; sin internet no se intentan (antes fallaban con
+      // «Network request failed»), y las de movimientos que aún no salen del teléfono se omiten (el servidor no los
+      // conoce todavía: la llave foránea las rechazaba). Se guardan en el siguiente cálculo, ya con el movimiento allá.
+      if (!offlineRuntime.getState().online) return { persisted: false };
+      const unsent = new Set(await offlineRuntime.pendingRowIds(workspaceId, "movements").catch(() => [] as number[]));
+      const signals = input.signals.filter((signal) => !unsent.has(signal.movementId));
       const nowIso = new Date().toISOString();
 
-      if (input.signals.length > 0) {
-        const payload = input.signals.map((signal) => ({
+      if (signals.length > 0) {
+        const payload = signals.map((signal) => ({
           workspace_id: workspaceId,
           movement_id: signal.movementId,
           normalized_description: signal.normalizedDescription ?? null,
@@ -2642,6 +2649,10 @@ export function usePersistLearningFeedbackMutation(
     mutationKey: ["persist-learning-feedback"],
     mutationFn: async (input: PersistLearningFeedbackInput) => {
       if (!supabase || !workspaceId) return { persisted: false };
+      // Modo sin conexión: el aprendizaje apunta al movimiento en el servidor. Si se guardó en el teléfono y aún no sale,
+      // se espera en segundo plano a que salga (aunque sea cuando vuelva el internet); antes se intentaba de inmediato y
+      // fallaba (sin red, o por la llave foránea), y el aprendizaje de esa categoría se perdía.
+      if (!(await whenSent(offlineRuntime, workspaceId, "movements", input.movementId))) return { persisted: false };
       const payload = {
         workspace_id: workspaceId,
         user_id: userId ?? null,

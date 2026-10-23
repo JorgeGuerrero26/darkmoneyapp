@@ -990,28 +990,23 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
       });
     }
     if (categoryId != null && feedbackIntent) {
-      const learnedCategoryId = categoryId;
-      const learnedDescription = description.trim() || suggestion.description;
-      const learnedSuggestion = suggestion;
-      void movementOnServer(movementId).then((onServer) => {
-        if (!onServer) return;
-        void persistLearningFeedback.mutateAsync({
-          movementId,
-          feedbackKind: feedbackIntent.kind,
-          normalizedDescription: normalizeAnalyticsText(learnedDescription) || null,
-          previousCategoryId: null,
-          acceptedCategoryId: learnedCategoryId,
-          confidence: feedbackIntent.confidence ?? (feedbackIntent.kind === "accepted_category_suggestion" ? 0.7 : null),
-          source: feedbackIntent.source === "deepseek" ? "notification-form-ai" : "notification-form",
-          metadata: {
-            categoryName: feedbackIntent.categoryName ?? null,
-            reasons: feedbackIntent.reasons ?? [],
-            aiProvider: feedbackIntent.source === "deepseek" ? "deepseek" : null,
-            suggestionId: learnedSuggestion.id,
-            financialAppKey: learnedSuggestion.financialAppKey,
-          },
-        });
-      });
+      // La mutación espera sola a que el movimiento llegue al servidor (aunque sea al volver el internet).
+      void persistLearningFeedback.mutateAsync({
+        movementId,
+        feedbackKind: feedbackIntent.kind,
+        normalizedDescription: normalizeAnalyticsText(description.trim() || suggestion.description) || null,
+        previousCategoryId: null,
+        acceptedCategoryId: categoryId,
+        confidence: feedbackIntent.confidence ?? (feedbackIntent.kind === "accepted_category_suggestion" ? 0.7 : null),
+        source: feedbackIntent.source === "deepseek" ? "notification-form-ai" : "notification-form",
+        metadata: {
+          categoryName: feedbackIntent.categoryName ?? null,
+          reasons: feedbackIntent.reasons ?? [],
+          aiProvider: feedbackIntent.source === "deepseek" ? "deepseek" : null,
+          suggestionId: suggestion.id,
+          financialAppKey: suggestion.financialAppKey,
+        },
+      }).catch(() => undefined);
     }
     if (notificationId) markNotificationRead.mutate(notificationId);
     haptics.success();

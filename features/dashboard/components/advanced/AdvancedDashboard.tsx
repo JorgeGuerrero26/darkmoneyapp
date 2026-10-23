@@ -1305,7 +1305,8 @@ export function AdvancedDashboard({
         }));
         try { await persistDashboardAnalyticsMutation.mutateAsync({ signals }); } catch { /* La categoría ya quedó guardada. */ }
         for (const suggestion of applied) {
-          try { await persistLearningFeedbackMutation.mutateAsync({
+          // Sin esperar: con el modo sin conexión el aprendizaje aguarda a que el movimiento llegue al servidor.
+          void persistLearningFeedbackMutation.mutateAsync({
             movementId: suggestion.movementId,
             feedbackKind: "accepted_category_suggestion",
             normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
@@ -1314,7 +1315,7 @@ export function AdvancedDashboard({
             confidence: suggestion.confidence,
             source: "dashboard-salud",
             metadata: { categoryName: suggestion.suggestedCategoryName, description: suggestion.description },
-          }); } catch { /* La categoría ya quedó guardada. */ }
+          }).catch(() => undefined); // La categoría ya quedó guardada.
         }
         await Promise.allSettled([
           queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
