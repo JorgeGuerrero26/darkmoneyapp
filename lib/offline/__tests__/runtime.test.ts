@@ -163,6 +163,39 @@ describe("OfflineRuntime", () => {
     expect(runtime.canReadLocal(2)).toBe(false); // otro espacio todavía sin copia local
   });
 
+  it("guardar no espera a que la app rehaga sus pantallas (dejaba «Guardando…» hasta 5 s)", async () => {
+    const { runtime } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    runtime.setOnline(false);
+    let notified: string[] | null = null;
+    // La app rehace saldos, historiales, presupuestos e inicio con este aviso: aquí no termina nunca.
+    runtime.setHooks({ onDataChanged: (tables) => { notified = tables; return new Promise<void>(() => {}); } });
+    const started = Date.now();
+    const record = await runtime.createMovement(WS, expense("Taxi", 9));
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(record).toMatchObject({ description: "Taxi", sourceAmount: 9 });
+    expect(notified).toEqual(["movements"]); // el aviso sí sale, en el mismo instante
+    expect(runtime.getState().pending).toBe(1);
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
+
+  it("candidatos a duplicado desde la copia local: mismo tipo, cuenta y monto exacto, aunque aún no se haya enviado", async () => {
+    const { runtime } = setup();
+    expect(await runtime.postedMovementsWithAmount(WS, { movementType: "expense", side: "source", accountId: 1, amount: 181 })).toBeNull(); // sin copia: al servidor
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    runtime.setOnline(false);
+    await runtime.createMovement(WS, expense("PATRONAL", 181));
+    await runtime.createMovement(WS, expense("Otro monto", 18.1));
+    const found = await runtime.postedMovementsWithAmount(WS, { movementType: "expense", side: "source", accountId: 1, amount: 181 });
+    expect(found?.map((row) => row.description)).toEqual(["PATRONAL"]);
+    expect(await runtime.postedMovementsWithAmount(WS, { movementType: "expense", side: "source", accountId: 2, amount: 181 })).toEqual([]);
+    expect(await runtime.postedMovementsWithAmount(WS, { movementType: "income", side: "destination", accountId: 1, amount: 181 })).toEqual([]);
+    expect(await runtime.postedMovementsWithAmount(WS, { movementType: "expense", side: "source", accountId: 1, amount: 1.005 })).toBeNull(); // fracción de centavo: servidor
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
+
   it("registrar es instantáneo, queda pendiente y se envía solo", async () => {
     const { runtime, log, changes } = setup();
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });

@@ -16,6 +16,7 @@ import type { SqlDriver } from "./sql-driver";
 import { SyncEngine } from "./sync-engine";
 import type { SyncReport, SyncTransport } from "./sync-types";
 import { listRowsLocal } from "./resource-store";
+import { exactCents } from "./money";
 import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-writes";
 import type { MirroredTable, WritableResourceTable } from "./schema";
 import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pending";
@@ -367,6 +368,16 @@ export class OfflineRuntime {
     }
   }
 
+  /**
+   * Tras una escritura del usuario: avisa a la app SIN esperarla. La app rehace con ese aviso lo que muestra (saldos,
+   * historiales por categoría, presupuestos, el inicio) recorriendo todos los movimientos de la copia local, y eso tarda:
+   * esperarlo dejaba «Guardando…» en pantalla hasta 5 segundos con algo que ya estaba guardado. El aviso sale en este
+   * mismo instante; lo que tarda corre después, con el formulario ya cerrado.
+   */
+  private notifyInBackground(tables: string[]) {
+    void this.notifyData(tables);
+  }
+
   // ─── Lectura local ──────────────────────────────────────────────────────────────────────────
 
   /** ¿Se puede leer movimientos de la base local para este espacio? Solo con la copia completa. */
@@ -452,6 +463,27 @@ export class OfflineRuntime {
     return rows.map((row) => Number(row.row_id));
   }
 
+  /**
+   * Movimientos aplicados con ese tipo, cuenta y monto exacto (por las columnas indexadas en centavos, sin recorrer toda la
+   * copia): los candidatos a duplicado al registrar un movimiento detectado. Incluye lo que aún no se envió. null = no hay
+   * copia lista o el monto no es exacto en centavos (que se consulte al servidor).
+   */
+  async postedMovementsWithAmount(
+    workspaceId: number,
+    query: { movementType: string; side: "source" | "destination"; accountId: number; amount: number },
+  ): Promise<Record<string, unknown>[] | null> {
+    if (!this.canReadLocal(workspaceId) || !this.db) return null;
+    let cents: number | null;
+    try { cents = exactCents(String(query.amount)); } catch { return null; }
+    if (cents == null) return null;
+    const [accountColumn, centsColumn] = query.side === "source" ? ["source_account_id", "source_cents"] : ["destination_account_id", "destination_cents"];
+    const rows = await this.db.all<{ data: string }>(
+      `select data from movements where workspace_id = ? and movement_type = ? and status = 'posted' and ${accountColumn} = ? and ${centsColumn} = ?`,
+      [workspaceId, query.movementType, query.accountId, cents],
+    );
+    return rows.map((row) => JSON.parse(row.data) as Record<string, unknown>);
+  }
+
   /** ¿Esta fila se creó en el teléfono y todavía no llegó al servidor? (solo entonces se sabe que no tiene nada colgando) */
   async hasPendingInsert(workspaceId: number, table: string, rowId: number): Promise<boolean> {
     if (!this.db) return false;
@@ -519,8 +551,9 @@ export class OfflineRuntime {
       nowIso: new Date(this.now()).toISOString(),
     });
     if (!row) return null;
+    const record = await getMovementRecord(this.requireDb(), row.id);
     await this.afterWrite();
-    return getMovementRecord(this.requireDb(), row.id);
+    return record;
   }
 
   /**
@@ -543,7 +576,7 @@ export class OfflineRuntime {
     });
     if (!result) return null;
     await this.refreshCounts();
-    await this.notifyData(["movements", "subscriptions"]);
+    this.notifyInBackground(["movements", "subscriptions"]);
     this.scheduleWriteSync();
     return result;
   }
@@ -567,7 +600,7 @@ export class OfflineRuntime {
     });
     if (!result) return null;
     await this.refreshCounts();
-    await this.notifyData(["movements", "recurring_income", "recurring_income_occurrences"]);
+    this.notifyInBackground(["movements", "recurring_income", "recurring_income_occurrences"]);
     this.scheduleWriteSync();
     return result;
   }
@@ -591,7 +624,7 @@ export class OfflineRuntime {
     });
     if (!result) return null;
     await this.refreshCounts();
-    await this.notifyData(result.movementId != null ? ["movements", "obligation_events"] : ["obligation_events"]);
+    this.notifyInBackground(result.movementId != null ? ["movements", "obligation_events"] : ["obligation_events"]);
     this.scheduleWriteSync();
     return result;
   }
@@ -648,7 +681,7 @@ export class OfflineRuntime {
 
   private async afterWrite(table: string = "movements") {
     await this.refreshCounts();
-    await this.notifyData([table]);
+    this.notifyInBackground([table]);
     this.scheduleWriteSync();
   }
 
