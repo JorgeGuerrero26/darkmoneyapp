@@ -83,10 +83,12 @@ jest.mock("../../../../services/queries/workspace-data", () => ({
 }));
 let mockProCheck: () => Promise<unknown> = () => Promise.resolve(true);
 let mockEmailAccessData: boolean | undefined = true;
+let mockEmailAccessAt = 0;
+const mockProCheckCalls = jest.fn();
 jest.mock("../../../../services/queries/email-detection-access", () => ({
   ProAccessUnverifiedError: class ProAccessUnverifiedError extends Error {},
-  useEmailDetectionProAccessQuery: () => ({ data: mockEmailAccessData }),
-  assertEmailDetectionProAccess: () => mockProCheck(),
+  useEmailDetectionProAccessQuery: () => ({ data: mockEmailAccessData, dataUpdatedAt: mockEmailAccessAt }),
+  assertEmailDetectionProAccess: () => { mockProCheckCalls(); return mockProCheck(); },
 }));
 jest.mock("../../../../services/queries/movement-patterns", () => ({ useMovementPatternsQuery: () => ({ data: null }) }));
 jest.mock("../../../../services/queries/spend-types", () => ({ useSpendTypesQuery: () => ({ data: [] }) }));
@@ -393,7 +395,24 @@ it("si la división falla no se crea ninguna parte ni se cierra la revisión", a
 describe("detección por correo: la verificación de PRO al guardar", () => {
   const { ProAccessUnverifiedError } = require("../../../../services/queries/email-detection-access");
   const emailSuggestion = () => { mockSuggestion = { ...mockReceipt, packageName: "email:inbound" }; };
-  afterEach(() => { mockProCheck = () => Promise.resolve(true); mockEmailAccessData = true; });
+  afterEach(() => { mockProCheck = () => Promise.resolve(true); mockEmailAccessData = true; mockEmailAccessAt = 0; });
+
+  it("con el acceso confirmado hace un momento no vuelve a preguntar al servidor al guardar (era una espera de varios segundos)", async () => {
+    emailSuggestion();
+    mockEmailAccessAt = Date.now();
+    await act(async () => renderer.update(React.createElement(Harness, { key: "email-fresh" })));
+    await act(async () => { await current.submit(); });
+    expect(mockProCheckCalls).not.toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("con una confirmación vieja sí vuelve a preguntar", async () => {
+    emailSuggestion();
+    mockEmailAccessAt = Date.now() - 10 * 60_000;
+    await act(async () => renderer.update(React.createElement(Harness, { key: "email-old" })));
+    await act(async () => { await current.submit(); });
+    expect(mockProCheckCalls).toHaveBeenCalledTimes(1);
+  });
 
   it("si la verificación falla por red pero el acceso ya estaba confirmado, el guardado sigue (el servidor vuelve a exigir PRO)", async () => {
     emailSuggestion();

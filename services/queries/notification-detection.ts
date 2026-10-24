@@ -799,12 +799,39 @@ export function useAiUsageTodayQuery(userId?: string | null) {
   });
 }
 
+/**
+ * El duplicado entre candidatos de la copia local (ya filtrados por tipo, cuenta, monto y aplicados): mismo día y misma
+ * descripción, con el mismo criterio y orden que la consulta del servidor de abajo. Exportada para probarla.
+ */
+export function pickDuplicateFromRows(rows: readonly Record<string, any>[], input: DuplicateMovementInput): MovementRecord | null {
+  const { from, to } = detectionDuplicateBounds(input.occurredAt);
+  const start = Date.parse(from), end = Date.parse(to);
+  const at = (row: Record<string, any>) => Date.parse(String(row.occurred_at));
+  const normalizedDescription = normalizeDescription(input.description);
+  const row = rows
+    .filter((item) => Number(item.workspace_id) === input.workspaceId && at(item) >= start && at(item) < end)
+    .sort((a, b) => at(b) - at(a) || Number(b.id) - Number(a.id))
+    .find((item) => normalizeDescription(item.description ?? "") === normalizedDescription &&
+      (input.movementType !== "transfer" || (Number(item.destination_account_id) === input.destinationAccountId && Number(item.destination_amount) === input.destinationAmount)));
+  return row ? mapDuplicateMovement(row) : null;
+}
+
 export async function findPossibleDuplicateMovement(input: DuplicateMovementInput): Promise<MovementRecord | null> {
-  if (!supabase) throw new Error("Supabase no está configurado.");
   const { from, to } = detectionDuplicateBounds(input.occurredAt);
   if (!input.accountId || !Number.isFinite(input.amount) || input.amount <= 0) throw new Error("Revisa cuenta e importe antes de comprobar coincidencias.");
   if (input.movementType === "transfer" && (!input.destinationAccountId || !Number.isFinite(input.destinationAmount) || input.destinationAmount! <= 0))
     throw new Error("Revisa el destino de la transferencia antes de comprobar coincidencias.");
+  // Modo sin conexión: con la copia local lista se busca en el teléfono. Antes cada registro esperaba esta consulta al
+  // servidor (varios segundos con la base lenta) y sin internet ni siquiera se podía guardar. La copia incluye además lo
+  // registrado y aún no enviado, que el servidor todavía no conoce.
+  const local = await offlineRuntime.postedMovementsWithAmount(input.workspaceId, {
+    movementType: input.movementType,
+    side: input.movementType === "income" ? "destination" : "source",
+    accountId: input.accountId,
+    amount: input.amount,
+  }).catch(() => null);
+  if (local) return pickDuplicateFromRows(local, input);
+  if (!supabase) throw new Error("Supabase no está configurado.");
   const amountColumn = input.movementType === "income" ? "destination_amount" : "source_amount";
   const accountColumn = input.movementType === "income" ? "destination_account_id" : "source_account_id";
   const normalizedDescription = normalizeDescription(input.description);

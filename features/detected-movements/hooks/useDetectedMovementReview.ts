@@ -75,6 +75,9 @@ type CategoryFeedbackIntent = {
   source?: "deepseek" | "local";
 };
 
+/** Cuánto vale una confirmación reciente del acceso PRO para no repetirla al guardar (la consulta se renueva cada minuto). */
+const PRO_CHECK_FRESH_MS = 2 * 60_000;
+
 export function useDetectedMovementReview({ visible, suggestionId, notificationId, onClose, onResolved, initialDraft, previewEnabled = false, origin = "notifications" }: Props) {
   const router = useRouter();
   const { profile } = useAuth();
@@ -638,7 +641,10 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
     submittingRef.current = true;
     setIsSaving(true); setSaveError(null); setDuplicateCandidate(null);
     try {
-      if (suggestion.packageName === EMAIL_SOURCE_PACKAGE) {
+      // El acceso PRO se vuelve a pedir al servidor cada minuto mientras la revisión está abierta. Si se confirmó hace poco
+      // no se repite al guardar: era una espera de red (varios segundos con la base lenta) antes de cada registro por correo.
+      const proRecentlyConfirmed = emailProAccess.data === true && Date.now() - (emailProAccess.dataUpdatedAt ?? 0) < PRO_CHECK_FRESH_MS;
+      if (suggestion.packageName === EMAIL_SOURCE_PACKAGE && !proRecentlyConfirmed) {
         try {
           await assertEmailDetectionProAccess();
         } catch (error) {
