@@ -472,3 +472,24 @@ describe("criterios profesionales en las instrucciones", () => {
     expect(prompt).toContain("MANDA el suyo");
   });
 });
+
+describe("criterios según el país", () => {
+  const { buildSystemPrompt } = require("../logic");
+
+  it("con país conocido lo dice como pista y trae los equivalentes de varios países", () => {
+    const prompt: string = buildSystemPrompt("sábado, 24 de octubre de 2026", "Europe/Madrid", "España");
+    expect(prompt).toContain("País del usuario (pista por su zona horaria; si dice otro, manda lo que diga): España.");
+    for (const term of ["TAE", "CAT", "TCEA", "APR", "aguinaldo", "13º salário"]) expect(prompt).toContain(term);
+  });
+
+  it("sin país usa términos neutros", () => {
+    const prompt: string = buildSystemPrompt("sábado, 24 de octubre de 2026", "Asia/Tokyo", null);
+    expect(prompt).toContain("País del usuario: desconocido. Usa términos neutros");
+  });
+
+  it("ya no da por hecho que el usuario es de Perú", () => {
+    const prompt: string = buildSystemPrompt("sábado, 24 de octubre de 2026", "America/Lima", "Perú");
+    expect(prompt).not.toContain("DarkMoney (Perú)");
+    expect(prompt).not.toContain("SUNAT");
+  });
+});

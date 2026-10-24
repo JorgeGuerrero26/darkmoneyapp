@@ -52,7 +52,7 @@ import {
   normalizeName,
   type AssistantEvidence,
 } from "./logic.ts";
-import { dayRangeUtc, dayStartUtc, longDateInZone, resolveTimeZone, todayInZone } from "./time-zone.ts";
+import { countryForTimeZone, dayRangeUtc, dayStartUtc, longDateInZone, resolveTimeZone, todayInZone } from "./time-zone.ts";
 import {
   createChatStreamAccumulator,
   createMarkerFilter,
@@ -1557,8 +1557,8 @@ Deno.serve(async (req) => {
       {
         role: "system",
         content: workspaceContext
-          ? `${buildSystemPrompt(nowLong, timeZone)}\n\n${workspaceContext}`
-          : buildSystemPrompt(nowLong, timeZone),
+          ? `${buildSystemPrompt(nowLong, timeZone, countryForTimeZone(timeZone))}\n\n${workspaceContext}`
+          : buildSystemPrompt(nowLong, timeZone, countryForTimeZone(timeZone)),
       },
       ...history,
       { role: "user", content: message },

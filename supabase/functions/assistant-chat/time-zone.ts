@@ -93,3 +93,46 @@ export function dayRangeUtc(from: string, to: string, timeZone: string): { gte: 
 export function longDateInZone(timeZone: string, date = new Date()): string {
   return date.toLocaleString("es-PE", { timeZone, dateStyle: "full" });
 }
+
+/**
+ * País probable a partir de la zona horaria del perfil, para elegir los criterios financieros de ese país
+ * (aguinaldo o gratificación, CAT o TCEA, su regulador…). Solo una pista: la zona no prueba la residencia, por eso el
+ * asistente la usa como supuesto y no como hecho. null = no se reconoce y se usan términos neutros.
+ */
+const COUNTRY_BY_TIME_ZONE: Record<string, string> = {
+  "America/Lima": "Perú",
+  "America/Bogota": "Colombia",
+  "America/Guayaquil": "Ecuador",
+  "America/La_Paz": "Bolivia",
+  "America/Santiago": "Chile",
+  "America/Argentina/Buenos_Aires": "Argentina",
+  "America/Buenos_Aires": "Argentina",
+  "America/Sao_Paulo": "Brasil",
+  "America/Asuncion": "Paraguay",
+  "America/Montevideo": "Uruguay",
+  "America/Caracas": "Venezuela",
+  "America/Panama": "Panamá",
+  "America/Costa_Rica": "Costa Rica",
+  "America/Guatemala": "Guatemala",
+  "America/El_Salvador": "El Salvador",
+  "America/Tegucigalpa": "Honduras",
+  "America/Managua": "Nicaragua",
+  "America/Santo_Domingo": "República Dominicana",
+  "America/Mexico_City": "México",
+  "America/Monterrey": "México",
+  "America/Tijuana": "México",
+  "America/Cancun": "México",
+  "America/New_York": "Estados Unidos",
+  "America/Chicago": "Estados Unidos",
+  "America/Denver": "Estados Unidos",
+  "America/Phoenix": "Estados Unidos",
+  "America/Los_Angeles": "Estados Unidos",
+  "America/Puerto_Rico": "Puerto Rico",
+  "Europe/Madrid": "España",
+  "Atlantic/Canary": "España",
+  "Europe/London": "Reino Unido",
+};
+
+export function countryForTimeZone(timeZone: string): string | null {
+  return COUNTRY_BY_TIME_ZONE[timeZone] ?? null;
+}

@@ -44,3 +44,19 @@ describe("dayStartUtc / dayRangeUtc", () => {
     expect(dayStartUtc("2026-10-26", "Europe/Madrid")).toBe("2026-10-25T23:00:00.000Z");
   });
 });
+
+describe("countryForTimeZone", () => {
+  const { countryForTimeZone } = require("../time-zone");
+
+  it("reconoce las zonas de la lista de Configuración y otras comunes", () => {
+    expect(countryForTimeZone("America/Lima")).toBe("Perú");
+    expect(countryForTimeZone("America/Mexico_City")).toBe("México");
+    expect(countryForTimeZone("America/Argentina/Buenos_Aires")).toBe("Argentina");
+    expect(countryForTimeZone("Europe/Madrid")).toBe("España");
+    expect(countryForTimeZone("America/Chicago")).toBe("Estados Unidos");
+  });
+
+  it("una zona que no conoce no inventa país", () => {
+    expect(countryForTimeZone("Asia/Tokyo")).toBeNull();
+  });
+});
