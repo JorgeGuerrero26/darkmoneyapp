@@ -12,6 +12,7 @@ import { useUiStore } from "../store/ui-store";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
 import { BUDGET_INPUT_TABLES } from "../services/queries/offline-budgets";
 import { applyLocalObligationsToCache } from "../services/queries/offline-obligations";
+import { applyLocalCounterpartyFinancialsToCache } from "../services/queries/offline-counterparties";
 import {
   applyLocalBudgetsToCache,
   applyLocalCatalogsToCache,
@@ -67,6 +68,10 @@ export async function reactToLocalDataChange(queryClient: QueryClient, wsId: num
   // Obligaciones: las definiciones creadas o editadas sin red se muestran encima de lo del servidor.
   if (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties")) {
     await applyLocalObligationsToCache(queryClient, wsId).catch(() => false);
+  }
+  // Contactos: lo que entró y salió y lo que se debe con cada uno cambia con movimientos, pagos y deudas.
+  if (tables.length === 0 || tables.some((table) => ["movements", "obligations", "obligation_events", "counterparties"].includes(table))) {
+    await applyLocalCounterpartyFinancialsToCache(queryClient, wsId).catch(() => false);
   }
   // Presupuestos: el avance cambia con presupuestos, gastos, cuentas, categorías y tipos de gasto.
   if (tables.length === 0 || tables.some((table) => BUDGET_INPUT_TABLES.includes(table))) {

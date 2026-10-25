@@ -25,6 +25,7 @@ import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from
 import { offlineRuntime } from "../../lib/offline/instance";
 import { ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE } from "../../lib/offline/status-copy";
 import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
+import { applyLocalCounterpartyFinancialsToCache } from "./offline-counterparties";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -2485,6 +2486,8 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
         });
       }
       patchSnapshotObligationPayment(queryClient, data.workspaceId, variables.obligationId, variables.amount);
+      // El resumen del contacto (lo que se le debe o debe) sale de la obligación recién parchada: sin internet no hay refetch.
+      void applyLocalCounterpartyFinancialsToCache(queryClient, data.workspaceId).catch(() => false);
       const queryKeys: Array<readonly unknown[]> = [
         ["workspace-snapshot"],
         ["movements"],

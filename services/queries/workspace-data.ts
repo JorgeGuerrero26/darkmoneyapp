@@ -29,6 +29,7 @@ import { withLocalBalanceRows } from "../../lib/offline/local-balances";
 import { withLocalRows } from "../../lib/offline/local-rows";
 import { withLocalBudgetRows } from "./offline-budgets";
 import { withLocalObligations } from "./offline-obligations";
+import { withLocalCounterpartyMovements } from "./offline-counterparties";
 import { useOfflineLocalReady, useOfflineFlag } from "../../lib/offline/react";
 import { localDashboardMovements, type LocalDashboardRange } from "../../features/dashboard/lib/localDashboardMovements";
 import {
@@ -1038,11 +1039,15 @@ export async function fetchWorkspaceSnapshot(
 
   const counterpartyMap = new Map<number, string>();
   const counterpartyFinancialById = new Map(((counterpartyFinancialResult.data ?? []) as CounterpartyFinancialRow[]).map((row) => [row.counterparty_id, row]));
-  const counterparties: CounterpartyOverview[] = (await withLocalRows(activeWorkspaceId, "counterparties", counterpartiesResult.data ?? [])).map((row: any) => {
-    const mapped = mapCounterpartyFromRow(row as CounterpartyDbRow, counterpartyFinancialById.get(row.id));
-    counterpartyMap.set(mapped.id, mapped.name);
-    return mapped;
-  });
+  // Modo sin conexión (beta): con movimientos sin enviar, lo que entró y salió de cada contacto se calcula en el teléfono.
+  const counterparties: CounterpartyOverview[] = await withLocalCounterpartyMovements(
+    activeWorkspaceId,
+    (await withLocalRows(activeWorkspaceId, "counterparties", counterpartiesResult.data ?? [])).map((row: any) => {
+      const mapped = mapCounterpartyFromRow(row as CounterpartyDbRow, counterpartyFinancialById.get(row.id));
+      counterpartyMap.set(mapped.id, mapped.name);
+      return mapped;
+    }),
+  );
 
   const accounts: AccountSummary[] = buildAccountSummaries(
     (await withLocalRows(activeWorkspaceId, "accounts", accountsResult.data ?? [])) as any[],
