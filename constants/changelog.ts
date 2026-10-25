@@ -25,6 +25,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Con el modo sin conexión encendido, guardar un movimiento ya no se queda varios segundos en «Guardando…»: se guarda al instante y la pantalla se cierra. Con los movimientos detectados pasa igual, incluso con los que llegan por correo.",
       "También es más rápido crear un crédito o una deuda, aplicar las categorías que te sugiere el inicio y dividir un movimiento detectado en varias categorías: ya no esperan a que se recargue todo antes de cerrar. Y la app queda más ágil justo después de guardar.",
       "Al guardar un movimiento detectado con el modo sin conexión encendido, su aviso desaparece del inicio al instante, aunque el movimiento todavía no se haya enviado. Si tocas Deshacer, el aviso vuelve.",
+      "Con el modo sin conexión encendido, si un cambio no se alcanza a enviar porque el servidor tarda en responder, la app lo vuelve a intentar sola a los pocos segundos y arriba dice «1 por enviar · reintentando». Antes se quedaba esperando hasta que hicieras otra cosa.",
       "Con el modo sin conexión encendido, el resumen de cada contacto (lo que te debe, lo que le debes, lo que entró y salió con él) ya se actualiza al instante cuando registras un gasto, un pago o un cobro sin internet.",
       "Con el modo sin conexión encendido, la pantalla de inicio ya cuenta lo que registras sin internet: los gastos e ingresos del mes, los gráficos, el historial del año y el detalle de cada día se ponen al día al instante, sin esperar a que vuelva la conexión.",
     ],
