@@ -14,6 +14,8 @@ export const ONLINE_ONLY_OBLIGATION_NOTICE = "Necesitas internet para registrar 
 
 export const ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE = "Necesitas internet para eliminar esta suscripción: tiene pagos registrados y el servidor debe borrarlos junto con ella. Conéctate y vuelve a intentarlo; no se borró nada.";
 
+/** Borrar una deuda recién creada con su movimiento o su interés que todavía no salió del teléfono. */
+export const PENDING_GROUPED_OBLIGATION_DELETE_NOTICE = "Esta deuda todavía no se envía (va junto con su movimiento o su interés). Espera a que se envíe y vuelve a intentarlo; no se borró nada.";
 export const ONLINE_ONLY_DELETE_OBLIGATION_NOTICE = "Necesitas internet para eliminar esta obligación: el servidor debe confirmar que no tiene pagos. Conéctate y vuelve a intentarlo; no se borró nada.";
 
 export type SyncLine = {

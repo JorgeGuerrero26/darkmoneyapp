@@ -14,6 +14,7 @@ import { countInbox, countOutbox, listInbox, listSendable, runLocalGroup } from 
 import { paySubscriptionLocal } from "../subscription-pay";
 import { confirmArrivalLocal } from "../income-arrival";
 import { createObligationPaymentLocal } from "../obligation-payment";
+import { createObligationLocal, pendingObligationEvents } from "../obligation-create";
 import { listMovementRecords, computeAccountBalances, getServerShapedRow } from "../movement-store";
 import { createMovementLocal, deleteMovementLocal, updateMovementLocal } from "../movement-writes";
 import { createRowLocal, deleteRowLocal, updateRowLocal } from "../resource-writes";
@@ -1179,5 +1180,98 @@ describe("pago de una deuda sin red (Fase 5.1, paso 5)", () => {
     ]);
     expect(result[0]).toMatchObject({ status: "rejected", code: "invalid_op" });
     expect((await server.admin.query("select 1 from obligation_events")).rows).toHaveLength(1);
+  });
+});
+
+describe("crear una deuda que mueve dinero, con su interés, sin red", () => {
+  const create = (d: Device, overrides: Partial<Parameters<typeof createObligationLocal>[1]> = {}) =>
+    createObligationLocal(d.db, {
+      workspaceId: WS, userId: d.userId, nowIso: new Date(clock).toISOString(),
+      obligationFields: {
+        workspace_id: WS, title: "Laptop a Juan", direction: "receivable", origin_type: "cash_loan", status: "active",
+        counterparty_id: 1, currency_code: "PEN", principal_amount: 1500, start_date: "2026-10-18", client_dedupe_key: "obligation:k1",
+      },
+      openingMovementFields: {
+        movement_type: "obligation_opening", status: "posted", occurred_at: "2026-10-18T12:00:00.000Z",
+        description: "Préstamo entregado: Laptop a Juan", source_account_id: 2, source_amount: 1500,
+        destination_account_id: null, destination_amount: null, metadata: {}, client_dedupe_key: "obligation:k1:opening",
+      },
+      interest: { amount: 50, eventDate: "2026-10-18", reason: "Interés pactado" },
+      ...overrides,
+    });
+
+  it("deuda + movimiento de apertura + interés llegan juntos y una sola vez, ligados entre sí", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const result = (await create(a))!;
+    expect(result.movementId).not.toBeNull();
+    expect(result.interestEventId).not.toBeNull();
+    expect(await countOutbox(a.db)).toBe(1); // un solo cambio para la persona
+    // El saldo de la cuenta ya baja en el teléfono: 500 - 1500.
+    expect((await computeAccountBalances(a.db, WS)).find((b) => b.accountId === 2)?.currentBalance).toBe(-1000);
+
+    const report = await a.engine.syncNow(WS);
+    if (report.rejected) throw new Error(JSON.stringify((await listInbox(a.db)).map((entry) => ({ code: entry.code, message: entry.message }))));
+    expect(await countOutbox(a.db)).toBe(0);
+    const obligation = (await server.admin.query<{ id: string; principal_amount: string; created_by_user_id: string }>(
+      "select id::text, principal_amount::text, created_by_user_id from obligations")).rows;
+    expect(obligation).toEqual([{ id: String(result.obligationId), principal_amount: "1500.00", created_by_user_id: USER_A }]);
+    const movement = (await server.admin.query<{ movement_type: string; obligation_id: string; source_amount: string }>(
+      "select movement_type, obligation_id::text, source_amount::text from movements where id=$1", [result.movementId])).rows;
+    expect(movement).toEqual([{ movement_type: "obligation_opening", obligation_id: String(result.obligationId), source_amount: "1500.00" }]);
+    const events = (await server.admin.query<{ event_type: string; amount: string; reason: string; movement_id: string | null }>(
+      "select event_type::text, amount::text, reason, movement_id::text from obligation_events where obligation_id=$1", [result.obligationId])).rows;
+    expect(events).toEqual([{ event_type: "principal_increase", amount: "50.00", reason: "Interés pactado", movement_id: null }]);
+  });
+
+  it("si una parte se rechaza no queda nada: ni la deuda, ni el movimiento, ni el interés", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const result = (await create(a, { obligationFields: {
+      workspace_id: WS, title: "Contacto inexistente", direction: "receivable", origin_type: "cash_loan", status: "active",
+      counterparty_id: 99999, currency_code: "PEN", principal_amount: 1500, start_date: "2026-10-18",
+    } }))!;
+    const report = await a.engine.syncNow(WS);
+    expect(report.rejected).toBe(1);
+    expect((await server.admin.query("select 1 from obligations")).rows).toHaveLength(0);
+    expect((await server.admin.query("select 1 from movements where movement_type='obligation_opening'")).rows).toHaveLength(0);
+    expect((await server.admin.query("select 1 from obligation_events")).rows).toHaveLength(0);
+    expect(await getServerShapedRow(a.db, "movements", result.movementId!)).toBeNull();
+    expect(await countOutbox(a.db)).toBe(0);
+  });
+
+  it("tocar Guardar dos veces con la misma clave no la duplica", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const first = (await create(a))!;
+    const second = (await create(a))!;
+    expect(second.obligationId).toBe(first.obligationId);
+    expect(await countOutbox(a.db)).toBe(1);
+  });
+
+  it("sin apertura ni interés es una sola operación, como antes", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const result = (await create(a, { openingMovementFields: null, interest: null }))!;
+    expect(result).toMatchObject({ movementId: null, interestEventId: null });
+    expect((await a.db.all<{ group_id: string | null }>("select group_id from outbox")).map((row) => row.group_id)).toEqual([null]);
+    await a.engine.syncNow(WS);
+    expect((await server.admin.query("select 1 from obligations")).rows).toHaveLength(1);
+  });
+
+  it("el interés y los pagos aún sin enviar se pueden leer para mostrar la deuda nueva completa", async () => {
+    const a = device(USER_A);
+    await a.engine.syncNow(WS);
+    const result = (await create(a))!;
+    await createObligationPaymentLocal(a.db, {
+      workspaceId: WS, userId: USER_A, obligationId: result.obligationId, direction: "receivable", amount: 100,
+      occurredAt: "2026-10-19T15:00:00.000Z", eventDate: "2026-10-19", accountId: 1, nowIso: new Date(clock).toISOString(),
+    });
+    const events = await pendingObligationEvents(a.db, WS);
+    expect(events.map((e) => [e.eventType, e.amount])).toEqual([["principal_increase", 50], ["payment", 100]]);
+    // Y al enviarse, el pago sobre la deuda nueva también llega (va después del grupo que la crea).
+    const report = await a.engine.syncNow(WS);
+    if (report.rejected) throw new Error(JSON.stringify((await listInbox(a.db)).map((entry) => ({ code: entry.code, message: entry.message }))));
+    expect((await server.admin.query("select event_type::text from obligation_events order by id")).rows).toEqual([{ event_type: "principal_increase" }, { event_type: "payment" }]);
   });
 });

@@ -24,6 +24,7 @@ import { listPendingChanges, pendingRowTimes, type PendingChange } from "./pendi
 import { paySubscriptionLocal } from "./subscription-pay";
 import { confirmArrivalLocal, type ConfirmArrivalLocalInput } from "./income-arrival";
 import { createObligationPaymentLocal, type CreateObligationPaymentLocalInput } from "./obligation-payment";
+import { createObligationLocal, pendingObligationEvents, type CreateObligationLocalInput, type CreateObligationLocalResult } from "./obligation-create";
 import { ONLINE_ONLY_COMPOUND_NOTICE, ONLINE_ONLY_DELETE_SUBSCRIPTION_NOTICE } from "./status-copy";
 
 export type OfflineAvailability = "disabled" | "unavailable" | "starting" | "ready" | "error";
@@ -565,6 +566,16 @@ export class OfflineRuntime {
     return Boolean(row);
   }
 
+  /** ¿Esta fila se creó aquí junto con otras (un grupo atómico: deuda + apertura + interés) y aún no sale? */
+  async hasGroupedPendingInsert(workspaceId: number, table: string, rowId: number): Promise<boolean> {
+    if (!this.db) return false;
+    const row = await this.db.get<{ x: number }>(
+      "select 1 as x from outbox where workspace_id = ? and table_name = ? and row_id = ? and kind = 'insert' and group_id is not null limit 1",
+      [workspaceId, table, rowId],
+    );
+    return Boolean(row);
+  }
+
   /** ¿Hay cambios sin enviar en alguna de estas tablas? Decide si un número del servidor puede estar desfasado. */
   async hasPendingOps(workspaceId: number, tables: string[]): Promise<boolean> {
     if (!this.canReadLocal(workspaceId) || !this.db || tables.length === 0) return false;
@@ -698,6 +709,35 @@ export class OfflineRuntime {
     this.notifyInBackground(result.movementId != null ? ["movements", "obligation_events"] : ["obligation_events"]);
     this.scheduleWriteSync();
     return result;
+  }
+
+  /**
+   * Crear una obligación en el teléfono, con su movimiento de apertura y su interés si los lleva (un grupo atómico).
+   * null = no se pudo localmente (modo apagado, copia no lista, IDs agotados): sigue el camino online.
+   */
+  async createObligation(
+    workspaceId: number,
+    input: Omit<CreateObligationLocalInput, "workspaceId" | "userId" | "nowIso">,
+  ): Promise<CreateObligationLocalResult | null> {
+    if (!this.config.enabled || !this.canReadLocal(workspaceId) || !this.userId) return null;
+    if (!(await this.resourceContext(workspaceId, "obligations"))) return null;
+    const result = await createObligationLocal(this.requireDb(), {
+      ...input,
+      workspaceId,
+      userId: this.userId,
+      nowIso: new Date(this.now()).toISOString(),
+    });
+    if (!result) return null;
+    await this.refreshCounts();
+    this.notifyInBackground(["obligations", ...(result.movementId != null ? ["movements"] : []), ...(result.interestEventId != null ? ["obligation_events"] : [])]);
+    this.scheduleWriteSync();
+    return result;
+  }
+
+  /** Eventos de obligaciones creados aquí y aún sin enviar (interés, pagos): para mostrar una deuda nueva completa sin conexión. */
+  async pendingObligationEvents(workspaceId: number) {
+    if (!this.canReadLocal(workspaceId) || !this.db) return [];
+    return pendingObligationEvents(this.db, workspaceId).catch(() => []);
   }
 
   async updateMovement(workspaceId: number, id: number, input: MovementUpdateInput): Promise<boolean> {

@@ -66,7 +66,8 @@ export async function reactToLocalDataChange(queryClient: QueryClient, wsId: num
     await applyLocalMovementHistoriesToCache(queryClient, wsId).catch(() => false);
   }
   // Obligaciones: las definiciones creadas o editadas sin red se muestran encima de lo del servidor.
-  if (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties")) {
+  // También con eventos: el interés o un pago de una deuda creada aquí y aún sin enviar cambian lo que muestra.
+  if (tables.length === 0 || tables.includes("obligations") || tables.includes("counterparties") || tables.includes("obligation_events")) {
     await applyLocalObligationsToCache(queryClient, wsId).catch(() => false);
   }
   // Contactos: lo que entró y salió y lo que se debe con cada uno cambia con movimientos, pagos y deudas.

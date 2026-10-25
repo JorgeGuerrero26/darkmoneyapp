@@ -1,6 +1,11 @@
-import type { ObligationSummary } from "../../../types/domain";
+import type { ObligationEventSummary, ObligationSummary } from "../../../types/domain";
 
 type Row = Record<string, unknown>;
+
+/** Un evento creado en el teléfono y todavía sin enviar (interés pactado, pago, cobro). */
+export type PendingObligationEvent = { id: number; obligationId: number; eventType: string; amount: number; eventDate: string | null };
+
+const cents = (value: unknown): number => Math.round(num(value) * 100);
 
 const num = (value: unknown): number => {
   const parsed = Number(value);
@@ -9,11 +14,25 @@ const num = (value: unknown): number => {
 const orNull = <T>(value: T | undefined): T | null => (value === undefined ? null : value);
 
 /**
- * Obligación recién creada sin conexión, todavía sin eventos: lo que el servidor calcularía para una
- * obligación sin pagos (pendiente = principal, avance 0). Se reemplaza por la vista real al sincronizar.
+ * Obligación recién creada sin conexión: lo que el servidor calcularía con sus eventos todavía sin enviar (el interés pactado
+ * sube el monto; los pagos o cobros bajan lo pendiente). Sin eventos: pendiente = principal, avance 0. Se reemplaza por la
+ * vista real al sincronizar. Montos en centavos para no arrastrar errores de coma flotante.
  */
-export function buildOfflineObligationSummary(row: Row, counterpartyNames: Map<number, string>): ObligationSummary {
-  const principal = num(row.principal_amount);
+export function buildOfflineObligationSummary(
+  row: Row,
+  counterpartyNames: Map<number, string>,
+  pendingEvents: readonly PendingObligationEvent[] = [],
+): ObligationSummary {
+  const events = pendingEvents.filter((event) => event.obligationId === Number(row.id));
+  const signed = (type: string) => events.filter((event) => event.eventType === type).reduce((sum, event) => sum + cents(event.amount), 0);
+  const principalCents = cents(row.principal_amount);
+  const currentCents = principalCents + signed("principal_increase") - signed("principal_decrease");
+  const paidCents = signed("payment");
+  const principal = principalCents / 100;
+  const current = currentCents / 100;
+  const pending = Math.max(currentCents - paidCents, 0) / 100;
+  const payments = events.filter((event) => event.eventType === "payment");
+  const lastPaymentDate = payments.reduce<string | null>((max, event) => (event.eventDate && (!max || event.eventDate > max) ? event.eventDate : max), null);
   const counterpartyId = row.counterparty_id == null ? null : Number(row.counterparty_id);
   return {
     id: Number(row.id),
@@ -29,11 +48,11 @@ export function buildOfflineObligationSummary(row: Row, counterpartyNames: Map<n
     currencyCode: String(row.currency_code ?? ""),
     principalAmount: principal,
     principalAmountInBaseCurrency: principal,
-    currentPrincipalAmount: principal,
-    currentPrincipalAmountInBaseCurrency: principal,
-    pendingAmount: principal,
-    pendingAmountInBaseCurrency: principal,
-    progressPercent: 0,
+    currentPrincipalAmount: current,
+    currentPrincipalAmountInBaseCurrency: current,
+    pendingAmount: pending,
+    pendingAmountInBaseCurrency: pending,
+    progressPercent: currentCents > 0 ? Math.min(100, Math.round((paidCents / currentCents) * 100)) : 0,
     startDate: String(row.start_date ?? ""),
     dueDate: (row.due_date as string | null | undefined) ?? null,
     installmentAmount: row.installment_amount ? num(row.installment_amount) : null,
@@ -42,10 +61,16 @@ export function buildOfflineObligationSummary(row: Row, counterpartyNames: Map<n
     interestRate: row.interest_rate ? num(row.interest_rate) : null,
     description: (row.description as string | null | undefined) ?? null,
     notes: (row.notes as string | null | undefined) ?? null,
-    paymentCount: 0,
-    lastPaymentDate: null,
+    paymentCount: payments.length,
+    lastPaymentDate,
     installmentLabel: "",
-    events: [],
+    events: events.map((event): ObligationEventSummary => ({
+      id: event.id,
+      eventType: event.eventType as ObligationEventSummary["eventType"],
+      eventDate: event.eventDate ?? String(row.start_date ?? ""),
+      amount: num(event.amount),
+      reason: event.eventType === "principal_increase" ? "Interés pactado" : null,
+    })),
   };
 }
 
@@ -87,6 +112,7 @@ export function mergePendingObligations(
   localRows: Row[],
   pendingIds: ReadonlySet<number>,
   counterpartyNames: Map<number, string>,
+  pendingEvents: readonly PendingObligationEvent[] = [],
 ): ObligationSummary[] {
   if (pendingIds.size === 0) return serverSummaries;
   const byId = new Map(serverSummaries.map((summary) => [summary.id, summary]));
@@ -101,7 +127,7 @@ export function mergePendingObligations(
   });
   for (const row of localRows) {
     const id = Number(row.id);
-    if (pendingIds.has(id) && !byId.has(id)) merged.push(buildOfflineObligationSummary(row, counterpartyNames));
+    if (pendingIds.has(id) && !byId.has(id)) merged.push(buildOfflineObligationSummary(row, counterpartyNames, pendingEvents));
   }
   return merged;
 }

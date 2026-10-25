@@ -21,7 +21,9 @@ export async function withLocalObligations(
     if (pending.size === 0) return summaries;
     const rows = await offlineRuntime.listRows(workspaceId, "obligations");
     if (!rows) return summaries;
-    return mergePendingObligations(summaries, rows, pending, counterpartyNames);
+    // Las nuevas (aún no enviadas) se muestran con su interés y sus pagos registrados aquí.
+    const events = await offlineRuntime.pendingObligationEvents(workspaceId);
+    return mergePendingObligations(summaries, rows, pending, counterpartyNames, events);
   } catch {
     return summaries;
   }

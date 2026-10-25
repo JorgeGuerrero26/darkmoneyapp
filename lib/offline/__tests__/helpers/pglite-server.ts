@@ -92,7 +92,7 @@ export async function createTestServer(options: { phase3?: boolean; phase4?: boo
       id bigint generated always as identity primary key,
       obligation_id bigint not null references public.obligations(id) on delete cascade,
       event_type text not null, event_date date not null, amount numeric(14,2) not null check (amount > 0),
-      installment_no integer, description text, notes text,
+      installment_no integer, description text, notes text, reason text,
       movement_id bigint references public.movements(id) on delete set null,
       created_by_user_id uuid, metadata jsonb not null default '{}',
       created_at timestamptz not null default now(), updated_at timestamptz not null default now());

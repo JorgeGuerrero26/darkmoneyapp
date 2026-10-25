@@ -72,3 +72,30 @@ describe("obligación creada y eliminada sin enviar", () => {
     expect(merged.map((item) => item.id).sort()).toEqual([7, 8]);
   });
 });
+
+describe("deuda nueva sin conexión con su interés y sus pagos aún sin enviar", () => {
+  const events = [
+    { id: 501, obligationId: 10, eventType: "principal_increase", amount: 50, eventDate: "2026-10-13" },
+    { id: 502, obligationId: 10, eventType: "payment", amount: 30.1, eventDate: "2026-10-20" },
+    { id: 503, obligationId: 99, eventType: "payment", amount: 999, eventDate: "2026-10-20" }, // de otra deuda
+  ];
+
+  it("el interés sube el monto y lo pendiente; los pagos lo bajan, como lo calcularía el servidor", () => {
+    const summary = buildOfflineObligationSummary(localRow({ principal_amount: "1500.00" }), names, events);
+    expect(summary).toMatchObject({
+      principalAmount: 1500, currentPrincipalAmount: 1550, pendingAmount: 1519.9, paymentCount: 1, lastPaymentDate: "2026-10-20",
+      progressPercent: 2,
+    });
+    expect(summary.events.map((event) => [event.eventType, event.amount, event.reason])).toEqual([["principal_increase", 50, "Interés pactado"], ["payment", 30.1, null]]);
+  });
+
+  it("al unir con la lista del servidor, la deuda nueva ya trae sus eventos pendientes", () => {
+    const merged = mergePendingObligations([], [localRow({ principal_amount: "1500.00" })], new Set([10]), names, events);
+    expect(merged[0]).toMatchObject({ id: 10, currentPrincipalAmount: 1550, pendingAmount: 1519.9 });
+  });
+
+  it("lo pendiente nunca baja de cero", () => {
+    const summary = buildOfflineObligationSummary(localRow({ principal_amount: "10" }), names, [{ id: 1, obligationId: 10, eventType: "payment", amount: 15, eventDate: "2026-10-20" }]);
+    expect(summary.pendingAmount).toBe(0);
+  });
+});

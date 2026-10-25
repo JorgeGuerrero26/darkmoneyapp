@@ -23,8 +23,9 @@ import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import { offlineRuntime } from "../../lib/offline/instance";
-import { ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE } from "../../lib/offline/status-copy";
+import { ONLINE_ONLY_DELETE_OBLIGATION_NOTICE, ONLINE_ONLY_OBLIGATION_NOTICE, PENDING_GROUPED_OBLIGATION_DELETE_NOTICE } from "../../lib/offline/status-copy";
 import { localCreate, localDelete, localUpdate, useOfflineNetworkMode } from "./offline-writes";
+import { movementInputToFields } from "../../lib/offline/movement-fields";
 import { applyLocalCounterpartyFinancialsToCache } from "./offline-counterparties";
 import {
   mirrorObligationEventAttachmentsToMovement,
@@ -2145,7 +2146,15 @@ export type ObligationFormInput = {
   interestRate?: number | null;
   description?: string | null;
   notes?: string | null;
+  /**
+   * Interés pactado al crearla. Solo lo usa el camino del teléfono (modo sin conexión), que lo guarda junto con la deuda en
+   * un mismo grupo; en línea lo registra el formulario después. `interestRecorded` en la respuesta dice cuál ocurrió.
+   */
+  agreedInterest?: { amount: number; reason: string } | null;
 };
+
+/** Qué devuelve crear una obligación: su ID y si el interés pactado ya quedó registrado con ella. */
+export type CreatedObligation = { id: number; interestRecorded?: boolean; savedLocally?: boolean };
 
 export function useDeleteObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -2158,6 +2167,11 @@ export function useDeleteObligationMutation(workspaceId: number | null) {
       // Modo sin conexión (beta): una obligación creada en el teléfono y todavía sin enviar no tiene nada colgando
       // (eventos, pagos, invitaciones): se borra ahí mismo. Una que ya está en el servidor puede tener pagos que el
       // teléfono no refleja; borrarla exige internet y se avisa en vez de dejarla esperando en una cola.
+      // Una creada junto con su movimiento de apertura o su interés (un grupo) y aún sin enviar no se borra aquí: quedaría el
+      // movimiento suelto, y el servidor todavía no la conoce. Se borra cuando ya llegó, como cualquier otra.
+      if (await offlineRuntime.hasGroupedPendingInsert(workspaceId, "obligations", id)) {
+        throw new Error(PENDING_GROUPED_OBLIGATION_DELETE_NOTICE);
+      }
       if (await offlineRuntime.hasPendingInsert(workspaceId, "obligations", id)) {
         if (await localDelete(workspaceId, "obligations", id)) return;
       }
@@ -2221,38 +2235,17 @@ export function useCreateObligationMutation(workspaceId: number | null) {
   return useMutation({
     mutationKey: ["create-obligation"],
     networkMode,
-    mutationFn: async (input: ObligationFormInput) => {
+    mutationFn: async (input: ObligationFormInput): Promise<CreatedObligation> => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const dedupeKey = input.clientDedupeKey ?? null;
-      // Modo sin conexión (beta). Con movimiento de apertura son dos escrituras que deben ir juntas: sin
-      // internet no se empieza ninguna mitad. Sin apertura (y con contacto, que el servidor exige) es una
-      // sola fila y se guarda en el teléfono al instante.
       const needsOpeningMovement = (input.openingImpact ?? "none") !== "none" && Boolean(input.openingAccountId);
-      if (needsOpeningMovement) {
-        offlineRuntime.assertCompoundOnline(ONLINE_ONLY_OBLIGATION_NOTICE);
-      } else if (input.counterpartyId != null) {
-        const local = await localCreate(workspaceId, "obligations", {
-          workspace_id: workspaceId,
-          title: input.title,
-          direction: input.direction,
-          origin_type: input.originType,
-          counterparty_id: input.counterpartyId,
-          settlement_account_id: input.settlementAccountId ?? null,
-          currency_code: input.currencyCode,
-          principal_amount: input.principalAmount,
-          start_date: input.startDate,
-          due_date: input.dueDate ?? null,
-          installment_amount: input.installmentAmount ?? null,
-          payment_plan: input.paymentPlan ?? null,
-          installment_count: input.installmentCount ?? null,
-          interest_rate: input.interestRate ?? null,
-          description: input.description ?? null,
-          notes: input.notes ?? null,
-          status: "active",
-          client_dedupe_key: dedupeKey,
-        });
+      // Modo sin conexión (beta): la obligación, su movimiento de apertura (si mueve dinero) y su interés pactado (si lo
+      // hay) se guardan en el teléfono como UN grupo: llegan todos al servidor o ninguno. Con contacto, que el servidor exige.
+      if (input.counterpartyId != null) {
+        const local = await createObligationOnPhone(workspaceId, input, needsOpeningMovement);
         if (local) return local;
       }
+      if (needsOpeningMovement) offlineRuntime.assertCompoundOnline(ONLINE_ONLY_OBLIGATION_NOTICE);
       let { data, error } = await supabase
         .from("obligations")
         .insert({
@@ -2320,7 +2313,7 @@ export function useCreateObligationMutation(workspaceId: number | null) {
         });
       }
 
-      return created;
+      return { id: created.id, interestRecorded: false };
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -2330,6 +2323,65 @@ export function useCreateObligationMutation(workspaceId: number | null) {
       }
     },
   });
+}
+
+/**
+ * El camino del teléfono de `useCreateObligationMutation`: mismas columnas que el camino online. null = no se puede aquí
+ * (modo apagado, copia no lista, IDs agotados, monto con fracción de centavo): sigue el camino online.
+ */
+async function createObligationOnPhone(
+  workspaceId: number,
+  input: ObligationFormInput,
+  withOpening: boolean,
+): Promise<CreatedObligation | null> {
+  const dedupeKey = input.clientDedupeKey ?? null;
+  const isInflow = input.openingImpact === "inflow";
+  const interest = input.agreedInterest && input.agreedInterest.amount > 0 ? input.agreedInterest : null;
+  try {
+    const local = await offlineRuntime.createObligation(workspaceId, {
+      obligationFields: {
+        workspace_id: workspaceId,
+        title: input.title,
+        direction: input.direction,
+        origin_type: input.originType,
+        counterparty_id: input.counterpartyId,
+        settlement_account_id: input.settlementAccountId ?? null,
+        currency_code: input.currencyCode,
+        principal_amount: input.principalAmount,
+        start_date: input.startDate,
+        due_date: input.dueDate ?? null,
+        installment_amount: input.installmentAmount ?? null,
+        payment_plan: input.paymentPlan ?? null,
+        installment_count: input.installmentCount ?? null,
+        interest_rate: input.interestRate ?? null,
+        description: input.description ?? null,
+        notes: input.notes ?? null,
+        status: "active",
+        client_dedupe_key: dedupeKey,
+      },
+      openingMovementFields: withOpening
+        ? movementInputToFields({
+            movementType: "obligation_opening" as MovementType,
+            status: "posted",
+            // El camino online manda «fecha T12:00:00» y el servidor (UTC) lo guarda como mediodía UTC: aquí el mismo instante.
+            occurredAt: `${input.startDate}T12:00:00.000Z`,
+            description: input.direction === "receivable" ? `Préstamo entregado: ${input.title}` : `Dinero recibido: ${input.title}`,
+            notes: null,
+            sourceAccountId: isInflow ? null : input.openingAccountId ?? null,
+            sourceAmount: isInflow ? null : input.principalAmount,
+            destinationAccountId: isInflow ? input.openingAccountId ?? null : null,
+            destinationAmount: isInflow ? input.principalAmount : null,
+            dedupeKey: dedupeKey ? `${dedupeKey}:opening` : undefined,
+          })
+        : null,
+      interest: interest ? { amount: interest.amount, eventDate: input.startDate, reason: interest.reason } : null,
+    });
+    // El grupo lleva el interés (o no había): no queda nada por registrar después.
+    return local ? { id: local.obligationId, interestRecorded: true, savedLocally: true } : null;
+  } catch (error) {
+    if (error instanceof Error && /fracción de centavo|decimal válido/.test(error.message)) return null;
+    throw error;
+  }
 }
 
 export function useUpdateObligationMutation(workspaceId: number | null) {

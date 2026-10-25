@@ -30,7 +30,7 @@ jest.mock("../../../lib/offline/instance", () => ({
 // eslint-disable-next-line import/first
 import { localCreate } from "../offline-writes";
 // eslint-disable-next-line import/first
-import { useDeleteObligationMutation } from "../obligations-impl";
+import { useCreateObligationMutation, useDeleteObligationMutation, type CreatedObligation } from "../obligations-impl";
 // eslint-disable-next-line import/first
 import { withLocalObligations } from "../offline-obligations";
 // eslint-disable-next-line import/first
@@ -136,5 +136,53 @@ describe("eliminar una obligación sin internet", () => {
     expect(mockServerCalls).toEqual([]);
     expect((await runtime.listRows(WS, "obligations"))!.map((row) => row.id)).toEqual([created!.id]);
     expect(runtime.getState().pending).toBe(0);
+  });
+});
+
+async function runCreate(input: Parameters<ReturnType<typeof useCreateObligationMutation>["mutateAsync"]>[0]) {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  let mutation: ReturnType<typeof useCreateObligationMutation> | null = null;
+  function Probe() {
+    mutation = useCreateObligationMutation(WS);
+    return null;
+  }
+  let tree: ReturnType<typeof create>;
+  act(() => { tree = create(<QueryClientProvider client={queryClient}><Probe /></QueryClientProvider>); });
+  let result: CreatedObligation | null = null;
+  await act(async () => { result = await mutation!.mutateAsync(input); });
+  act(() => tree.unmount());
+  return result as unknown as CreatedObligation;
+}
+
+describe("crear sin internet una deuda que mueve dinero, con su interés", () => {
+  it("deuda + movimiento de apertura + interés quedan en el teléfono como UN cambio, sin tocar el servidor", async () => {
+    const runtime = await boot();
+    runtime.setOnline(false);
+    const counterparty = await localCreate(WS, "counterparties", { workspace_id: WS, name: "Zuloaga", type: "person", is_archived: false });
+    const account = await localCreate(WS, "accounts", { workspace_id: WS, name: "Banco", type: "bank", currency_code: "PEN", opening_balance: 2000, include_in_net_worth: true, is_archived: false, sort_order: 0 });
+
+    const created = await runCreate({
+      userId: "u1", clientDedupeKey: "obligation:k9", title: "Laptop", direction: "receivable", originType: "cash_loan",
+      openingImpact: "outflow", openingAccountId: account!.id, currencyCode: "PEN", principalAmount: 1500, startDate: "2026-10-18",
+      counterpartyId: counterparty!.id, agreedInterest: { amount: 50, reason: "Interés pactado" },
+    });
+
+    expect(created).toMatchObject({ interestRecorded: true, savedLocally: true });
+    expect(mockServerCalls).toEqual([]);
+    expect(runtime.getState().pending).toBe(3); // contacto, cuenta y la deuda (un grupo cuenta como uno)
+    const movements = (await runtime.listRows(WS, "movements"))!;
+    expect(movements).toHaveLength(1);
+    expect(movements[0]).toMatchObject({
+      movement_type: "obligation_opening", obligation_id: created.id, source_account_id: account!.id, source_amount: 1500,
+      occurred_at: "2026-10-18T12:00:00.000Z", client_dedupe_key: "obligation:k9:opening", description: "Préstamo entregado: Laptop",
+    });
+    // La deuda nueva ya se ve con su interés.
+    const shown = await withLocalObligations(WS, [], new Map([[counterparty!.id, "Zuloaga"]]));
+    expect(shown[0]).toMatchObject({ id: created.id, currentPrincipalAmount: 1550, pendingAmount: 1550, counterparty: "Zuloaga" });
+
+    // Borrarla antes de que se envíe dejaría el movimiento suelto: se avisa y no se borra nada.
+    const error = await runDelete(created.id);
+    expect(error?.message).toContain("Esta deuda todavía no se envía");
+    expect((await runtime.listRows(WS, "obligations"))!.map((row) => row.id)).toEqual([created.id]);
   });
 });

@@ -1,4 +1,5 @@
 import { OfflineNotice } from "../ui/OfflineNotice";
+import { useOfflineLocalReady } from "../../lib/offline/react";
 import { ObligationInviteFields } from "../../features/obligations/components/ObligationInviteFields";
 import { FormFeedbackProvider, FormSubmitBar } from "../ui/FormFeedback";
 import { requiredField, positiveAmountField, dateField, emailField, parseFormAmountInput, selectedAccountField } from "../../lib/form-field-rules";
@@ -138,6 +139,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const { showToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateObligationMutation(activeWorkspaceId);
+  // Copia del teléfono lista: crear la deuda, su movimiento de apertura y su interés funciona sin internet.
+  const localReady = useOfflineLocalReady(activeWorkspaceId);
   const interestMutation = useCreatePrincipalAdjustmentMutation(activeWorkspaceId);
   const updateMutation = useUpdateObligationMutation(activeWorkspaceId);
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
@@ -490,9 +493,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         }
         showToast(successMsg, "success");
       } else {
-        // El interés se registra como un movimiento de la deuda en el servidor: sin internet no se puede, y es mejor decirlo
-        // antes de guardar que dejar la deuda sin su interés.
-        if (interestAmount > 0 && offlineRuntime.getState().availability === "ready" && !offlineRuntime.getState().online) {
+        // Sin la copia del teléfono lista (modo sin conexión apagado o sin descargar) el interés se registra en el servidor
+        // después de crear la deuda: sin internet no se puede, y es mejor decirlo antes de guardar que dejarla sin su interés.
+        if (interestAmount > 0 && !localReady && offlineRuntime.getState().availability === "ready" && !offlineRuntime.getState().online) {
           setSubmitError("Para registrar el interés necesitas internet. Conéctate, o deja el total igual al monto y súmalo después con «Ajustar monto».");
           scrollRef.current?.scrollTo({ y: 0, animated: true });
           return;
@@ -520,14 +523,18 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           interestRate: interestPercent,
           description: description.trim() || null,
           notes: notes.trim() || null,
+          // Con el modo sin conexión el interés se guarda junto con la deuda (y su movimiento de apertura) en un solo paso.
+          agreedInterest: interestAmount > 0 ? { amount: interestAmount, reason: "Interés pactado" } : null,
         });
+        // ¿Falta registrar el interés aparte? Solo si la deuda se creó por el camino online (sin la copia del teléfono).
+        const interestPending = interestAmount > 0 && !created.interestRecorded;
         // Modo sin conexión (beta): invitar a alguien lo hace un servicio del servidor, que solo funciona con internet y
         // necesita que la obligación YA exista allí. Si todavía solo está en el teléfono no se ofrece invitar: la obligación
         // queda guardada, se envía sola y la invitación se hace después desde su detalle.
         // Solo se espera cuando hace falta el servidor YA (interés o invitación escrita) o no hay internet (la respuesta es
         // inmediata). Si no, esperar era hasta 8 s de «Guardando…» con la obligación ya guardada; la invitación posterior
         // espera recién cuando se toca Enviar.
-        const needsServerNow = interestAmount > 0 || Boolean(shareEmail.trim()) || !offlineRuntime.getState().online;
+        const needsServerNow = interestPending || Boolean(shareEmail.trim()) || !offlineRuntime.getState().online;
         const reachedServer = activeWorkspaceId && needsServerNow
           ? await waitUntilSent(offlineRuntime, activeWorkspaceId, "obligations", created.id)
           : true;
@@ -535,7 +542,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           showToast(
             "Obligación guardada en tu teléfono",
             "success",
-            interestAmount > 0
+            interestPending
               ? `Se enviará sola cuando haya internet. El interés de ${formatCurrency(interestAmount, currencyCode)} agrégalo después con «Ajustar monto».`
               : shareEmail.trim() ? "La invitación la podrás enviar cuando haya internet." : "Se enviará sola cuando haya internet.",
           );
@@ -546,7 +553,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           return;
         }
         let interestNote: string | null = null;
-        if (interestAmount > 0) {
+        if (interestPending) {
           try {
             await interestMutation.mutateAsync({
               obligationId: created.id,
@@ -909,12 +916,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       </View>
 
       {/* Lo que no se puede guardar sin internet se avisa al abrir el formulario, no al guardar. */}
+      {/* Con la copia del teléfono lista (modo sin conexión) ambos se guardan sin internet: el aviso solo sale si no se puede. */}
       <OfflineNotice
-        when={!isEditing && openingImpact !== "none"}
+        when={!isEditing && !localReady && openingImpact !== "none"}
         message="Este tipo de deuda mueve dinero de tu cuenta al crearse, y eso necesita internet. Conéctate para guardarla."
       />
       <OfflineNotice
-        when={!isEditing && openingImpact === "none" && interestAmount > 0}
+        when={!isEditing && !localReady && openingImpact === "none" && interestAmount > 0}
         message="Registrar el interés necesita internet. Conéctate, o deja el total igual al monto y súmalo después con «Ajustar monto»."
       />
 
