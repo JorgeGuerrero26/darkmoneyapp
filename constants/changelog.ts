@@ -25,6 +25,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Con el modo sin conexión encendido, guardar un movimiento ya no se queda varios segundos en «Guardando…»: se guarda al instante y la pantalla se cierra. Con los movimientos detectados pasa igual, incluso con los que llegan por correo.",
       "También es más rápido crear un crédito o una deuda, aplicar las categorías que te sugiere el inicio y dividir un movimiento detectado en varias categorías: ya no esperan a que se recargue todo antes de cerrar. Y la app queda más ágil justo después de guardar.",
       "Al guardar un movimiento detectado con el modo sin conexión encendido, su aviso desaparece del inicio al instante, aunque el movimiento todavía no se haya enviado. Si tocas Deshacer, el aviso vuelve.",
+      "Con el modo sin conexión encendido, ya puedes crear sin internet un préstamo o una deuda que saca o mete dinero de una cuenta, con su interés: la deuda, el movimiento de la cuenta y el interés se guardan al instante y se envían juntos cuando vuelve la conexión. Si algo fallara al enviarse, no queda nada a medias.",
       "Con el modo sin conexión encendido, si un cambio no se alcanza a enviar porque el servidor tarda en responder, la app lo vuelve a intentar sola a los pocos segundos y arriba dice «1 por enviar · reintentando». Antes se quedaba esperando hasta que hicieras otra cosa.",
       "Con el modo sin conexión encendido, el resumen de cada contacto (lo que te debe, lo que le debes, lo que entró y salió con él) ya se actualiza al instante cuando registras un gasto, un pago o un cobro sin internet.",
       "Con el modo sin conexión encendido, la pantalla de inicio ya cuenta lo que registras sin internet: los gastos e ingresos del mes, los gráficos, el historial del año y el detalle de cada día se ponen al día al instante, sin esperar a que vuelva la conexión.",
@@ -48,7 +49,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Con el modo sin conexión encendido, ya puedes anotar sin internet la llegada de un ingreso fijo: el dinero entra a tu cuenta, el ingreso espera su siguiente fecha y la llegada queda en su historial, todo junto. Cuando vuelve la conexión se envía completo.",
       "Con el modo sin conexión encendido, ya puedes registrar sin internet un pago o un cobro de un crédito o deuda: el dinero se mueve en tu cuenta al instante, el pendiente de la deuda baja y todo se envía junto cuando vuelve la conexión. Si el pago supera lo que se debe, el servidor lo rechaza y no queda nada a medias. Los comprobantes (fotos) y editar o borrar un pago siguen necesitando internet.",
       "Al adjuntar una foto sin internet, el formulario lo dice claro con un aviso dentro del propio formulario y el botón de agregar queda desactivado, en vez de fallar con un error de red.",
-      "Cuando no hay internet, los formularios que necesitan conexión te lo dicen con un aviso amarillo apenas los abres (crear una deuda que mueve dinero de tu cuenta, editar un pago, ajustar el monto de una deuda, o editar un movimiento ligado a un pago), en vez de dejarte descubrirlo al guardar.",
+      "Cuando no hay internet, los formularios que necesitan conexión te lo dicen con un aviso amarillo apenas los abres (editar un pago, ajustar el monto de una deuda, o editar un movimiento ligado a un pago), en vez de dejarte descubrirlo al guardar.",
     ],
   },
   {
