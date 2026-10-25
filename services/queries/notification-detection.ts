@@ -543,13 +543,13 @@ export function useRegisterDetectedSplitMutation() {
       const { userId: _userId, ...request } = input;
       return requestDetectedSplit(supabase, request);
     },
-    onSettled: async (_result, _error, input) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", input.suggestionId] }),
-        queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", input.userId, input.workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ["movements"] }),
-        queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
-      ]);
+    // Sin esperar las recargas: el registro ya terminó en el servidor, y esperar el resumen del espacio dejaba «Guardando…»
+    // varios segundos más.
+    onSettled: (_result, _error, input) => {
+      void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", input.suggestionId] });
+      void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", input.userId, input.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }
@@ -562,14 +562,12 @@ export function useUndoDetectedMovementRegistrationMutation() {
       if (!supabase || !input.userId) throw new Error("No hay una sesión disponible.");
       return requestDetectedRegistrationUndo(supabase, input);
     },
-    onSettled: async (_result, _error, input) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", input.suggestionId] }),
-        queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", input.userId, input.workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ["detection-learning", input.userId, input.workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ["movements"] }),
-        queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
-      ]);
+    onSettled: (_result, _error, input) => {
+      void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", input.suggestionId] });
+      void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", input.userId, input.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["detection-learning", input.userId, input.workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }

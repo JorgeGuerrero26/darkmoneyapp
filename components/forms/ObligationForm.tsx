@@ -524,7 +524,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         // Modo sin conexión (beta): invitar a alguien lo hace un servicio del servidor, que solo funciona con internet y
         // necesita que la obligación YA exista allí. Si todavía solo está en el teléfono no se ofrece invitar: la obligación
         // queda guardada, se envía sola y la invitación se hace después desde su detalle.
-        const reachedServer = activeWorkspaceId ? await waitUntilSent(offlineRuntime, activeWorkspaceId, "obligations", created.id) : true;
+        // Solo se espera cuando hace falta el servidor YA (interés o invitación escrita) o no hay internet (la respuesta es
+        // inmediata). Si no, esperar era hasta 8 s de «Guardando…» con la obligación ya guardada; la invitación posterior
+        // espera recién cuando se toca Enviar.
+        const needsServerNow = interestAmount > 0 || Boolean(shareEmail.trim()) || !offlineRuntime.getState().online;
+        const reachedServer = activeWorkspaceId && needsServerNow
+          ? await waitUntilSent(offlineRuntime, activeWorkspaceId, "obligations", created.id)
+          : true;
         if (!reachedServer) {
           showToast(
             "Obligación guardada en tu teléfono",
@@ -719,6 +725,14 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               onSend={async () => {
                 if (!createdObligation || !activeWorkspaceId) return;
                 try {
+                  // La invitación la crea el servidor y necesita la obligación allá: si aún no llegó, se espera aquí.
+                  if (!(await waitUntilSent(offlineRuntime, activeWorkspaceId, "obligations", createdObligation.id))) {
+                    showToast("Obligación guardada en tu teléfono", "success", "La invitación la podrás enviar desde su detalle cuando haya internet.");
+                    setCreatedObligation(null);
+                    onSuccess?.();
+                    onClose();
+                    return;
+                  }
                   const r = await shareMutation.mutateAsync({
                     workspaceId: activeWorkspaceId,
                     obligationId: createdObligation.id,

@@ -1317,7 +1317,9 @@ export function AdvancedDashboard({
             metadata: { categoryName: suggestion.suggestedCategoryName, description: suggestion.description },
           }).catch(() => undefined); // La categoría ya quedó guardada.
         }
-        await Promise.allSettled([
+        // Sin esperar: recargar el inicio y el resumen del espacio desde el servidor tarda varios segundos y la categoría
+        // ya quedó guardada; el aviso sale ahora y la pantalla se pone al día sola.
+        void Promise.allSettled([
           queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
           queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
           queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] }),
