@@ -47,7 +47,11 @@ export function describeSyncLine(state: OfflineState): SyncLine | null {
   if (!state.online) {
     return { kind: "offline", text: state.pending > 0 ? `Sin conexión · ${state.pending} por enviar` : "Sin conexión", tappable: true };
   }
-  if (state.pending > 0) return { kind: "pending", text: `${state.pending} por enviar`, tappable: true };
+  if (state.pending > 0) {
+    // El último intento no llegó (servidor lento): se dice que se reintenta solo, para que no parezca atascado.
+    const text = state.lastError ? `${state.pending} por enviar · reintentando` : `${state.pending} por enviar`;
+    return { kind: "pending", text, tappable: true };
+  }
   return null;
 }
 

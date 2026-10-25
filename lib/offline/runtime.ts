@@ -123,6 +123,8 @@ export class OfflineRuntime {
   private readonly writeDebounceMs: number;
   private readonly otherWorkspacesDelayMs: number;
   private otherWorkspacesTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Reintento de un envío que no llegó (timeout, servidor lento): ver `scheduleRetry`. */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Lecturas completas de una tabla compartidas mientras los datos no cambian. Tras un guardado, la lista, el inicio (90 días,
    * año, proyección), los presupuestos y los historiales leían TODOS los movimientos cada uno por su lado: unas 6 lecturas y
@@ -238,6 +240,8 @@ export class OfflineRuntime {
     this.writeTimer = null;
     if (this.otherWorkspacesTimer) clearTimeout(this.otherWorkspacesTimer);
     this.otherWorkspacesTimer = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
     const db = this.db;
     this.engine = null;
     this.db = null;
@@ -301,17 +305,43 @@ export class OfflineRuntime {
       }
     } finally {
       const hydrated = await engine.isHydrated(workspaceId).catch(() => false);
+      // El conteo va en el MISMO cambio que «terminó de enviar»: antes se apagaba «Enviando 1 de 1» con el conteo viejo
+      // todavía puesto y la barra decía «1 por enviar» un instante con todo ya enviado.
+      const counts = await this.readCounts();
       this.patch({
         syncing: false,
         sendingTotal: 0,
         hydrated,
         lastSyncAt: report && !report.error ? this.now() : this.state.lastSyncAt,
         lastError: report?.error ?? otherError,
+        ...(counts ?? {}),
       });
-      await this.refreshCounts();
     }
     if (report && report.pushed > 0 && !report.error) void this.hooks.onPushed?.(report, reason);
+    await this.scheduleRetry();
     return report;
+  }
+
+  /**
+   * Si quedó algo sin enviar porque el envío no llegó a resolverse (servidor lento, timeout), se reintenta SOLO cuando le
+   * toca (5 s, 10 s, 20 s… hasta 5 min). Antes esperaba a otra escritura, a volver a la app o al latido de 5 minutos, y la
+   * barra se quedaba en «1 por enviar» con internet.
+   */
+  private async scheduleRetry() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    const db = this.db;
+    if (!db || !this.state.online || this.state.pending === 0) return;
+    const row = await db.get<{ at: string | null }>(
+      "select min(next_attempt_at) as at from outbox where status = 'pending' and next_attempt_at is not null",
+    ).catch(() => null);
+    const at = row?.at ? Date.parse(row.at) : Number.NaN;
+    if (!Number.isFinite(at) || this.db !== db) return;
+    const delay = Math.min(Math.max(at - this.now(), 1_000), 300_000);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.requestSync("write");
+    }, delay);
   }
 
   /**
@@ -360,16 +390,23 @@ export class OfflineRuntime {
     return [...ids];
   }
 
-  private async refreshCounts() {
+  /** Cuántos cambios quedan por enviar y en la bandeja. null si no se pudo contar. */
+  private async readCounts(): Promise<Pick<OfflineState, "pending" | "rejected" | "review"> | null> {
     const db = this.db;
-    if (!db) return;
+    if (!db) return null;
     try {
       // Total del usuario, no solo del espacio abierto: lo pendiente en otro espacio también cuenta.
       const [pending, inbox] = await Promise.all([countOutbox(db), countInbox(db)]);
-      this.patch({ pending, rejected: inbox.rejected, review: inbox.review });
+      return { pending, rejected: inbox.rejected, review: inbox.review };
     } catch {
       // Un conteo fallido no debe romper nada; el siguiente ciclo lo corrige.
+      return null;
     }
+  }
+
+  private async refreshCounts() {
+    const counts = await this.readCounts();
+    if (counts) this.patch(counts);
   }
 
   /** Los datos locales cambiaron: ninguna lectura compartida anterior vale ya. */

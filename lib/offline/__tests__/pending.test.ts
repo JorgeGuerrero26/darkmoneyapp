@@ -90,6 +90,10 @@ describe("línea de estado del encabezado (Revisión 54)", () => {
   it("con internet y pendientes sin ciclo en curso (reintento): 'N por enviar'", () => {
     expect(describeSyncLine({ ...base, pending: 2 })).toEqual({ kind: "pending", text: "2 por enviar", tappable: true });
   });
+
+  it("si el último envío no llegó (servidor lento), dice que se reintenta solo", () => {
+    expect(describeSyncLine({ ...base, pending: 1, lastError: "La solicitud tardó demasiado" })).toEqual({ kind: "pending", text: "1 por enviar · reintentando", tappable: true });
+  });
 });
 
 describe("texto de cada cambio", () => {

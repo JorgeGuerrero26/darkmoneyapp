@@ -1,4 +1,5 @@
 import { OfflineRuntime, type RuntimeDeps } from "../runtime";
+import { describeSyncLine } from "../status-copy";
 import type { PushOp, PushResult, SyncTransport } from "../sync-types";
 import type { SqlDriver } from "../sql-driver";
 import { createTestDriver } from "./helpers/node-sqlite-driver";
@@ -179,6 +180,44 @@ describe("OfflineRuntime", () => {
     expect(runtime.getState().pending).toBe(1);
     await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
   });
+
+  it("la barra pasa de «Enviando 1 de 1» a nada, sin mostrar «1 por enviar» con todo ya enviado", async () => {
+    const { runtime } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    runtime.setOnline(false);
+    await runtime.createMovement(WS, expense("Barra", 3));
+    const lines: Array<string | null> = [];
+    const unsubscribe = runtime.subscribe(() => {
+      const text = describeSyncLine(runtime.getState())?.text ?? null;
+      if (lines[lines.length - 1] !== text) lines.push(text);
+    });
+    runtime.setOnline(true); // vuelve la red: se envía
+    await settle();
+    await until(() => runtime.getState().pending === 0 && !runtime.getState().syncing);
+    unsubscribe();
+    const sending = lines.indexOf("Enviando 1 de 1…");
+    expect(sending).toBeGreaterThanOrEqual(0);
+    expect(lines.slice(sending)).not.toContain("1 por enviar");
+    expect(lines[lines.length - 1]).toBeNull();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
+
+  it("si el envío no llega (servidor lento), se reintenta SOLO a los pocos segundos, sin esperar otra acción", async () => {
+    const { runtime, log } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    log.failPush = true; // el servidor no responde a tiempo
+    await runtime.createMovement(WS, expense("Reintento", 4));
+    await until(() => runtime.getState().lastError != null && !runtime.getState().syncing);
+    expect(runtime.getState().pending).toBe(1);
+    expect(describeSyncLine(runtime.getState())?.text).toBe("1 por enviar · reintentando");
+    log.failPush = false; // el servidor se recupera; nadie toca nada
+    await until(() => runtime.getState().pending === 0, 9000); // primer reintento a los 5 s
+    expect(log.pushed.flat()).toHaveLength(1);
+    expect(describeSyncLine(runtime.getState())).toBeNull();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  }, 15000);
 
   it("las pantallas comparten una sola lectura de la tabla hasta que algo cambia", async () => {
     const { runtime, drivers } = setup();
