@@ -316,33 +316,46 @@ function ensureMinimumComplexTerms(reply: string, terms: DashboardAiComplexTerm[
 }
 
 async function requestGeminiReply(apiKey: string, model: string, prompt: string) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
+  const isReasoning = model.startsWith("gemini-3");
+  const call = (lowThinking: boolean) =>
+    fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            // Google desaconseja tocar temperature/topP en los 3.x (empeora el razonamiento
+            // y los declara obsoletos): se mandan solo a los modelos anteriores.
+            ...(isReasoning ? {} : { temperature: 0.4, topP: 0.9 }),
+            // Los modelos que razonan (3.x) descuentan el pensamiento de este
+            // mismo presupuesto: con 420 se lo gastaban pensando y devolvian texto
+            // vacio, sin error. Se amplia solo para ellos.
+            maxOutputTokens: isReasoning ? 2048 : 420,
+            // Sin esto un 3.x piensa al maximo: con gemini-3.8-flash el informe pasaba de los
+            // 30 s que espera el telefono ("tardo demasiado", 2026-10-25). Un resumen de datos ya
+            // calculados no necesita mas que "low", que ademas deja el presupuesto para el texto.
+            ...(lowThinking ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
+            responseMimeType: "application/json",
           },
-        ],
-        generationConfig: {
-          // Google desaconseja tocar temperature/topP en los 3.x (empeora el razonamiento
-          // y los declara obsoletos): se mandan solo a los modelos anteriores.
-          ...(model.startsWith("gemini-3") ? {} : { temperature: 0.4, topP: 0.9 }),
-          // Los modelos que razonan (3.x) descuentan el pensamiento de este
-          // mismo presupuesto: con 420 se lo gastaban pensando y devolvian texto
-          // vacio, sin error. Se amplia solo para ellos.
-          maxOutputTokens: model.startsWith("gemini-3") ? 2048 : 420,
-          responseMimeType: "application/json",
-        },
-      }),
-    },
-  );
+        }),
+      },
+    );
 
-  const payload = await response.json().catch(() => ({}));
+  let response = await call(isReasoning);
+  let payload = await response.json().catch(() => ({}));
+  // Si un modelo no acepta el nivel de pensamiento, se repite sin el: mejor lento que sin informe.
+  if (!response.ok && isReasoning && response.status === 400) {
+    console.warn("[dashboard-ai] thinkingLevel rechazado, se repite sin el", payload?.error?.message);
+    response = await call(false);
+    payload = await response.json().catch(() => ({}));
+  }
   if (!response.ok) {
     const message =
       typeof payload?.error?.message === "string"
