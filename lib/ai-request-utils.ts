@@ -23,8 +23,11 @@ export const INTERACTIVE_AI_TIMEOUT_MS = 20_000;
  * Caían al plazo por defecto de 15 s, pensado para una consulta normal. Con un modelo que
  * razona el presupuesto de salida subió de 420 a 2.048 tokens —el pensamiento sale del mismo
  * saco—, y 15 s se queda corto para un texto de ese tamaño.
+ *
+ * 2026-10-25: con gemini-3.8-flash pensando al máximo pasaba de 30 s ("tardó demasiado"). El servidor ya le pide
+ * pensar poco; esto es el margen. Esperar no bloquea nada: el informe se pide a mano y tiene su propio cargando.
  */
-export const DASHBOARD_AI_TIMEOUT_MS = 30_000;
+export const DASHBOARD_AI_TIMEOUT_MS = 60_000;
 
 /** Plazo por defecto de una llamada a una edge function que no es de IA. */
 export const DEFAULT_EDGE_TIMEOUT_MS = 15_000;
