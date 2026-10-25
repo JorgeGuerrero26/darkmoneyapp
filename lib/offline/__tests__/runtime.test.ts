@@ -180,6 +180,47 @@ describe("OfflineRuntime", () => {
     await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
   });
 
+  it("las pantallas comparten una sola lectura de la tabla hasta que algo cambia", async () => {
+    const { runtime, drivers } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    runtime.setOnline(false);
+    await runtime.createMovement(WS, expense("Primero", 5));
+    const reads = jest.spyOn(drivers.u1, "all");
+    const fullScans = () => reads.mock.calls.filter(([sql]) => String(sql).includes("select data from movements where workspace_id = ? order by id")).length;
+
+    // Lista, inicio, año, proyección, presupuestos e historiales piden lo mismo a la vez: una sola lectura.
+    const results = await Promise.all(Array.from({ length: 6 }, () => runtime.listRows(WS, "movements")));
+    expect(fullScans()).toBe(1);
+    expect(results.every((rows) => rows?.length === 1)).toBe(true);
+
+    // Cada una recibe su copia: cambiar una fila no altera lo que ve la siguiente.
+    results[0]![0].description = "Alterado";
+    expect((await runtime.listRows(WS, "movements"))?.[0].description).toBe("Primero");
+    expect(fullScans()).toBe(1);
+
+    // Un guardado la invalida: la siguiente lectura ya trae lo nuevo.
+    await runtime.createMovement(WS, expense("Segundo", 6));
+    expect((await runtime.listRows(WS, "movements"))?.map((row) => row.description).sort()).toEqual(["Primero", "Segundo"]);
+    expect(fullScans()).toBe(2);
+    reads.mockRestore();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
+
+  it("lo que llega del servidor también invalida la lectura compartida", async () => {
+    const { runtime, drivers } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    await runtime.createMovement(WS, expense("Antes de enviar", 7));
+    await runtime.listRows(WS, "movements"); // queda compartida con la versión local
+    await settle(); // se envía: el servidor confirma la fila
+    const reads = jest.spyOn(drivers.u1, "all");
+    await runtime.listRows(WS, "movements");
+    expect(reads.mock.calls.some(([sql]) => String(sql).includes("select data from movements where workspace_id = ? order by id"))).toBe(true);
+    reads.mockRestore();
+    await runtime.configure({ enabled: false, userId: "u1", workspaceId: WS });
+  });
+
   it("candidatos a duplicado desde la copia local: mismo tipo, cuenta y monto exacto, aunque aún no se haya enviado", async () => {
     const { runtime } = setup();
     expect(await runtime.postedMovementsWithAmount(WS, { movementType: "expense", side: "source", accountId: 1, amount: 181 })).toBeNull(); // sin copia: al servidor

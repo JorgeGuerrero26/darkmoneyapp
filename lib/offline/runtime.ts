@@ -16,6 +16,7 @@ import type { SqlDriver } from "./sql-driver";
 import { SyncEngine } from "./sync-engine";
 import type { SyncReport, SyncTransport } from "./sync-types";
 import { listRowsLocal } from "./resource-store";
+import type { ServerRow } from "./movement-store";
 import { exactCents } from "./money";
 import { createRowLocal, updateRowLocal, deleteRowLocal } from "./resource-writes";
 import type { MirroredTable, WritableResourceTable } from "./schema";
@@ -122,6 +123,14 @@ export class OfflineRuntime {
   private readonly writeDebounceMs: number;
   private readonly otherWorkspacesDelayMs: number;
   private otherWorkspacesTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Lecturas completas de una tabla compartidas mientras los datos no cambian. Tras un guardado, la lista, el inicio (90 días,
+   * año, proyección), los presupuestos y los historiales leían TODOS los movimientos cada uno por su lado: unas 6 lecturas y
+   * miles de filas descifradas y convertidas seguidas, con el teléfono ocupado justo después de guardar. Ahora la primera
+   * lectura sirve a las demás. Cualquier cambio (escritura local, descarga, envío) sube la versión y la descarta.
+   */
+  private dataVersion = 0;
+  private readonly rowsCache = new Map<string, { version: number; rows: Promise<ServerRow[] | null> }>();
 
   constructor(private readonly deps: RuntimeDeps) {
     this.now = deps.now ?? (() => Date.now());
@@ -167,6 +176,7 @@ export class OfflineRuntime {
   private async applyConfig(next: RuntimeConfig): Promise<void> {
     const prev = this.config;
     this.config = next;
+    this.invalidateRows(); // cambio de usuario, de espacio o apagado: nada leído antes se reutiliza
 
     if (!next.enabled || !next.userId) {
       if (this.engine) await this.closeEngine();
@@ -197,6 +207,8 @@ export class OfflineRuntime {
           transport: this.deps.transport,
           now: this.now,
           onChange: (change) => {
+            // Un envío también reescribe filas (la versión que confirma el servidor) aunque no avise de «datos».
+            this.invalidateRows();
             if (change.kind === "data") void this.notifyData(change.tables);
             void this.refreshCounts();
           },
@@ -360,7 +372,14 @@ export class OfflineRuntime {
     }
   }
 
+  /** Los datos locales cambiaron: ninguna lectura compartida anterior vale ya. */
+  private invalidateRows() {
+    this.dataVersion += 1;
+    this.rowsCache.clear();
+  }
+
   private async notifyData(tables: string[]) {
+    this.invalidateRows();
     try {
       await this.hooks.onDataChanged?.(tables);
     } catch {
@@ -423,9 +442,24 @@ export class OfflineRuntime {
     return { db, userId };
   }
 
-  async listRows(workspaceId: number, table: MirroredTable) {
-    const context = await this.resourceContext(workspaceId, table);
-    return context ? listRowsLocal(context.db, table, workspaceId, context.userId) : null;
+  async listRows(workspaceId: number, table: MirroredTable): Promise<ServerRow[] | null> {
+    const key = `${this.userId ?? ""}:${workspaceId}:${table}`;
+    let entry = this.rowsCache.get(key);
+    if (!entry || entry.version !== this.dataVersion) {
+      const version = this.dataVersion;
+      const rows = (async () => {
+        const context = await this.resourceContext(workspaceId, table);
+        return context ? listRowsLocal(context.db, table, workspaceId, context.userId) : null;
+      })();
+      entry = { version, rows };
+      this.rowsCache.set(key, entry);
+      // Un fallo o «aún no descargada» no se comparte: la próxima vez se vuelve a intentar.
+      rows.then((result) => { if (result == null && this.rowsCache.get(key) === entry) this.rowsCache.delete(key); })
+        .catch(() => { if (this.rowsCache.get(key) === entry) this.rowsCache.delete(key); });
+    }
+    const result = await entry.rows;
+    // Cada quien recibe su propia copia de las filas: nadie puede cambiar lo que ve otra pantalla.
+    return result ? result.map((row) => ({ ...row })) : null;
   }
 
   /**
