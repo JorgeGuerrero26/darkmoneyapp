@@ -17,8 +17,10 @@ import { requestDetectedSplit, type DetectedSplitInput } from "../../features/de
 import { detectionDuplicateBounds } from "../../features/detected-movements/lib/duplicate-day";
 import {
   forgetLocallyRegistered,
+  hideWhileResolving,
   rememberLocallyRegistered,
   stillLocalRegistrations,
+  stopHidingResolved,
   withoutLocallyRegistered,
 } from "../../features/detected-movements/lib/locallyRegistered";
 
@@ -473,6 +475,24 @@ export function hideLocallyRegisteredSuggestion(suggestion: Pick<DetectedMovemen
   );
 }
 
+/**
+ * Omitida aquí: se quita de la lista YA, sin esperar al servidor (con la base lenta tardaba segundos), y sigue oculta hasta
+ * que el servidor responda. `settled` se llama al terminar: si falló, vuelve a la lista.
+ */
+export function hideResolvingSuggestion(suggestion: Pick<DetectedMovementSuggestion, "id" | "userId" | "workspaceId">) {
+  hideWhileResolving(suggestion.id);
+  queryClient.setQueriesData<DetectedMovementSuggestion[]>(
+    { queryKey: ["pending-detected-movements", suggestion.userId, suggestion.workspaceId] },
+    (previous) => previous?.filter((item) => item.id !== suggestion.id),
+  );
+  return {
+    settled: (ok: boolean) => {
+      stopHidingResolved(suggestion.id);
+      if (!ok) void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements", suggestion.userId, suggestion.workspaceId] });
+    },
+  };
+}
+
 /** Deshacer un registro: la detección vuelve a la lista. */
 export function showSuggestionAgain(suggestion: Pick<DetectedMovementSuggestion, "id" | "userId" | "workspaceId">) {
   forgetLocallyRegistered(suggestion.id);
@@ -496,6 +516,9 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["mark-detected-movement-suggestion"],
+    // En fila: omitir y su Deshacer (o dos marcas seguidas) se aplican en el orden en que se tocaron, aunque la primera
+    // todavía no haya terminado cuando se toca la segunda.
+    scope: { id: "mark-detected-movement-suggestion" },
     mutationFn: async (input: { suggestionId: number; status: DetectedMovementStatus; movementId?: number | null; expectedStatus?: DetectedMovementStatus }) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       let update = supabase
@@ -510,7 +533,10 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
       const { data, error } = await update.select("*").single();
       if (error) throw new Error(error.message ?? "No se pudo actualizar la sugerencia");
       if (userId && ["registered", "duplicate", "discarded"].includes(input.status)) {
-        await autoArchiveDetectedMovementNotification(userId, input.suggestionId);
+        // El aviso se archiva aparte: no hace falta esperarlo para dar por resuelta la detección.
+        void autoArchiveDetectedMovementNotification(userId, input.suggestionId)
+          .then(() => queryClient.invalidateQueries({ queryKey: ["notifications", userId] }))
+          .catch(() => undefined);
       }
       return mapSuggestion(data);
     },

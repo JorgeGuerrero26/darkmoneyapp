@@ -12,6 +12,16 @@
  */
 
 const registered = new Map<number, number>(); // suggestionId → movementId
+/** Detecciones omitidas aquí cuyo aviso al servidor todavía no termina: se ocultan hasta que termine (bien o mal). */
+const resolving = new Set<number>();
+
+export function hideWhileResolving(suggestionId: number): void {
+  resolving.add(suggestionId);
+}
+
+export function stopHidingResolved(suggestionId: number): void {
+  resolving.delete(suggestionId);
+}
 
 export function rememberLocallyRegistered(suggestionId: number, movementId: number): void {
   registered.set(suggestionId, movementId);
@@ -44,10 +54,11 @@ export function withoutLocallyRegistered<T extends { id: number }>(serverList: r
     if (stillLocal === undefined) continue;
     if (!listed.has(suggestionId) || !stillLocal) registered.delete(suggestionId);
   }
-  return serverList.filter((item) => !registered.has(item.id));
+  return serverList.filter((item) => !registered.has(item.id) && !resolving.has(item.id));
 }
 
 /** Solo para pruebas. */
 export function resetLocallyRegistered(): void {
   registered.clear();
+  resolving.clear();
 }

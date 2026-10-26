@@ -1,5 +1,7 @@
 import {
   forgetLocallyRegistered,
+  hideWhileResolving,
+  stopHidingResolved,
   rememberLocallyRegistered,
   resetLocallyRegistered,
   stillLocalRegistrations,
@@ -48,5 +50,12 @@ describe("detecciones registradas en el teléfono que aún no llegan al servidor
     rememberLocallyRegistered(570, 1640);
     const checked = await stillLocalRegistrations(async () => { throw new Error("sin base"); });
     expect(withoutLocallyRegistered([item(570)], checked).map((s) => s.id)).toEqual([570]);
+  });
+
+  it("una omitida aquí se oculta mientras el servidor responde, y vuelve si hay que mostrarla", async () => {
+    hideWhileResolving(571);
+    expect(withoutLocallyRegistered([item(571), item(572)], await stillLocalRegistrations(async () => false)).map((s) => s.id)).toEqual([572]);
+    stopHidingResolved(571);
+    expect(withoutLocallyRegistered([item(571)], await stillLocalRegistrations(async () => false)).map((s) => s.id)).toEqual([571]);
   });
 });

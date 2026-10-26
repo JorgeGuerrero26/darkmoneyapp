@@ -64,9 +64,12 @@ jest.mock("../../../../services/queries/notification-detection", () => ({
   confirmDuplicateWithAi: (...args: unknown[]) => mockDuplicateAi(...args),
   recordSuggestionAction: jest.fn().mockResolvedValue(null),
   hideLocallyRegisteredSuggestion: (...args: unknown[]) => mockHide(...args),
+  hideResolvingSuggestion: (...args: unknown[]) => { mockHideResolving(...args); return { settled: mockSettled }; },
   showSuggestionAgain: (...args: unknown[]) => mockShowAgain(...args),
 }));
 const mockHide = jest.fn();
+const mockHideResolving = jest.fn();
+const mockSettled = jest.fn();
 const mockShowAgain = jest.fn();
 jest.mock("../../../../services/queries/workspace-data", () => ({
   useWorkspaceSnapshotQuery: () => ({ data: mockSnapshot }),
@@ -306,12 +309,22 @@ it("dos pulsaciones de Omitir resuelven una vez y Deshacer conserva needs_review
   let first!: Promise<void>, second!: Promise<void>;
   await act(async () => { first = current.discard(); second = current.discard(); });
   expect(mockMark).toHaveBeenCalledTimes(1);
-  expect(current.busy).toBe(true);
+  expect(mockResolved).toHaveBeenCalledTimes(1); // se cierra sin esperar al servidor
+  expect(current.busy).toBe(false); // y no bloquea la siguiente detección
   await act(async () => { release(); await Promise.all([first, second]); });
   expect(mockResolved).toHaveBeenCalledTimes(1);
   expect(mockCreate).not.toHaveBeenCalled();
   await act(async () => mockToast.showRichToast.mock.calls[0][0].onUndo());
   expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "needs_review", expectedStatus: "discarded" });
+});
+
+it("omitir no espera al servidor: la detección sale de la lista y se cierra al instante (antes tardaba segundos)", async () => {
+  mockMark.mockImplementationOnce(() => new Promise<void>(() => {})); // el servidor no responde
+  await act(async () => { await current.discard(); });
+  expect(mockHideResolving).toHaveBeenCalledWith(expect.objectContaining({ id: 7, userId: "tester", workspaceId: 9 }));
+  expect(mockResolved).toHaveBeenCalledWith(7, "discarded");
+  expect(mockToast.showRichToast.mock.calls[0][0].title).toBe("Detección omitida");
+  expect(mockSettled).not.toHaveBeenCalled(); // sigue oculta mientras el servidor no responda
 });
 
 it("Guardar permanece disponible y explica qué falta en una transferencia", async () => {
@@ -362,7 +375,10 @@ it("un fallo al actualizar el aviso no convierte un registro exitoso en error", 
 it("reintentar un descarte fallido vuelve a descartar y nunca registra", async () => {
   mockMark.mockRejectedValueOnce(new Error("Fallo al descartar"));
   await act(async () => { await current.discard(); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   expect(current.saveError).toBeTruthy();
+  expect(mockSettled).toHaveBeenCalledWith(false); // vuelve a la lista
+  expect(mockToast.showErrorToast).toHaveBeenCalledWith("No se pudo omitir la detección", expect.any(Error));
   await act(async () => { await current.retry(); });
   expect(mockMark).toHaveBeenCalledTimes(2);
   expect(mockMark).toHaveBeenLastCalledWith({ suggestionId: 7, status: "discarded", expectedStatus: "pending" });

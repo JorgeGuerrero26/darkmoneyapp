@@ -11,7 +11,7 @@ import { useAuth } from "../../../lib/auth-context";
 import { useWorkspace } from "../../../lib/workspace-context";
 import { useToast } from "../../../hooks/useToast";
 import { useHaptics } from "../../../hooks/useHaptics";
-import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation, useRegisterDetectedSplitMutation, hideLocallyRegisteredSuggestion, showSuggestionAgain } from "../../../services/queries/notification-detection";
+import { findPossibleDuplicateMovement, countSameDayDetectionSignals, confirmDuplicateWithAi, recordSuggestionAction, useAiUsageTodayQuery, useNotificationDetectionSettingsQuery, useDetectedMovementSuggestionQuery, useMarkDetectedMovementSuggestionMutation, useUndoDetectedMovementRegistrationMutation, useRegisterDetectedSplitMutation, hideLocallyRegisteredSuggestion, hideResolvingSuggestion, showSuggestionAgain } from "../../../services/queries/notification-detection";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../../lib/notification-detection-apps";
 import { useCreateCategoryMutation, useCreateCounterpartyMutation, useCreateMovementMutation, useCreateRecurringIncomeMutation, useCreateSubscriptionMutation, useMarkNotificationReadMutation, usePersistLearningFeedbackMutation, useUserEntitlementQuery, useWorkspaceSnapshotQuery } from "../../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../../services/queries/movement-patterns";
@@ -136,11 +136,14 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   useEffect(() => { setSaveError(null); setFieldErrors({}); }, [visible]);
   const [duplicateCandidate, setDuplicateCandidate] = useState<MovementRecord | null>(null);
   const reconciliationCandidateId = useRef<number | null>(null);
-  const [isDiscarding, setIsDiscarding] = useState(false);
+  // Omitir ya no espera al servidor (ver `discard`): no hay un «omitiendo…» que mostrar.
+  const isDiscarding = false;
   // Guard anti-doble-tap SÍNCRONO: el botón se deshabilita con loading, pero hay una ventana
   // entre el primer tap y el re-render donde un segundo tap (o doble-tap rápido) dispara otro
   // submit → movimiento duplicado/triplicado. Este ref bloquea al instante, sin esperar render.
   const submittingRef = useRef(false);
+  /** Detecciones ya omitidas desde esta revisión: un segundo toque no vuelve a omitirlas. Deshacer o un fallo las liberan. */
+  const discardedRef = useRef(new Set<number>());
   const lastActionRef = useRef<"save" | "discard">("save");
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(null);
@@ -598,36 +601,46 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   }, [counterparties, counterpartyId]);
 
   async function discard() {
-    if (!suggestion || submittingRef.current) return;
+    if (!suggestion || submittingRef.current || discardedRef.current.has(suggestion.id)) return;
     lastActionRef.current = "discard";
     submittingRef.current = true; setSaveError(null);
-    setIsDiscarding(true);
-    try {
-      await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "discarded", expectedStatus: suggestion.status });
-      if (profile?.id && activeWorkspaceId) {
-        void recordSuggestionAction({
-          userId: profile.id,
-          workspaceId: activeWorkspaceId,
-          suggestionId: suggestion.id,
-          dedupeKey: suggestion.dedupeKey,
-          action: "discard",
-          surface: "quick_entry",
-          confidenceAtDecision: suggestion.confidence,
-          metadata: { financialAppKey: suggestion.financialAppKey },
-        });
-      }
-      if (notificationId) markNotificationRead.mutate(notificationId);
-      showRichToast({ type: "delete", title: "Detección omitida", subtitle: suggestion.description,
-        onUndo: () => { void markSuggestion.mutateAsync({ suggestionId: suggestion.id,
-          status: suggestion.status === "needs_review" ? "needs_review" : "pending", expectedStatus: "discarded" })
-          .catch((error) => showErrorToast("No se pudo deshacer", error)); } });
-      if (onResolved) onResolved(suggestion.id, "discarded"); else onClose();
-    } catch (error) {
-      setSaveError(humanizeError(error));
-      showErrorToast("No se pudo omitir la detección", error);
-    } finally {
-      setIsDiscarding(false); submittingRef.current = false;
-    }
+    const target = suggestion;
+    discardedRef.current.add(target.id);
+    // Omitir no espera al servidor: la detección sale de la lista y la revisión se cierra YA. El servidor se entera en segundo
+    // plano (con la base lenta tardaba varios segundos; sin internet espera a que vuelva). Si falla, vuelve a la lista y se avisa.
+    const hidden = hideResolvingSuggestion(target);
+    void markSuggestion.mutateAsync({ suggestionId: target.id, status: "discarded", expectedStatus: target.status })
+      .then(() => {
+        hidden.settled(true);
+        if (profile?.id && activeWorkspaceId) {
+          void recordSuggestionAction({
+            userId: profile.id,
+            workspaceId: activeWorkspaceId,
+            suggestionId: target.id,
+            dedupeKey: target.dedupeKey,
+            action: "discard",
+            surface: "quick_entry",
+            confidenceAtDecision: target.confidence,
+            metadata: { financialAppKey: target.financialAppKey },
+          });
+        }
+      })
+      .catch((error) => {
+        hidden.settled(false);
+        discardedRef.current.delete(target.id);
+        setSaveError(humanizeError(error));
+        showErrorToast("No se pudo omitir la detección", error);
+      });
+    if (notificationId) markNotificationRead.mutate(notificationId);
+    showRichToast({ type: "delete", title: "Detección omitida", subtitle: target.description,
+      onUndo: () => {
+        discardedRef.current.delete(target.id);
+        void markSuggestion.mutateAsync({ suggestionId: target.id,
+          status: target.status === "needs_review" ? "needs_review" : "pending", expectedStatus: "discarded" })
+          .catch((error) => showErrorToast("No se pudo deshacer", error));
+      } });
+    if (onResolved) onResolved(target.id, "discarded"); else onClose();
+    submittingRef.current = false;
   }
 
   async function submit(force = false) {
@@ -1137,7 +1150,8 @@ export function useDetectedMovementReview({ visible, suggestionId, notificationI
   const readyToSave = detectionMissingFields(draft, activeAccounts).length === 0 &&
     initializedId.current === suggestion?.id && suggestion?.movementType !== "unknown" &&
     suggestion?.status !== "needs_review";
-  const busy = isSaving || isDiscarding || createMovement.isPending || markSuggestion.isPending;
+  // Las marcas de la detección (registrada, omitida) van en segundo plano: no bloquean la siguiente detección de la lista.
+  const busy = isSaving || isDiscarding || createMovement.isPending;
   useEffect(() => {
     if (!suggestion || initializedId.current !== suggestion.id || busy) return;
     const candidate = reconciliationCandidateForDraft(suggestion, draft, activeAccounts);
