@@ -1,4 +1,5 @@
 import type { Session, User } from "@supabase/supabase-js";
+import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
@@ -13,6 +14,8 @@ import { logInfo, logWarn } from "./error-logger";
 import { clearLastTabRoute } from "../hooks/useTabPersistence";
 import { readCachedProfile, writeCachedProfile } from "./profile-cache";
 import { markStartupPhase } from "./startup-timing";
+import { readStoredSession } from "./stored-session";
+import { secureSessionStorage } from "./secure-session-storage";
 
 type ProfileRow = {
   id: string;
@@ -167,6 +170,12 @@ function getSupabaseStorageKey() {
   } catch {
     return "supabase.auth.token";
   }
+}
+
+/** La sesión guardada en el teléfono, sin red (ver lib/stored-session.ts). */
+function readLocalSupabaseSession(): Promise<Session | null> {
+  const auth = supabase?.auth as unknown as SupabaseAuthInternals | undefined;
+  return readStoredSession(secureSessionStorage, auth?.storageKey || getSupabaseStorageKey());
 }
 
 async function clearLocalSupabaseAuthSession() {
@@ -329,7 +338,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
 
     void withTimeout(supabase.auth.getSession())
-      .then(async ({ data }) => {
+      .then(async ({ data, error }) => {
         if (cancelled) return;
         // Separa este tramo (llavero + renovar el token por red) del de traer el perfil.
         markStartupPhase("sessionRead");
@@ -339,6 +348,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // Carrera típica en primer login: el usuario entra antes de que termine este getSession.
         // El resultado puede llegar como null y syncSession(null) borraría la sesión recién creada.
         let nextSession = data.session;
+        // Permiso caducado y la renovación falló POR LA RED: la sesión sigue guardada (la librería no la borra en ese caso) y
+        // viva en el servidor. Se entra con ella en vez de mandar a iniciar sesión, que también necesita red.
+        if (!nextSession && error && isAuthRetryableFetchError(error)) {
+          const stored = await readLocalSupabaseSession();
+          if (stored) {
+            logWarn("auth", "launch refresh failed (network): using stored session", { message: error.message });
+            nextSession = stored;
+          }
+        }
         if (!nextSession && authBeforeInitialGetSessionRef.current) {
           const { data: fresh } = await withTimeout(supabase!.auth.getSession());
           nextSession = fresh.session;
@@ -351,15 +369,24 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await syncSession(nextSession, { blockUi: true });
         authBeforeInitialGetSessionRef.current = false;
       })
-      .catch((err) => {
-        if (!cancelled) {
-          logWarn("auth", "initial getSession failed", {
-            message: err instanceof Error ? err.message : String(err),
-          });
-          hasResolvedInitialSession.current = true;
-          authBeforeInitialGetSessionRef.current = false;
-          setIsLoading(false);
+      .catch(async (err) => {
+        if (cancelled) return;
+        logWarn("auth", "initial getSession failed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        hasResolvedInitialSession.current = true;
+        // Con mala señal la renovación del permiso tarda más que el plazo del arranque. La sesión guardada sigue ahí: se entra
+        // con ella. Cuando la renovación termine, onAuthStateChange (TOKEN_REFRESHED) trae la sesión fresca.
+        const stored = authBeforeInitialGetSessionRef.current ? null : await readLocalSupabaseSession();
+        authBeforeInitialGetSessionRef.current = false;
+        if (cancelled) return;
+        if (stored) {
+          logWarn("auth", "launch getSession timed out: using stored session");
+          hadSessionAtLaunchRef.current = true;
+          await syncSession(stored, { blockUi: true });
+          return;
         }
+        setIsLoading(false);
       });
 
     const {
