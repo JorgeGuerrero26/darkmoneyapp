@@ -7,6 +7,7 @@ import { isOneOffSpend, monthlyDiscretionarySpend } from "../../projection/lib/d
 import { plannedCashEffect } from "../../projection/lib/planned-cash-effect";
 import { liquidBalance } from "../../projection/lib/liquid-balance";
 import { convertAmt, expenseAmt, isExpense } from "../lib/aggregations";
+import { isHistoryBalanceCorrection } from "../lib/history-view";
 import type { DashboardMovementRow } from "../lib/dashboard-row";
 import type { ConversionCtx } from "../lib/types";
 
@@ -154,6 +155,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
       earliestCoveredDate: coveredFrom,
       expenseAmountOf: (movement) => {
         if (!isExpense(movement)) return 0;
+        if (isHistoryBalanceCorrection(movement)) return 0;
         if (oneOffSpend && isOneOffSpend(movement, oneOffSpend.typeIds, oneOffSpend.categoryDefaults)) return 0;
         const accountId = movementDisplayAccountId(movement);
         if (accountId != null && cardIds.has(accountId)) return 0;
@@ -182,6 +184,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
         earliestCoveredDate: coveredFrom,
         expenseAmountOf: (movement) => {
           if (!isExpense(movement)) return 0;
+          if (isHistoryBalanceCorrection(movement)) return 0;
           if (oneOffSpend && isOneOffSpend(movement, oneOffSpend.typeIds, oneOffSpend.categoryDefaults)) return 0;
           return movementDisplayAccountId(movement) === id ? expenseAmt(movement, conversionCtx) : 0;
         },
@@ -208,7 +211,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
   const plannedMovements = useMemo(() => {
     const now = new Date();
     return movements
-      .filter((movement) => movement.status === "planned" && new Date(movement.occurredAt) > now)
+      .filter((movement) => movement.status === "planned" && !isHistoryBalanceCorrection(movement) && new Date(movement.occurredAt) > now)
       .flatMap((movement) => {
         // Una transferencia a inversión sale de la caja; entre cuentas líquidas no cambia nada.
         const effect = plannedCashEffect(movement, accountTypeById);
