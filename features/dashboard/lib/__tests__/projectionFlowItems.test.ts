@@ -83,6 +83,18 @@ describe("projectionFlowItems", () => {
 });
 
 describe("windowsFromFlowItems con las líneas del motor", () => {
+  it("incluye todo el último día de cada plazo y conserva los compromisos vencidos", () => {
+    const items = [
+      { source: "obligation" as const, id: 1, title: "Vencido", date: new Date(2026, 8, 1), direction: "inflow" as const, amount: 100 },
+      { source: "planned" as const, id: 2, title: "Día 7", date: new Date(2026, 9, 6, 23, 59), direction: "outflow" as const, amount: 20 },
+      { source: "planned" as const, id: 3, title: "Día 8", date: new Date(2026, 9, 7), direction: "outflow" as const, amount: 30 },
+      { source: "planned" as const, id: 4, title: "Día 15", date: new Date(2026, 9, 14, 23, 59), direction: "inflow" as const, amount: 40 },
+      { source: "planned" as const, id: 5, title: "Día 16", date: new Date(2026, 9, 15), direction: "inflow" as const, amount: 50 },
+    ];
+    const [week, fortnight] = windowsFromFlowItems(items, 1000, TODAY);
+    expect([week.expectedInflow, week.expectedOutflow]).toEqual([100, 20]);
+    expect([fortnight.expectedInflow, fortnight.expectedOutflow]).toEqual([140, 50]);
+  });
   it("el cierre del primer mes coincide entre el horizonte de Resumen y el de Flujo", () => {
     expect(calendar(2).months[0].closingBalance).toBeCloseTo(calendar(6).months[0].closingBalance, 2);
   });

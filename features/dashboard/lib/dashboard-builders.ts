@@ -1,4 +1,4 @@
-import { addDays, differenceInDays } from "date-fns";
+import { addDays, differenceInDays, endOfDay } from "date-fns";
 import { obligationViewerDirection } from "../../../lib/obligation-viewer-labels";
 
 import { movementDisplayAmount } from "../../../lib/movement-amounts";
@@ -255,7 +255,7 @@ export function windowsFromFlowItems(
   now: Date = new Date(),
 ): FutureFlowWindow[] {
   return [7, 15, 30].map((days) => {
-    const windowItems = items.filter((item) => item.date <= addDays(now, days));
+    const windowItems = items.filter((item) => item.date <= endOfDay(addDays(now, days)));
     const expectedInflow = windowItems.filter((item) => item.direction === "inflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);
     const expectedOutflow = windowItems.filter((item) => item.direction === "outflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);
     const receivableCount = windowItems.filter((item) => item.source === "obligation" && item.direction === "inflow").length;
