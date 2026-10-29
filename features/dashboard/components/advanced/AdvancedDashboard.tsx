@@ -665,6 +665,10 @@ export function AdvancedDashboard({
     [learning.readinessScore, review.totalIssues, review.uncategorizedCount],
   );
 
+  const patternMovements = useMemo(
+    () => movements.filter((movement) => !isHistoryBalanceCorrection(movement)),
+    [movements],
+  );
   const getPatternExpense = useCallback(
     (movement: DashboardMovementRow) => expenseAmt(movement, {
       accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency,
@@ -672,25 +676,25 @@ export function AdvancedDashboard({
     [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap],
   );
   const weeklySpend = useMemo(
-    () => weeklySpendPattern(movements, (movement) => isExpense(movement) ? getPatternExpense(movement) : 0),
-    [getPatternExpense, movements],
+    () => weeklySpendPattern(patternMovements, (movement) => isExpense(movement) ? getPatternExpense(movement) : 0),
+    [getPatternExpense, patternMovements],
   );
 
   const anomalySignals = useMemo(
     () => buildAnomalyFindings(
-      movements,
+      patternMovements,
       { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency },
       categoryMap,
       accountMap,
     ),
-    [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements],
+    [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, patternMovements],
   );
 
   const repeatedPatterns = useMemo(() => {
     const now = new Date();
     const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
     return buildPatternClusters<DashboardMovementRow>({
-      movements,
+      movements: patternMovements,
       isCashflow: isCategorizedCashflow,
       isIncomeLike: movementActsAsIncome,
       getAmount: (movement) => movementActsAsIncome(movement)
@@ -699,13 +703,13 @@ export function AdvancedDashboard({
       categoryNames: categoryMap,
       now,
       sinceDays: 90,
-      limit: movements.length,
+      limit: patternMovements.length,
     }).map((cluster) => ({
       ...cluster,
       ...habitPresentation(cluster, patternMovementMap, accountMap),
       lastLabel: format(new Date(cluster.lastAt), "d MMM", { locale: es }),
     })).sort((a, b) => b.total - a.total).slice(0, 4);
-  }, [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements, patternMovementMap]);
+  }, [accountCurrencyMap, accountMap, activeCurrency, baseCurrency, categoryMap, exchangeRateMap, patternMovements, patternMovementMap]);
 
   const risingCategoryPatterns = useMemo(() => {
     const now = new Date();
@@ -717,7 +721,7 @@ export function AdvancedDashboard({
     const previousTotals = new Map<number | null, number>();
     const currentMovementIds = new Map<number | null, number[]>();
 
-    for (const movement of movements.filter((item) => item.status === "posted" && isExpense(item))) {
+    for (const movement of patternMovements.filter((item) => item.status === "posted" && isExpense(item))) {
       const key = movement.categoryId ?? null;
       const amount = expenseAmt(movement, ctx);
       if (inRange(movement, currentStart, now)) {
@@ -739,7 +743,7 @@ export function AdvancedDashboard({
       .filter((item) => item.delta > Math.max(10, item.previous * 0.18) && item.current >= 12)
       .sort((a, b) => b.delta - a.delta)
       .slice(0, 4);
-  }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements]);
+  }, [accountCurrencyMap, activeCurrency, baseCurrency, categoryMap, exchangeRateMap, patternMovements]);
 
   const patternQuickRead = useMemo(() => {
     const topRepeat = repeatedPatterns[0] ?? null;
