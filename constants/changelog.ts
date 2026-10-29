@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
+      "Fin de mes ahora aclara que el monto de compromisos suma los cobros y resta los pagos pendientes. Los plazos de Flujo incluyen completo su último día.",
       "Las correcciones de saldo ya no inflan tus patrones de gasto ni el gasto habitual usado para proyectar los próximos meses.",
       "Con el modo sin conexión encendido, lo que la app guarda en tu teléfono (movimientos, cuentas, deudas y los cambios que aún no se envían) ahora queda cifrado (también la copia que la app usa para abrir al instante): sin tu teléfono desbloqueado, nadie puede leer esos archivos. No tienes que hacer nada y no notarás diferencia.",
       "El asistente ahora te dice qué está revisando (tus deudas, tus presupuestos, tus movimientos…) y su respuesta va apareciendo mientras la escribe, en vez de llegar de golpe al final. Si te equivocaste al preguntar, toca el botón de detener: esa pregunta no se descuenta de las del día. (Pro)",

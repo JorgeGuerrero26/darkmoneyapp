@@ -70,8 +70,8 @@ export function MonthEndSheet({ currency, balance, accounts, committedNet, varia
 
             <TouchableOpacity style={styles.formulaAction} onPress={() => setView("commitments")} activeOpacity={0.82} accessibilityRole="button">
               <View style={styles.formulaCopy}>
-                <Text style={styles.formulaTitle}>Compromisos pendientes</Text>
-                <Text style={styles.formulaSubtitle}>Suscripciones, cuotas y fijos</Text>
+                <Text style={styles.formulaTitle}>Neto de compromisos</Text>
+                <Text style={styles.formulaSubtitle}>Cobros menos pagos pendientes</Text>
               </View>
               <Text style={[styles.formulaAmount, { color: committedNet >= 0 ? COLORS.income : COLORS.expense }]}>{signed(committedNet)}</Text>
               <ChevronRight size={15} color={COLORS.textDisabled} />

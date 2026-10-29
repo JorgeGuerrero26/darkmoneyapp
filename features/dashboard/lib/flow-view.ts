@@ -2,6 +2,12 @@ import { addDays, endOfDay, startOfDay } from "date-fns";
 
 import type { ProjectedMonth } from "../../projection/lib/cashflow-calendar";
 import { projectionFlowItems } from "./projectionFlowItems";
+import type { FutureFlowWindow } from "./dashboard-builders";
+
+/** An equal total alone does not prove that the later window has no additional items. */
+export function hasNoNewWindowItems(current: FutureFlowWindow, previous: FutureFlowWindow | undefined, unconvertedCount: number): boolean {
+  return previous != null && unconvertedCount === 0 && current.scheduledCount === previous.scheduledCount;
+}
 
 export function firstNegativeMonth(months: readonly ProjectedMonth[]): ProjectedMonth | null {
   return months.find((month) => month.closingBalance < 0) ?? null;

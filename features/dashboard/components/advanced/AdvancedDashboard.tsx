@@ -341,7 +341,7 @@ export function AdvancedDashboard({
     const items = projectionFlowItems(monthCalendar.months, now);
     return {
       windows: windowsFromFlowItems(items, currentVisibleBalance, now),
-      weekItems: items.filter((item) => item.date <= addDays(now, 7)),
+      weekItems: items.filter((item) => item.date <= endOfDay(addDays(now, 7))),
     };
   }, [monthCalendar, currentVisibleBalance]);
   const weekWindow = windows[0];

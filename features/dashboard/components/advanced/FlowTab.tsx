@@ -8,7 +8,7 @@ import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import { convertDashboardCurrency, type FutureFlowWindow } from "../../lib/dashboard-builders";
-import { firstNegativeMonth, upcomingSubscriptionCharges, visibleProjectionMonths } from "../../lib/flow-view";
+import { firstNegativeMonth, hasNoNewWindowItems, upcomingSubscriptionCharges, visibleProjectionMonths } from "../../lib/flow-view";
 import { transferAmt } from "../../lib/aggregations";
 import type { DashboardMovementRow } from "../../lib/dashboard-row";
 import type { ConversionCtx } from "../../lib/types";
@@ -72,7 +72,7 @@ export function FlowTab({ projectionInputs, windows, obligations, movements, acc
   const maxBalance = Math.max(1, ...projection.months.map((month) => Math.abs(month.closingBalance)));
   const activeWindow = windows.find((window) => window.days === days) ?? windows[0];
   const previousWindow = windows.find((window) => window.days === (days === 15 ? 7 : 15));
-  const sameAsEarlierWindow = days !== 7 && previousWindow?.expectedInflow === activeWindow.expectedInflow && previousWindow?.expectedOutflow === activeWindow.expectedOutflow;
+  const sameAsEarlierWindow = days !== 7 && hasNoNewWindowItems(activeWindow, previousWindow, projection.unconvertedCount);
 
   const receivables = useMemo(() => obligations
     .filter((obligation) => obligation.status === "active" && obligationViewerDirection(obligation) === "receivable")
