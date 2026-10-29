@@ -22,12 +22,12 @@ Marcar con [x] al resolver.
 
 Todas deben venir de una misma función o selector.
 
-- [ ] **Próximos 7 días:** +S/ 564.10 (Flujo) vs −S/ 62.00 (Resumen). *(rev. 47)*
+- [x] **Próximos 7 días:** Resumen y Flujo leen la misma ventana; en las capturas de móvil del 29 oct ambos muestran S/ 650.00 de entradas y S/ 115.90 de salidas, neto +S/ 534.10. *(rev. 47)*
 - [x] ~~**Cierre de mes:** S/ 5,151.60 (Flujo), S/ 5,194.01 (Resumen), S/ 4,927.33 (Fin de mes).~~ Resuelto en código: Resumen y Flujo leen el mismo `useCashflowProjection`. Confirmar en la app que también coincide con la hoja Fin de mes. *(rev. 47)*
 - [x] ~~**Reserva:** 0.9 vs 1.2 meses.~~ Resuelto en código: Salud y caja usan `healthBaseline`. Confirmar en la app. *(rev. 50)*
-- [ ] **Suscripciones:** las filas suman S/ 62.00 y el total dice S/ 115.90. *(rev. 47)*
-- [ ] **7 d y 15 d muestran exactamente lo mismo** (S/ 680 / S/ 115.90 / S/ 5,365.08). *(rev. 47)*
-- [ ] **"Agenda comprometida +S/ 618" en verde:** si es comprometido, no debería sumar. *(rev. 47)*
+- [x] **Suscripciones:** las cinco filas de móvil suman S/ 115.90; la quinta es S/ 53.90. El total y la lista usan los cobros de los próximos 30 días. *(rev. 47)*
+- [x] **7 d y 15 d muestran exactamente lo mismo:** los cortes son distintos y se verifica que cada último día esté incluido; en la web, el 29 oct no había compromisos nuevos entre ambos plazos. Pendiente comprobar el selector de 15 días en móvil. *(rev. 47)*
+- [x] **"Agenda comprometida +S/ 618" en verde:** es el neto de cobros menos pagos, no solo salidas. La hoja ahora lo llama «Neto de compromisos» y aclara el cálculo. Pendiente verificar el texto en móvil. *(rev. 47)*
 
 ## 3. Datos y nombres
 
