@@ -1,5 +1,6 @@
 import type { ProjectedMonth } from "../../../projection/lib/cashflow-calendar";
-import { firstNegativeMonth, upcomingSubscriptionCharges, visibleProjectionMonths } from "../flow-view";
+import { firstNegativeMonth, hasNoNewWindowItems, upcomingSubscriptionCharges, visibleProjectionMonths } from "../flow-view";
+import type { FutureFlowWindow } from "../dashboard-builders";
 
 const now = new Date(2026, 8, 29, 14);
 
@@ -20,6 +21,12 @@ function month(key: string, balance: number, charges: Array<{ date: string; amou
 }
 
 describe("Flujo", () => {
+  it("solo dice que no hay compromisos nuevos cuando no hay partidas adicionales ni conversiones pendientes", () => {
+    const week: FutureFlowWindow = { days: 7, expectedInflow: 100, expectedOutflow: 20, estimatedBalance: 80, scheduledCount: 2, receivableCount: 1, payableCount: 1, unconvertedCount: 0 };
+    expect(hasNoNewWindowItems({ ...week, days: 15 }, week, 0)).toBe(true);
+    expect(hasNoNewWindowItems({ ...week, days: 15, scheduledCount: 3 }, week, 0)).toBe(false);
+    expect(hasNoNewWindowItems({ ...week, days: 15 }, week, 1)).toBe(false);
+  });
   it("highlights the first month that actually crosses below zero", () => {
     const months = [month("2026-09", 100), month("2026-10", 20), month("2026-11", -15), month("2026-12", -30)];
     expect(firstNegativeMonth(months)?.monthKey).toBe("2026-11");
