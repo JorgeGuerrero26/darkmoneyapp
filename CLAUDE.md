@@ -296,6 +296,14 @@ Guarda movimientos en SQLite y los sincroniza solo. **Apagado por defecto**, det
   verifica el teléfono**: la prueba en dispositivo es `docs/OFFLINE_DEVICE_TEST.md`; registrarla aparte.
 - IPA de iPhone sin Mac: `docs/BUILD_IPA_GITHUB.md` (workflow de GitHub + Sideloadly).
 
+## Nuevas apps de la familia Dark
+
+Para crear otra app con esta arquitectura (o revisar si una la sigue), leer primero
+[docs/GUIA_NUEVAS_APPS.md](docs/GUIA_NUEVAS_APPS.md): pila, checklist del primer día, capas,
+reglas de base de datos, modo sin conexión, publicación, paridad web/móvil, reglas de oro y cómo
+dejarla lista para mudarse de servidor. Es la copia en el repo de un documento compartido; si se
+cambia una, se cambia la otra.
+
 ## Skills
 
 Las skills locales viven en .claude/skills/ o .agents/skills/.
