@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
 import { useEffect, useRef } from "react";
 
 import { useToast } from "../../hooks/useToast";
@@ -34,7 +35,7 @@ type Props = {
  * del aviso (`showRichToast`). Las siete pantallas se quedan como estaban y el aspecto lo
  * decide un solo sitio.
  */
-export function UndoBanner({ visible, message, detail, onUndo, durationMs = 5000 }: Props) {
+export function UndoBanner({ visible, message, detail, onUndo, durationMs = TOAST_DURATION_MS }: Props) {
   const { showRichToast } = useToast();
 
   // Refs para que el aviso use SIEMPRE el callback y el texto de ahora, sin re-dispararse

@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { Platform } from "react-native";
@@ -70,7 +71,7 @@ function NotificationsScreen() {
   const { user, profile } = useAuth();
   const { showToast, showRichToast, showErrorToast } = useToast();
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<number[]>([]);
-  // Notifs whose delete has been requested but not yet committed (5s undo window).
+  // Notifs whose delete has been requested but not yet committed (undo window).
   // Filtered out of the visible list so the row "vanishes" immediately; if the user
   // taps undo, they reappear automatically once the id leaves this set.
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
@@ -399,7 +400,7 @@ function NotificationsScreen() {
       ? "Notificación eliminada"
       : `${ids.length} notificaciones eliminadas`;
     const timer = setTimeout(() => {
-      // After 5s, commit the delete on the server.
+      // After the undo window, commit the delete on the server.
       deleteTimersRef.current.delete(ids[0]);
       void (async () => {
         try {
@@ -418,13 +419,13 @@ function NotificationsScreen() {
           showErrorToast(ids.length === 1 ? "No se pudo eliminar la notificación" : "No se pudieron eliminar las notificaciones", error);
         }
       })();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     // Track timer under the first id; cancelling any one id in the batch cancels the whole undo.
     deleteTimersRef.current.set(ids[0], timer);
     showRichToast({
       type: "delete",
       title: undoMessage,
-      duration: 5000,
+      duration: TOAST_DURATION_MS,
       onUndo: () => {
         const pending = deleteTimersRef.current.get(ids[0]);
         if (pending) {

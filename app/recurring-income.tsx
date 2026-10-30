@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../constants/config";
 import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
@@ -302,7 +303,7 @@ function RecurringIncomeScreen() {
       // la ejecutaria por segunda vez.
       pendingDeleteRuns.current.delete(item.id);
       run();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     deleteTimers.current.set(item.id, timer);
     pendingDeleteRuns.current.set(item.id, run);
   }, [deleteMutation, showToast]);
@@ -586,7 +587,7 @@ function RecurringIncomeScreen() {
               return `${pendingDeleteIds.size} ingresos fijos eliminados`;
             })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            durationMs={5000}
+            durationMs={TOAST_DURATION_MS}
             bottomOffset={insets.bottom + 80}
           />
         </>

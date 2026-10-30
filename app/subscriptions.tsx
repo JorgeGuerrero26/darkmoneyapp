@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../constants/config";
 import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
@@ -226,7 +227,7 @@ function SubscriptionsScreen() {
       // la ejecutaria por segunda vez.
       pendingDeleteRuns.current.delete(subscription.id);
       run();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     deleteTimers.current.set(subscription.id, timer);
     pendingDeleteRuns.current.set(subscription.id, run);
   }, [deleteMutation, showToast]);
@@ -588,7 +589,7 @@ function SubscriptionsScreen() {
               return `${pendingDeleteIds.size} suscripciones eliminadas`;
             })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            durationMs={5000}
+            durationMs={TOAST_DURATION_MS}
             bottomOffset={insets.bottom + 80}
           />
           <MarkSubscriptionPaidSheet

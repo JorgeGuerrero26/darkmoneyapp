@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
 import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -350,7 +351,7 @@ function BudgetsScreen() {
       // la ejecutaria por segunda vez.
       pendingDeleteRuns.current.delete(budget.id);
       run();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     deleteTimers.current.set(budget.id, timer);
     pendingDeleteRuns.current.set(budget.id, run);
   }, [deleteMutation, showToast]);
@@ -678,7 +679,7 @@ function BudgetsScreen() {
               [...pendingDeleteIds].map((id) => pendingDeleteLabels.current.get(id) ?? ""),
             )}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            durationMs={5000}
+            durationMs={TOAST_DURATION_MS}
             bottomOffset={insets.bottom + 80}
           />
         </>

@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
 import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
@@ -90,7 +91,7 @@ function ContactsScreen() {
   }, []);
 
   // Undo-delete: contactos ocultos pendientes de eliminación real
-  const UNDO_DELETE_MS = 5000;
+  const UNDO_DELETE_MS = TOAST_DURATION_MS;
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
