@@ -1,3 +1,4 @@
+import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import type { SectionListRenderItem } from "react-native";
@@ -55,6 +56,7 @@ function CategoriesScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("categories", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
 
   const { data: overviewList = [], isLoading, isError } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
@@ -276,6 +278,7 @@ function CategoriesScreen() {
     return (
       <CategorySwipeRow
         category={item}
+        pendingAt={pendingTimes.get(item.id)}
         kindLabel={kindLabel}
         canDelete={canDelete}
         toggleDisabled={toggleMutation.isPending}
@@ -296,7 +299,7 @@ function CategoriesScreen() {
         selectMode={selectMode}
       />
     );
-  }, [handleToggleActive, router, overviewList, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
+  }, [handleToggleActive, router, overviewList, pendingTimes, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
 
   return (
     <ResourceModuleTemplate

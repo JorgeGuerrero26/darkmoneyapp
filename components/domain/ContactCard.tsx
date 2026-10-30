@@ -5,6 +5,7 @@ import {
   ResourceCard,
   ResourceCardIcon,
 } from "../ui/ResourceCard";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
 import { COLORS } from "../../constants/theme";
 import { TYPE_ICON } from "../../features/contacts/lib/contactsLabels";
@@ -26,6 +27,7 @@ export type ContactMetrics = {
 
 type Props = {
   contact: CounterpartyOverview;
+  pendingAt?: string | null;
   metrics?: ContactMetrics;
   canDelete: boolean;
   onPress: () => void;
@@ -39,12 +41,14 @@ type Props = {
 
 function ContactCardContent({
   contact,
+  pendingAt,
   metrics,
   onPress,
   onLongPress,
   selected,
 }: {
   contact: CounterpartyOverview;
+  pendingAt?: string | null;
   metrics?: ContactMetrics;
   onPress: () => void;
   onLongPress?: () => void;
@@ -58,6 +62,7 @@ function ContactCardContent({
       pinned={contact.isPinned}
       title={contact.name}
       subtitle={contactRowSubtitle(contact, metrics)}
+      meta={pendingAt ? <PendingSyncMeta at={pendingAt} /> : undefined}
       archived={contact.isArchived}
       onPress={onPress}
       onLongPress={onLongPress}
@@ -69,6 +74,7 @@ function ContactCardContent({
 
 function ContactCardBase({
   contact,
+  pendingAt,
   metrics,
   canDelete,
   onPress,
@@ -83,6 +89,7 @@ function ContactCardBase({
     return (
       <ContactCardContent
         contact={contact}
+        pendingAt={pendingAt}
         metrics={metrics}
         onPress={onPress}
         onLongPress={onLongPress}
@@ -121,6 +128,7 @@ function ContactCardBase({
       {({ close, isOpen }) => (
         <ContactCardContent
           contact={contact}
+          pendingAt={pendingAt}
           metrics={metrics}
           onPress={() => {
             if (isOpen()) {
