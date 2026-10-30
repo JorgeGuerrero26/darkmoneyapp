@@ -3583,7 +3583,7 @@ export function AdvancedDashboard({
             windows={windows}
             obligations={obligations}
             movements={movements}
-            accounts={activeAccounts}
+            accounts={snapshot?.accounts ?? activeAccounts}
             conversionCtx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
             onOpenAi={() => {
               setFlowAiSheetOpen(true);

@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
+      "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
       "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
       "Fin de mes ahora aclara que el monto de compromisos suma los cobros y resta los pagos pendientes. Los plazos de Flujo incluyen completo su último día.",
       "Las correcciones de saldo ya no inflan tus patrones de gasto ni el gasto habitual usado para proyectar los próximos meses.",

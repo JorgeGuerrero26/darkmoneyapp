@@ -34,7 +34,7 @@ Todas deben venir de una misma función o selector.
 - [x] **Hábitos sin descripción:** `habitPresentation` reemplaza el nombre de cuenta por «Gasto sin descripción» o «Ingreso sin descripción» y `PatternsTab` muestra la cuenta en la segunda línea. Cubierto por pruebas. *(rev. 46)*
 - [ ] **Tres presupuestos llamados "Alimentación mensual" con cifras distintas:** ¿duplicados o de meses distintos? *(rev. 51)*
 - [ ] **Tildes en categorías del sistema:** Tecnología, Alimentación, Diversión. *(rev. 48, 50)*
-- [ ] **"Cuenta 8":** nombre por defecto. Pedir nombre al crear. *(rev. 47)*
+- [ ] **"Cuenta 8":** el formulario ya exige nombre; Flujo ahora busca nombres también en cuentas archivadas. Falta comprobar con los datos reales que esa cuenta esté en el catálogo cargado. *(rev. 47)*
 - [ ] **Errores de tipeo del usuario** ("Correción", "Suelgo AGV", "Yt Premiun"): opcional, sugerir corrección. *(rev. 49, 51)*
 - [x] **"Actualizado hace 42s" → "hace 42 s":** corregido en las cabeceras de Movimientos, Cuentas y Créditos y Deudas. *(rev. 54)*
 
