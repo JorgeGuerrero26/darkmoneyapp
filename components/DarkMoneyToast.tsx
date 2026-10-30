@@ -49,6 +49,8 @@ export interface ToastConfig {
   amount?: string;
   duration?: number;
   onUndo?: () => void;
+  /** Abre el contenido relacionado con el aviso. */
+  onView?: () => void;
   /** Solo para el caso que falló. */
   onRetry?: () => void;
 }
@@ -168,6 +170,10 @@ export function DarkMoneyToast({
     config.onRetry?.();
     runHide();
   };
+  const handleView = () => {
+    config.onView?.();
+    runHide();
+  };
 
   // Check en todo lo que salió bien; alerta en el fallo; nada en los avisos informativos, que no
   // confirman ninguna acción.
@@ -234,6 +240,14 @@ export function DarkMoneyToast({
             accessibilityRole="button"
           >
             <Text style={styles.actionText}>Reintentar</Text>
+          </Pressable>
+        ) : config.onView ? (
+          <Pressable
+            onPress={handleView}
+            style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>Ver</Text>
           </Pressable>
         ) : null}
         {/* El borde va encima y del mismo tamaño que las capas de fondo. En la propia píldora
