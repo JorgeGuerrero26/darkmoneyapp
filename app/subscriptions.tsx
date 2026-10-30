@@ -1,3 +1,4 @@
+import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { CheckSquare, Download, MoreVertical, Pause, Trash2, X } from "lucide-react-native";
@@ -72,6 +73,7 @@ function SubscriptionsScreen() {
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("subscriptions", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
@@ -337,6 +339,7 @@ function SubscriptionsScreen() {
   const renderSubscription: SectionListRenderItem<SubscriptionSummary, SubscriptionListSection> = useCallback(({ item }) => (
     <SubscriptionSwipeRow
       subscription={item}
+      pendingAt={pendingTimes.get(item.id)}
       onPress={() => {
         if (selectMode) {
           toggleSelect(item.id);
@@ -354,7 +357,7 @@ function SubscriptionsScreen() {
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [handleTogglePause, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [handleTogglePause, pendingTimes, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const filterEntranceLabel = (() => {

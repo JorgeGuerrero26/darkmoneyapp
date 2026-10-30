@@ -6,6 +6,7 @@ import { COLORS, RADIUS } from "../../../constants/theme";
 import type { BudgetOverview } from "../../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   budget: BudgetOverview;
   selected?: boolean;
   onPress: () => void;
@@ -17,6 +18,7 @@ type Props = {
 
 export function BudgetSwipeRow({
   budget,
+  pendingAt,
   selected,
   onPress,
   onLongPress,
@@ -48,6 +50,7 @@ export function BudgetSwipeRow({
       {({ close, isOpen }) => (
         <BudgetCard
           budget={budget}
+          pendingAt={pendingAt}
           selected={selected}
           onPress={() => {
             if (isOpen()) {

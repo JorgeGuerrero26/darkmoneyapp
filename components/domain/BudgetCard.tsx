@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 
 import { ResourceCard } from "../ui/ResourceCard";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { daysLeft, expectedPace } from "../../features/budgets/lib/budgetRules";
@@ -11,6 +12,7 @@ import { useUiStore } from "../../store/ui-store";
 import type { BudgetOverview } from "../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   budget: BudgetOverview;
   selected?: boolean;
   onPress?: () => void;
@@ -18,7 +20,7 @@ type Props = {
 };
 
 /** Ledger row: what remains is the answer; spent versus limit and pace explain it. */
-function BudgetCardBase({ budget, selected, onPress, onLongPress }: Props) {
+function BudgetCardBase({ budget, pendingAt, selected, onPress, onLongPress }: Props) {
   // Suscripción propia: invalida el memo cuando cambia el modo privacidad
   // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
   useUiStore((state) => state.privacyMode);
@@ -52,12 +54,15 @@ function BudgetCardBase({ budget, selected, onPress, onLongPress }: Props) {
         </View>
       }
       meta={
+        <>
+        <PendingSyncMeta at={pendingAt} />
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${Math.min(100, Math.max(0, percent))}%` }, over && styles.fillOver]} />
           {!over && pace > 0 && pace < 1 ? (
             <View style={[styles.pace, { left: `${pace * 100}%` }]} />
           ) : null}
         </View>
+        </>
       }
     />
   );

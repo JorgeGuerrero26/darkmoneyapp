@@ -1,3 +1,4 @@
+import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
@@ -82,6 +83,7 @@ function BudgetsScreen() {
   });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("budgets", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
@@ -448,6 +450,7 @@ function BudgetsScreen() {
     return (
       <BudgetSwipeRow
         budget={budget}
+        pendingAt={pendingTimes.get(budget.id)}
         selected={selectedIds.has(budget.id)}
         onPress={() => {
           if (selectMode) {
@@ -465,7 +468,7 @@ function BudgetsScreen() {
         onTogglePin={selectMode ? undefined : () => handleTogglePin(budget)}
       />
     );
-  }, [handleDelete, handleDuplicate, handleTogglePin, router, selectMode, selectedIds, toggleSelect]);
+  }, [handleDelete, handleDuplicate, handleTogglePin, pendingTimes, router, selectMode, selectedIds, toggleSelect]);
 
   return (
     <ResourceModuleTemplate

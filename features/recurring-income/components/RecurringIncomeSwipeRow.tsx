@@ -6,6 +6,7 @@ import { COLORS } from "../../../constants/theme";
 import type { RecurringIncomeSummary } from "../../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   item: RecurringIncomeSummary;
   onPress: () => void;
   onDelete: () => void;
@@ -17,6 +18,7 @@ type Props = {
 
 export function RecurringIncomeSwipeRow({
   item,
+  pendingAt,
   onPress,
   onDelete,
   onConfirmArrival,
@@ -28,6 +30,7 @@ export function RecurringIncomeSwipeRow({
     return (
       <RecurringIncomeCard
         item={item}
+        pendingAt={pendingAt}
         onPress={onPress}
         onLongPress={onLongPress}
         selected={selected}
@@ -58,6 +61,7 @@ export function RecurringIncomeSwipeRow({
       {({ close, isOpen }) => (
         <RecurringIncomeCard
           item={item}
+          pendingAt={pendingAt}
           onPress={() => {
             if (isOpen()) {
               close();
