@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/auth-context";
 import { Input } from "../../components/ui/Input";
+import { GoogleSignInButton } from "../../components/domain/GoogleSignInButton";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 
@@ -124,6 +125,8 @@ export default function RegisterScreen() {
           />
 
           <FormSubmitBar label="Crear cuenta" onSubmit={handleRegister} loading={isLoading} />
+
+          <GoogleSignInButton disabled={isLoading} />
         </View>
 
         <View style={styles.footer}>
