@@ -915,6 +915,7 @@ function DashboardScreen() {
             currencyOptions={simpleCurrencyOptions}
             onCurrencyChange={handleCurrencyChange}
             accountTotal={simpleAccountTotal}
+            detectedMovements={<DetectedMovementInbox userId={profile?.id ?? null} workspaceId={activeWorkspaceId} accounts={snapshot?.accounts ?? []} categories={snapshot?.categories ?? []} privacyMode={privacyMode} />}
             accounts={simpleAccounts}
             period={period}
             onPeriodChange={setPeriod}

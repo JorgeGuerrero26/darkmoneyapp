@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
+      "El inicio simple también muestra los movimientos detectados para que puedas revisarlos desde allí.",
       "La hoja de cambios pendientes ocupa como máximo media pantalla y puedes deslizarla para ver la lista.",
       "Si tocas «Sin conexión» cuando no tienes cambios pendientes, la hoja ahora permanece abierta y te lo indica.",
       "Cuando se envían tus cambios pendientes, el aviso vuelve a aparecer arriba como los demás avisos de la app.",
