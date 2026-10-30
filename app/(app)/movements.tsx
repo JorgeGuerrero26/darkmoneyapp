@@ -159,12 +159,12 @@ function MovementsScreen() {
     if (!dataUpdatedAt) return "";
     const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
     if (seconds < 10) return "Ahora";
-    if (seconds < 60) return `Actualizado hace ${seconds}s`;
+    if (seconds < 60) return `Actualizado hace ${seconds} s`;
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `Actualizado hace ${minutes}min`;
+    if (minutes < 60) return `Actualizado hace ${minutes} min`;
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `Actualizado hace ${hours}h`;
-    return `Actualizado hace ${Math.floor(hours / 24)}d`;
+    if (hours < 24) return `Actualizado hace ${hours} h`;
+    return `Actualizado hace ${Math.floor(hours / 24)} d`;
   }, [dataUpdatedAt]);
 
   // ── Filters ──────────────────────────────────────────────────────────────

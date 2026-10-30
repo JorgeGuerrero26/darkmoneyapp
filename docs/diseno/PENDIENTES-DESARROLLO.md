@@ -31,17 +31,17 @@ Todas deben venir de una misma función o selector.
 
 ## 3. Datos y nombres
 
-- [ ] **Hábitos sin descripción toman el nombre de la cuenta** ("Cuenta Principal"). Usar "Gasto sin descripción" / "Ingreso sin descripción" y poner la cuenta en la segunda línea. *(rev. 46)*
+- [x] **Hábitos sin descripción:** `habitPresentation` reemplaza el nombre de cuenta por «Gasto sin descripción» o «Ingreso sin descripción» y `PatternsTab` muestra la cuenta en la segunda línea. Cubierto por pruebas. *(rev. 46)*
 - [ ] **Tres presupuestos llamados "Alimentación mensual" con cifras distintas:** ¿duplicados o de meses distintos? *(rev. 51)*
 - [ ] **Tildes en categorías del sistema:** Tecnología, Alimentación, Diversión. *(rev. 48, 50)*
 - [ ] **"Cuenta 8":** nombre por defecto. Pedir nombre al crear. *(rev. 47)*
 - [ ] **Errores de tipeo del usuario** ("Correción", "Suelgo AGV", "Yt Premiun"): opcional, sugerir corrección. *(rev. 49, 51)*
-- [ ] **"Actualizado hace 42s" → "hace 42 s"** (con espacio). *(rev. 54)*
+- [x] **"Actualizado hace 42s" → "hace 42 s":** corregido en las cabeceras de Movimientos, Cuentas y Créditos y Deudas. *(rev. 54)*
 
 ## 4. Colores mal asignados
 
-- [ ] **Ahorro 20.6% en naranja (clay)** aunque es positivo. *(rev. 48)*
-- [ ] **"Gastos −S/ 5,623.93 vs mes anterior" en clay:** gastar menos es bueno. Comparaciones en gris y en palabras. *(rev. 49)*
+- [x] **Ahorro positivo en clay:** Historial usa el color de ingreso para ahorro positivo; el resumen del período usa texto neutro. *(rev. 48)*
+- [x] **Comparaciones de gastos:** el detalle del mes las expresa con «más» o «menos» y texto gris. *(rev. 49)*
 - [x] ~~**Umbral de confiabilidad de datos:** usar 80% en todas partes.~~ Resuelto (ver grupo 1). *(rev. 43, 50)*
 
 ## 5. Reglas de implementación (componentes compartidos)
