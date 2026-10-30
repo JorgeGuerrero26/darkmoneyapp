@@ -15,7 +15,7 @@ La referencia es `icon-billetera.png` (1024×1024). Todo lo demás sale de ella;
 | `notification-icon.png` | Ícono pequeño de las notificaciones de Android (96×96, blanco) | plugin `expo-notifications` → `icon` (+ `color #86CE96`) |
 | `logo-billetera.png` | Pantalla de carga nativa, pantalla de carga JS, login, avisos (Toast) | plugin `expo-splash-screen` → `image`; `app/_layout.tsx`, `app/(auth)/login.tsx`, `components/ui/Toast.tsx` |
 | `plugins/notification-detection/drawable/logo_darkmoney.png` | Encabezado de la ventana rápida de movimientos (Android) | lo copia el plugin a `res/drawable/` |
-| `supabase/functions/invite-banner/banner-darkmoney.jpeg` | Imagen del correo de invitación | edge function `invite-banner` (desplegarla al cambiarla) |
+| `supabase/functions/invite-banner/banner-darkmoney.jpeg` | Imagen del correo de invitación | edge function `invite-banner`: tras cambiarla, `node scripts/brand/embed-invite-banner.mjs` y desplegarla |
 
 Las notificaciones nativas de Kotlin (`DarkMoneyNotificationListenerService.kt`, `NotificationDetectionModule.kt`) usan
 `R.drawable.notification_icon`, el mismo que genera `expo-notifications`. No usar `R.mipmap.ic_launcher*` como ícono
@@ -40,7 +40,7 @@ python -I scripts/brand/verify_sheet.py <tmp>/out assets/images/icon-billetera.p
 ```
 
 Revisar `verificacion.png` (máscaras, tamaños de 18–60 px, fondos claro y oscuro) y copiar las salidas a su sitio
-(tabla de arriba; `logo_darkmoney.png` al plugin, `banner-darkmoney.jpeg` a la edge function).
+(tabla de arriba; `logo_darkmoney.png` al plugin, `banner-darkmoney.jpeg` a la edge function, seguido de `node scripts/brand/embed-invite-banner.mjs`).
 
 ## Llevarlo al teléfono
 
