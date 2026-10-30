@@ -71,9 +71,9 @@ export function FormOptionRow({
     <TouchableOpacity ref={fieldRef}
       style={[
         styles.row,
-        invalid && { backgroundColor: COLORS.dangerStrong + "12" },
         grouped ? styles.rowGrouped : styles.rowStandalone,
         grouped && !last && styles.rowDivided,
+        invalid && { backgroundColor: COLORS.dangerStrong + "12" },
         disabled && styles.rowDisabled,
       ]}
       onPress={onPress}
