@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
+      "Cuando se envían tus cambios pendientes, el aviso vuelve a aparecer arriba como los demás avisos de la app.",
       "Fin de mes ahora aclara que el monto de compromisos suma los cobros y resta los pagos pendientes. Los plazos de Flujo incluyen completo su último día.",
       "Las correcciones de saldo ya no inflan tus patrones de gasto ni el gasto habitual usado para proyectar los próximos meses.",
       "Con el modo sin conexión encendido, lo que la app guarda en tu teléfono (movimientos, cuentas, deudas y los cambios que aún no se envían) ahora queda cifrado (también la copia que la app usa para abrir al instante): sin tu teléfono desbloqueado, nadie puede leer esos archivos. No tienes que hacer nada y no notarás diferencia.",

@@ -8,7 +8,7 @@ import { offlineRuntime } from "../lib/offline/instance";
 import { useOfflineFlag } from "../lib/offline/react";
 import { queryRootsToRefresh } from "../lib/offline/invalidation";
 import { describePushedNotice } from "../lib/offline/pushed-notice";
-import { useUiStore } from "../store/ui-store";
+import { useDarkMoneyToast } from "../components/DarkMoneyToast";
 import { scheduleCoalescedTask } from "../lib/query-refresh-coalescer";
 import { BUDGET_INPUT_TABLES } from "../services/queries/offline-budgets";
 import { applyLocalObligationsToCache } from "../services/queries/offline-obligations";
@@ -87,6 +87,7 @@ export async function reactToLocalDataChange(queryClient: QueryClient, wsId: num
  */
 export function useOfflineBridge(userId: string | null, workspaceId: number | null, memberWorkspaceIds: number[] = []) {
   const queryClient = useQueryClient();
+  const { show } = useDarkMoneyToast();
   const { enabled, loaded } = useOfflineFlag();
   // Clave estable: la lista cambia de identidad en cada render pero casi nunca de contenido.
   const memberKey = [...new Set(memberWorkspaceIds)].sort((a, b) => a - b).join(",");
@@ -102,7 +103,7 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
       onPushed: (report, reason) => {
         // "3 cambios enviados" (Revisión 40): al volver el internet o al enviar varios juntos.
         const notice = describePushedNotice(report, reason);
-        if (notice) useUiStore.getState().showToast(notice, "success");
+        if (notice) show({ type: "success", title: notice });
         const wsId = latest.current.workspaceId;
         if (wsId == null) return;
         scheduleCoalescedTask(queryClient, `movement-snapshot:${wsId}`, () =>
@@ -120,7 +121,7 @@ export function useOfflineBridge(userId: string | null, workspaceId: number | nu
         void queryClient.invalidateQueries({ queryKey: ["pending-detected-movements"] });
       },
     });
-  }, [queryClient]);
+  }, [queryClient, show]);
 
   // Tras CUALQUIER escritura exitosa de la app (alta online, pago de una obligación, categoría
   // nueva…) la base local se pone al día en breve: el motor junta varias en un solo ciclo.
