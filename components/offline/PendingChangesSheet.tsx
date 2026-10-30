@@ -77,7 +77,7 @@ export function PendingChangesSheet() {
   const close = () => setPendingSheetOpen(false);
 
   return (
-    <BottomSheet visible={open} onClose={close} title="Pendientes de enviar" snapHeight={0.7}>
+    <BottomSheet visible={open} onClose={close} title="Pendientes de enviar" snapHeight={0.5}>
       <View style={styles.body}>
         {inbox.length > 0 ? (
           <View style={styles.group}>

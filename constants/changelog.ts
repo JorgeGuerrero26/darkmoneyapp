@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
+      "La hoja de cambios pendientes ocupa como máximo media pantalla y puedes deslizarla para ver la lista.",
       "Si tocas «Sin conexión» cuando no tienes cambios pendientes, la hoja ahora permanece abierta y te lo indica.",
       "Cuando se envían tus cambios pendientes, el aviso vuelve a aparecer arriba como los demás avisos de la app.",
       "Fin de mes ahora aclara que el monto de compromisos suma los cobros y resta los pagos pendientes. Los plazos de Flujo incluyen completo su último día.",
