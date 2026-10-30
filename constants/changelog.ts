@@ -21,6 +21,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
+      "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
+      "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
       "Los campos de selección que tienen un error ahora se resaltan también cuando están agrupados con otros campos.",
       "El inicio simple también muestra los movimientos detectados para que puedas revisarlos desde allí.",
       "La hoja de cambios pendientes ocupa como máximo media pantalla y puedes deslizarla para ver la lista.",
