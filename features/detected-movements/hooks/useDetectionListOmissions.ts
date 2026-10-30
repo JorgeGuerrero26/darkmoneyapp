@@ -48,7 +48,7 @@ export function useDetectionListOmissions(userId: string | null, workspaceId: nu
   }
 
   return { confirmation, busy, omittingId, error,
-    omitOne: (id: number) => { const target = pending.find((item) => item.id === id); if (target) void omit([target]); },
+    omitOne: (id: number) => { const target = pending.find((item) => item.id === id); if (target) void omit([target], false); },
     requestOmitAll: () => { if (!locked.current) setConfirmation([...pending]); },
     confirmOmitAll: () => { if (confirmation) void omit(confirmation, false); },
     cancel: () => { if (!locked.current) setConfirmation(null); },
