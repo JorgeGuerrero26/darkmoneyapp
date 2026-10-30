@@ -58,9 +58,11 @@ describe("useSyncLine", () => {
     expect(shown(tree)).toBe("(nada)");
   });
 
-  it("con cambios guardados en el teléfono se muestra al instante", () => {
+  it("muestra los pendientes de inmediato y espera antes de anunciar la desconexión", () => {
     mockState = { ...base, online: false, pending: 2 };
     act(() => { tree = create(<Probe />); });
+    expect(shown(tree)).toBe("2 por enviar");
+    act(() => { jest.advanceTimersByTime(OFFLINE_LINE_DELAY_MS); });
     expect(shown(tree)).toBe("Sin conexión · 2 por enviar");
   });
 
@@ -72,10 +74,10 @@ describe("useSyncLine", () => {
 });
 
 describe("lineNeedsDelay", () => {
-  it("solo retrasa 'Sin conexión' a secas", () => {
-    expect(lineNeedsDelay({ kind: "offline", text: "Sin conexión", tappable: true }, { pending: 0, rejected: 0, review: 0 })).toBe(true);
-    expect(lineNeedsDelay({ kind: "offline", text: "x", tappable: true }, { pending: 1, rejected: 0, review: 0 })).toBe(false);
-    expect(lineNeedsDelay({ kind: "sending", text: "x", tappable: false }, { pending: 0, rejected: 0, review: 0 })).toBe(false);
-    expect(lineNeedsDelay(null, { pending: 0, rejected: 0, review: 0 })).toBe(false);
+  it("retrasa cualquier aviso de desconexión", () => {
+    expect(lineNeedsDelay({ kind: "offline", text: "Sin conexión", tappable: true })).toBe(true);
+    expect(lineNeedsDelay({ kind: "offline", text: "x", tappable: true })).toBe(true);
+    expect(lineNeedsDelay({ kind: "sending", text: "x", tappable: false })).toBe(false);
+    expect(lineNeedsDelay(null)).toBe(false);
   });
 });

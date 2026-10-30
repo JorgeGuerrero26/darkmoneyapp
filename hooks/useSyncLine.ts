@@ -1,18 +1,14 @@
 import { useEffect, useState } from "react";
 
 import { useOfflineStatus } from "../lib/offline/react";
-import type { OfflineState } from "../lib/offline/runtime";
 import { describeSyncLine, type SyncLine } from "../lib/offline/status-copy";
 
-/** Espera antes de decir "Sin conexión" si todavía no hay nada guardado: un corte breve no debe hacer parpadear el encabezado. */
+/** Espera antes de decir "Sin conexión": un corte breve no debe hacer parpadear el encabezado. */
 export const OFFLINE_LINE_DELAY_MS = 2500;
 
-/**
- * ¿La línea debe esperar antes de mostrarse? Solo "Sin conexión" a secas (sin cambios pendientes ni nada por
- * revisar). Si ya hay algo guardado en el teléfono, el usuario necesita saberlo al instante.
- */
-export function lineNeedsDelay(line: SyncLine | null, state: Pick<OfflineState, "pending" | "rejected" | "review">): boolean {
-  return line?.kind === "offline" && state.pending === 0 && state.rejected + state.review === 0;
+/** El aviso de conexión se retrasa; los cambios que requieren revisión no se retrasan. */
+export function lineNeedsDelay(line: SyncLine | null): boolean {
+  return line?.kind === "offline";
 }
 
 /**
@@ -22,7 +18,7 @@ export function lineNeedsDelay(line: SyncLine | null, state: Pick<OfflineState, 
 export function useSyncLine(): SyncLine | null {
   const status = useOfflineStatus();
   const raw = describeSyncLine(status);
-  const delayed = lineNeedsDelay(raw, status);
+  const delayed = lineNeedsDelay(raw);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -35,6 +31,8 @@ export function useSyncLine(): SyncLine | null {
   }, [delayed]);
 
   if (!raw) return null;
-  if (delayed && !ready) return null;
+  if (delayed && !ready) return status.pending > 0
+    ? { kind: "pending", text: `${status.pending} por enviar`, tappable: true }
+    : null;
   return raw;
 }
