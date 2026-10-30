@@ -46,12 +46,13 @@ it("omitir una fila bloquea pulsaciones repetidas y conserva las demás", async 
   await render();
   await act(async () => { current.omitOne(8); current.omitOne(8); current.requestOmitAll(); });
   expect(mockMutate).toHaveBeenCalledTimes(1);
-  expect(mockMutate).toHaveBeenCalledWith({ action: "omit", suggestions: [receipt(8)], markNotificationsRead: true });
+  expect(mockMutate).toHaveBeenCalledWith({ action: "omit", suggestions: [receipt(8)], markNotificationsRead: false });
   expect(current.busy).toBe(true);
   expect(current.omittingId).toBe(8);
   expect(current.confirmation).toBeNull();
   await act(async () => finish({ changes: [{ before: receipt(8), after: { ...receipt(8), status: "discarded" } }], failed: 0 }));
   expect(mockResolved).toHaveBeenCalledWith([8]);
+  expect(mockToast.mock.calls[0][0].subtitle).toContain("Tus notificaciones se conservan");
   expect(current.busy).toBe(false);
 });
 

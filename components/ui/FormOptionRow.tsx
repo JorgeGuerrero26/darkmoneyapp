@@ -71,16 +71,16 @@ export function FormOptionRow({
     <TouchableOpacity ref={fieldRef}
       style={[
         styles.row,
-        invalid && { backgroundColor: COLORS.dangerStrong + "12" },
         grouped ? styles.rowGrouped : styles.rowStandalone,
         grouped && !last && styles.rowDivided,
+        invalid && { backgroundColor: COLORS.dangerStrong + "12" },
         disabled && styles.rowDisabled,
       ]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.78}
       accessibilityRole="button"
-      accessibilityLabel={trailing ? label : `${label}: ${value ?? placeholder}`}
+      accessibilityLabel={missing ? `${label}: ${feedback.message}` : trailing ? label : `${label}: ${value || placeholder}`}
     >
       {leading ? <View style={styles.leading}>{leading}</View> : null}
       <View style={styles.copy}>

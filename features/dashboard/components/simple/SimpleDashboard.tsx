@@ -2,6 +2,7 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { ArrowRight } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import type { ReactNode } from "react";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
@@ -18,6 +19,7 @@ type Props = {
   currencyOptions: string[];
   onCurrencyChange: (currency: string) => void;
   accountTotal: number | null;
+  detectedMovements?: ReactNode;
   accounts: AccountRow[];
   period: "week" | "month";
   onPeriodChange: (period: "week" | "month") => void;
@@ -40,7 +42,7 @@ function AmountRow({ title, amount, currency, onPress, tone }: { title: string; 
   return onPress ? <Pressable style={styles.row} onPress={onPress} accessibilityRole="button">{content}</Pressable> : <View style={styles.row}>{content}</View>;
 }
 
-export function SimpleDashboard({ now, currency, currencyOptions, onCurrencyChange, accountTotal, accounts, period, onPeriodChange, income, expense, budgets, agenda, receivables, categories, onOpenAccount, onOpenAccounts, onOpenBudgets, onOpenAgenda, onOpenReceivables, onOpenAdvanced }: Props) {
+export function SimpleDashboard({ now, currency, currencyOptions, onCurrencyChange, accountTotal, detectedMovements, accounts, period, onPeriodChange, income, expense, budgets, agenda, receivables, categories, onOpenAccount, onOpenAccounts, onOpenBudgets, onOpenAgenda, onOpenReceivables, onOpenAdvanced }: Props) {
   const monthName = format(now, "LLLL", { locale: es });
   const periodName = period === "month" ? "este mes" : "esta semana";
   const net = income - expense;
@@ -59,6 +61,8 @@ export function SimpleDashboard({ now, currency, currencyOptions, onCurrencyChan
       </View>
       {accounts.length > 3 ? <Pressable onPress={onOpenAccounts} accessibilityRole="button"><Text style={styles.link}>Ver todas las cuentas</Text></Pressable> : null}
     </View>
+
+    {detectedMovements}
 
     <View style={styles.section}>
       <View style={styles.headingRow}><Text style={styles.title}>{period === "month" ? title : "Esta semana"}</Text><View style={styles.selector}>{(["week", "month"] as const).map((option) => <Pressable key={option} style={[styles.option, period === option && styles.optionActive]} onPress={() => onPeriodChange(option)} accessibilityRole="button" accessibilityState={{ selected: period === option }}><Text style={[styles.optionText, period === option && styles.optionTextActive]}>{option === "week" ? "Semana" : "Mes"}</Text></Pressable>)}</View></View>

@@ -63,7 +63,7 @@ export function DetectedMovementCard({ suggestion, draft, count, accounts, categ
       <FormSaveFailure error={error} />
       {duplicate ? <DuplicateDecision {...duplicate} showOmitAction={false} /> : <DetailActionBar horizontalInset={0} primarySide="right"
         secondary={readyToSave || error ? { label: "Revisar", accessibilityLabel: "Revisar detección", icon: Pencil, disabled: busy, onPress: onReview } : undefined}
-        primary={{ label: busy && !omitting ? "Guardando…" : error ? "Reintentar" : readyToSave ? "Guardar" : "Revisar y guardar", accessibilityLabel: readyToSave ? "Guardar movimiento detectado" : "Revisar y guardar movimiento detectado", icon: error ? RotateCw : Check, loading: busy && !omitting, disabled: busy, onPress: readyToSave || error ? onSave : onReview }}
+        primary={{ label: busy && !omitting ? "Guardando…" : error ? "Reintentar" : readyToSave ? "Guardar" : "Revisar y guardar", accessibilityLabel: error ? "Reintentar guardar movimiento detectado" : readyToSave ? "Guardar movimiento detectado" : "Revisar y guardar movimiento detectado", icon: error ? RotateCw : Check, loading: busy && !omitting, disabled: busy, onPress: readyToSave || error ? onSave : onReview }}
       />}
     </View>} />;
 }

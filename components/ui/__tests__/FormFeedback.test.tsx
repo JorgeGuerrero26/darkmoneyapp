@@ -1,11 +1,13 @@
 
 const { act, create } = require("react-test-renderer");
-import { Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import { FormFeedbackProvider, FormSubmitBar, useFormField, FieldFeedbackMessage, FormActionButton } from "../FormFeedback";
 import { requiredField, positiveAmountField } from "../../../lib/form-field-rules";
 import { FormFieldError } from "../../../lib/form-errors";
 import { Input } from "../Input";
 import { TextField } from "../TextField";
+import { FormOptionRow } from "../FormOptionRow";
+import { COLORS } from "../../../constants/theme";
 
 function Field({ id }: { id: string }) { return <FieldFeedbackMessage feedback={useFormField(id)} />; }
 describe("shared form feedback", () => {
@@ -66,6 +68,24 @@ describe("shared form feedback", () => {
     expect(reveal).toHaveBeenCalledTimes(1);
     expect(open).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+  });
+  it("tiñe de rojo una opción inválida incluso dentro de un grupo", () => {
+    act(() => { tree = create(<FormFeedbackProvider onSubmit={save} fields={{ account: { value: 3, invalid: "Cuenta no disponible" } }}>
+      <FormOptionRow grouped label="Cuenta" value="Cuenta anterior" fieldId="account" onPress={account} />
+      <FormSubmitBar onSubmit={save} />
+    </FormFeedbackProvider>); });
+    const row = () => tree.root.findAll((node: any) => node.props.accessibilityLabel === "Cuenta: Cuenta anterior")[0];
+    expect(StyleSheet.flatten(row().props.style).backgroundColor).toBe("transparent");
+    pressSave();
+    expect(StyleSheet.flatten(row().props.style).backgroundColor).toBe(COLORS.dangerStrong + "12");
+    expect(tree.root.findAllByType(Text).filter((node: any) => node.props.children === "Cuenta no disponible")).toHaveLength(1);
+  });
+  it("anuncia la acción requerida de una opción vacía", () => {
+    act(() => { tree = create(<FormFeedbackProvider onSubmit={save} fields={{ account: requiredField(null, "Elige una cuenta") }}>
+      <FormOptionRow grouped label="Cuenta" fieldId="account" onPress={account} />
+      <FormSubmitBar onSubmit={save} />
+    </FormFeedbackProvider>); });
+    expect(tree.root.findAll((node: any) => node.props.accessibilityLabel === "Cuenta: Elige una cuenta").length).toBeGreaterThan(0);
   });
   it("blocks repeated Save and shows Retry only after an asynchronous failure", async () => {
     let reject!: (error: Error) => void;

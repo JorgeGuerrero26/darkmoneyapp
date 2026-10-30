@@ -20,6 +20,7 @@ import {
   useSyncExchangeRatePairMutation,
 } from "../../services/queries/workspace-data";
 import { AccountCard } from "../../components/domain/AccountCard";
+import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -75,6 +76,7 @@ function AccountsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("accounts", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
@@ -404,6 +406,7 @@ function AccountsScreen() {
     !account.isArchived ? (
       <AccountCard
         account={account}
+        pendingAt={pendingTimes.get(account.id)}
         baseCurrencyCode={baseCurrency}
         selected={selectedIds.has(account.id)}
         selectMode={selectMode}
@@ -422,6 +425,7 @@ function AccountsScreen() {
     ) : (
       <AccountCard
         account={account}
+        pendingAt={pendingTimes.get(account.id)}
         baseCurrencyCode={baseCurrency}
         selected={selectedIds.has(account.id)}
         selectMode={selectMode}
@@ -440,7 +444,7 @@ function AccountsScreen() {
         onDelete={() => setDeleteTarget(account)}
       />
     )
-  ), [baseCurrency, handleArchive, router, selectMode, selectedIds, toggleSelect]);
+  ), [baseCurrency, handleArchive, pendingTimes, router, selectMode, selectedIds, toggleSelect]);
 
   const composition = useMemo(
     () => computeComposition({

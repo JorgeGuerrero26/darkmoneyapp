@@ -438,7 +438,7 @@ class NotificationDetectionModule(
     val quickActionLabel = if (saveErrorMessage != null) "Reintentar ahora" else "Registro rápido"
 
     val notification = Notification.Builder(reactContext, channelId)
-      .setSmallIcon(R.mipmap.ic_launcher)
+      .setSmallIcon(R.drawable.notification_icon)
       .setContentTitle(title)
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))

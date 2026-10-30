@@ -692,6 +692,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
       title: requiredField(title, "Escribe el título"),
       principalAmount: isEditing ? { value: principalAmount } : positiveAmountField(principalAmount),
+      returnTotal: { value: returnTotalText, invalid: returnBelowPrincipal ? "El total no puede ser menor que el monto" : null },
+      originType: isEditing ? { value: originType } : requiredField(originType, "Elige cómo nació", null, () => setOriginOpen(true)),
       counterpartyId: requiredField(counterpartyId, "Elige un contacto", null, () => setCounterpartyOpen(true)),
       currencyCode: isEditing ? { value: currencyCode } : requiredField(currencyCode, "Elige una moneda", null, () => setCurrencyOpen(true)),
       startDate: isEditing ? { value: startDate } : dateField(startDate),
@@ -986,13 +988,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             }}
             currencyCode={currencyCode}
           />
-          <Text style={[styles.shareHint, returnBelowPrincipal ? { color: COLORS.danger } : null]}>
-            {returnBelowPrincipal
-              ? "No puede ser menor que el monto."
-              : interestAmount > 0
+          {!returnBelowPrincipal ? (
+            <Text style={styles.shareHint}>
+              {interestAmount > 0
                 ? `Incluye ${formatCurrency(interestAmount, currencyCode)} de interés (${interestPercent}%). Se suma al monto de la deuda sin mover tus cuentas.`
                 : "Se llena solo con el monto. Cámbialo si te van a devolver más."}
-          </Text>
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -1009,7 +1011,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               last={isEditing && !showCurrencyRow}
             />
             {!isEditing ? (
-              <FormOptionRow
+              <FormOptionRow fieldId="originType"
                 grouped
                 label="Cómo nació"
                 value={selectedOriginLabel}

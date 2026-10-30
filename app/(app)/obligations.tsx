@@ -1,3 +1,5 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
+import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import * as Haptics from "expo-haptics";
@@ -84,7 +86,7 @@ import {
   ANALYTICS_EVENT_LABELS,
 } from "../../features/obligations/lib/obligationEventLabels";
 
-const UNDO_DELETE_MS = 5000;
+const UNDO_DELETE_MS = TOAST_DURATION_MS;
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +101,7 @@ function ObligationsScreen() {
   const queryClient = useQueryClient();
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("obligations", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
@@ -594,6 +597,7 @@ function ObligationsScreen() {
       return (
         <ObligationSwipeRow
           obligation={ob}
+          pendingAt={pendingTimes.get(ob.id)}
           obligationShare={shareByObligationId.get(ob.id) ?? null}
           pendingRequestCount={pendingRequestCounts?.get(ob.id) ?? 0}
           selectMode={selectMode}
@@ -621,7 +625,7 @@ function ObligationsScreen() {
         />
       );
     },
-    [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction, selectMode, selectedIds, toggleSelect],
+    [router, shareByObligationId, pendingRequestCounts, pendingTimes, handleObligationRemoveAction, selectMode, selectedIds, toggleSelect],
   );
 
   return (
@@ -804,7 +808,7 @@ function ObligationsScreen() {
                 return label ? `Se eliminó la de «${label}»` : "Obligación eliminada";
               })()}
               onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-              durationMs={5000}
+              durationMs={TOAST_DURATION_MS}
               bottomOffset={90}
             />
 

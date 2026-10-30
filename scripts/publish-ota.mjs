@@ -48,7 +48,7 @@ const CHANNEL = "preview";
  * Se quita una entrada de aquí SOLO cuando conste que ya nadie corre ese binario. Dejar una
  * de más solo gasta un publicado; quitarla antes de tiempo deja a alguien tirado en silencio.
  */
-const LEGACY_RUNTIMES = ["1.1.0", "1.0.9"];
+const LEGACY_RUNTIMES = ["1.2.0", "1.1.0", "1.0.9"];
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");

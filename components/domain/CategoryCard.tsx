@@ -1,12 +1,13 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { ResourceCard, ResourceCardBadge, ResourceCardMetaText } from "../ui/ResourceCard";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { CategoryGlyph } from "./CategoryGlyph";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
 import type { CategoryOverview } from "../../types/domain";
 
-type Props = { category: CategoryOverview; kindLabel: string; onPress: () => void; onLongPress?: () => void; selected?: boolean };
-export const CategoryCard = memo(function CategoryCard({ category, kindLabel, onPress, onLongPress, selected = false }: Props) {
+type Props = { pendingAt?: string | null; category: CategoryOverview; kindLabel: string; onPress: () => void; onLongPress?: () => void; selected?: boolean };
+export const CategoryCard = memo(function CategoryCard({ category, pendingAt, kindLabel, onPress, onLongPress, selected = false }: Props) {
   const color = category.color || COLORS.fog;
   return <ResourceCard variant="row" title={category.name} pinned={category.isPinned}
     archived={!category.isActive} selected={selected} onPress={onPress} onLongPress={onLongPress}
@@ -17,6 +18,7 @@ export const CategoryCard = memo(function CategoryCard({ category, kindLabel, on
       <ResourceCardBadge label={kindLabel} color={color} />
       {category.parentName ? <ResourceCardMetaText>{category.parentName}</ResourceCardMetaText> : null}
       {!category.isActive ? <ResourceCardMetaText>Inactiva</ResourceCardMetaText> : null}
+      <PendingSyncMeta at={pendingAt} />
     </>}
     trailing={<View style={styles.usage}>
       <Text style={styles.count}>{category.movementCount}</Text>

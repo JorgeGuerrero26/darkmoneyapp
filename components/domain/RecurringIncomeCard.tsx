@@ -6,6 +6,7 @@ import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ResourceCard } from "../ui/ResourceCard";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import { todayPeru } from "../../lib/date";
 import { subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
@@ -13,6 +14,7 @@ import { recurringIncomeStanding } from "../../features/recurring-income/lib/rec
 import type { RecurringIncomeSummary } from "../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   item: RecurringIncomeSummary;
   onPress: () => void;
   onLongPress?: () => void;
@@ -28,6 +30,7 @@ function formatYmdLocal(ymd: string) {
 /** Fila de libro: nombre, fecha esperada, importe, frecuencia y acceso al detalle. */
 function RecurringIncomeCardBase({
   item,
+  pendingAt,
   onPress,
   onLongPress,
   selected = false,
@@ -48,6 +51,7 @@ function RecurringIncomeCardBase({
       pinned={item.isPinned}
       title={item.name}
       muted={!isActive}
+      meta={pendingAt ? <PendingSyncMeta at={pendingAt} /> : undefined}
       subtitle={standing.detail}
       subtitleTone={standing.tone === "unconfirmed" ? "alert" : "muted"}
       archived={item.status === "cancelled"}

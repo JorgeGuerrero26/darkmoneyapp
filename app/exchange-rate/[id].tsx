@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -105,7 +106,7 @@ function ExchangeRateDetailScreen() {
       });
     };
     pendingDeleteRun.current = run;
-    deleteTimer.current = setTimeout(run, 5000);
+    deleteTimer.current = setTimeout(run, TOAST_DURATION_MS);
   }
 
   function undoDelete() {
@@ -147,7 +148,7 @@ function ExchangeRateDetailScreen() {
       </> : null}
       <UndoBanner visible={deletePending && !remove.isPending} message="Tipo de cambio pendiente de eliminar"
         detail={rate ? `${rate.fromCurrencyCode} → ${rate.toCurrencyCode}` : undefined}
-        onUndo={undoDelete} durationMs={5000} bottomOffset={insets.bottom + 80} />
+        onUndo={undoDelete} durationMs={TOAST_DURATION_MS} bottomOffset={insets.bottom + 80} />
     </>} />;
 }
 

@@ -6,6 +6,7 @@ import { COLORS } from "../../../constants/theme";
 import type { CategoryOverview } from "../../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   category: CategoryOverview;
   kindLabel: string;
   canDelete: boolean;
@@ -20,6 +21,7 @@ type Props = {
 
 export function CategorySwipeRow({
   category,
+  pendingAt,
   kindLabel,
   canDelete,
   toggleDisabled,
@@ -36,6 +38,7 @@ export function CategorySwipeRow({
     return (
       <CategoryCard
         category={category}
+        pendingAt={pendingAt}
         kindLabel={kindLabel}
         onPress={onPress}
         onLongPress={onLongPress}
@@ -67,6 +70,7 @@ export function CategorySwipeRow({
       {({ close, isOpen }) => (
         <CategoryCard
           category={category}
+          pendingAt={pendingAt}
           kindLabel={kindLabel}
           onPress={() => {
             if (isOpen()) {

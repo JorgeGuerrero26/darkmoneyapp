@@ -10,11 +10,24 @@ export type ChangelogEntry = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    title: "Un solo logo: la billetera",
+    changes: [
+      "El ícono de la app, la pantalla de carga, el inicio de sesión, los avisos y las notificaciones muestran ahora el mismo logo: la billetera blanca con la tarjeta verde. Ya no aparecen la calavera ni el logo anterior.",
+      "En Android, el ícono se ve completo con cualquier forma que use tu teléfono (redondo, cuadrado o de gota). Si usas íconos temáticos, que toman los colores de tu fondo de pantalla, DarkMoney también se adapta.",
+    ],
+  },
+  {
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
       "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
       "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
+      "Los campos de selección que tienen un error ahora se resaltan también cuando están agrupados con otros campos.",
+      "El inicio simple también muestra los movimientos detectados para que puedas revisarlos desde allí.",
+      "La hoja de cambios pendientes ocupa como máximo media pantalla y puedes deslizarla para ver la lista.",
+      "Si tocas «Sin conexión» cuando no tienes cambios pendientes, la hoja ahora permanece abierta y te lo indica.",
+      "Cuando se envían tus cambios pendientes, el aviso vuelve a aparecer arriba como los demás avisos de la app.",
       "Fin de mes ahora aclara que el monto de compromisos suma los cobros y resta los pagos pendientes. Los plazos de Flujo incluyen completo su último día.",
       "Las correcciones de saldo ya no inflan tus patrones de gasto ni el gasto habitual usado para proyectar los próximos meses.",
       "Con el modo sin conexión encendido, lo que la app guarda en tu teléfono (movimientos, cuentas, deudas y los cambios que aún no se envían) ahora queda cifrado (también la copia que la app usa para abrir al instante): sin tu teléfono desbloqueado, nadie puede leer esos archivos. No tienes que hacer nada y no notarás diferencia.",
@@ -30,6 +43,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "También es más rápido crear un crédito o una deuda, aplicar las categorías que te sugiere el inicio y dividir un movimiento detectado en varias categorías: ya no esperan a que se recargue todo antes de cerrar. Y la app queda más ágil justo después de guardar.",
       "Al guardar un movimiento detectado con el modo sin conexión encendido, su aviso desaparece del inicio al instante, aunque el movimiento todavía no se haya enviado. Si tocas Deshacer, el aviso vuelve.",
       "Con mala señal, al abrir la app ya no te manda a iniciar sesión: entras con tu huella como siempre y ves tus datos. Antes, si el internet estaba lento justo al abrir, te pedía la contraseña aunque tu sesión seguía activa.",
+      "Ahora puedes entrar o crear tu cuenta con Google: toca «Continuar con Google», elige tu cuenta y vuelves a la app ya dentro. Si ya tenías cuenta con ese mismo correo, entras a la misma.",
       "Omitir un movimiento detectado ahora es instantáneo: desaparece de la lista al tocar Omitir, sin esperar al servidor. Si no se pudiera guardar, vuelve a aparecer y te avisamos.",
       "Con el modo sin conexión encendido, ya puedes crear sin internet un préstamo o una deuda que saca o mete dinero de una cuenta, con su interés: la deuda, el movimiento de la cuenta y el interés se guardan al instante y se envían juntos cuando vuelve la conexión. Si algo fallara al enviarse, no queda nada a medias.",
       "Con el modo sin conexión encendido, si un cambio no se alcanza a enviar porque el servidor tarda en responder, la app lo vuelve a intentar sola a los pocos segundos y arriba dice «1 por enviar · reintentando». Antes se quedaba esperando hasta que hicieras otra cosa.",

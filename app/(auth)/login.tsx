@@ -14,6 +14,7 @@ import { useUiStore } from "../../store/ui-store";
 import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
+import { GoogleSignInButton } from "../../components/domain/GoogleSignInButton";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { REMEMBER_EMAIL_KEY, REMEMBER_FLAG_KEY, REMEMBER_PASS_KEY, SECURE_EMAIL_KEY, SECURE_PASS_KEY } from "../../lib/device-auth-state";
@@ -340,14 +341,14 @@ export default function LoginScreen() {
                 ]}
               >
                 <Image
-                  source={require("../../assets/images/logo-darkmoney.png")}
+                  source={require("../../assets/images/logo-billetera.png")}
                   style={[styles.logoFace, showLogoBack && styles.logoFaceBack]}
                   resizeMode="contain"
                 />
                 {showLogoBack ? (
                   <>
                     <Image
-                      source={require("../../assets/images/logo-darkmoney.png")}
+                      source={require("../../assets/images/logo-billetera.png")}
                       style={[styles.logoFace, styles.logoFaceBackBoost]}
                       resizeMode="contain"
                     />
@@ -446,6 +447,8 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <FormSubmitBar label="Iniciar sesión" onSubmit={handleLogin} loading={isLoading || isBioLoading} error={errors.general} />
+
+            <GoogleSignInButton disabled={isLoading || isBioLoading} />
 
             <View style={styles.formFooterLinks}>
               <Link href="/(auth)/recovery" asChild>
