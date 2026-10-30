@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AlertTriangle, Check } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../constants/theme";
+import { TOAST_DURATION_MS } from "../constants/config";
 import { useUiStore } from "../store/ui-store";
 import { SafeBlurView } from "./ui/SafeBlurView";
 
@@ -48,6 +49,8 @@ export interface ToastConfig {
   amount?: string;
   duration?: number;
   onUndo?: () => void;
+  /** Abre el contenido relacionado con el aviso. */
+  onView?: () => void;
   /** Solo para el caso que falló. */
   onRetry?: () => void;
 }
@@ -132,15 +135,14 @@ export function DarkMoneyToast({
     translateY.setValue(-20);
     dragY.setValue(0);
 
-    const duration = config.duration ?? (config.onUndo ? 5000 : 3500);
+    const duration = config.duration ?? TOAST_DURATION_MS;
 
     Animated.parallel([
       Animated.spring(opacity, { toValue: 1, useNativeDriver: true, tension: 120, friction: 10 }),
       Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 120, friction: 10 }),
     ]).start();
 
-    // Sin barra de progreso (revisión 41). Deshacer conserva sus 5 s: sin la barra ya no hay
-    // señal de cuánto queda, así que acortarlo iría en contra.
+    // Sin barra de progreso (revisión 41). Algunas acciones conservan un plazo explícito mayor.
 
     // Un banner que aparece arriba y se va solo no existe para quien usa lector de pantalla si
     // no se anuncia. El botón de deshacer sigue siendo alcanzable mientras dura.
@@ -166,6 +168,10 @@ export function DarkMoneyToast({
   };
   const handleRetry = () => {
     config.onRetry?.();
+    runHide();
+  };
+  const handleView = () => {
+    config.onView?.();
     runHide();
   };
 
@@ -234,6 +240,14 @@ export function DarkMoneyToast({
             accessibilityRole="button"
           >
             <Text style={styles.actionText}>Reintentar</Text>
+          </Pressable>
+        ) : config.onView ? (
+          <Pressable
+            onPress={handleView}
+            style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>Ver</Text>
           </Pressable>
         ) : null}
         {/* El borde va encima y del mismo tamaño que las capas de fondo. En la propia píldora

@@ -10,6 +10,7 @@ import {
 } from "../ui/ResourceCard";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
 import { AmountDisplay } from "../ui/AmountDisplay";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { useUiStore } from "../../store/ui-store";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { getAccountIcon } from "../../lib/account-icons";
@@ -22,6 +23,7 @@ type Props = {
   account: AccountSummary;
   /** Workspace base currency, used to detect foreign-currency accounts. */
   baseCurrencyCode?: string;
+  pendingAt?: string | null;
   onPress?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
@@ -53,12 +55,14 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 function AccountCardContent({
   account,
   baseCurrencyCode,
+  pendingAt,
   onPress,
   onLongPress,
   selected,
 }: {
   account: AccountSummary;
   baseCurrencyCode?: string;
+  pendingAt?: string | null;
   onPress?: () => void;
   onLongPress?: () => void;
   selected?: boolean;
@@ -91,6 +95,7 @@ function AccountCardContent({
           <ResourceCardBadge label={typeLabel} color={account.color} />
           {institution ? <ResourceCardMetaText>{institution.label}</ResourceCardMetaText> : null}
           {cycle ? <ResourceCardMetaText>{cycle}</ResourceCardMetaText> : null}
+          <PendingSyncMeta at={pendingAt} />
           {badge ? (
             <View style={[styles.badge, badge.tone === "danger" && styles.badgeDanger, badge.tone === "muted" && styles.badgeMuted, badge.tone === "info" && styles.badgeInfo]}>
               <Text style={[styles.badgeText, badge.tone === "danger" && styles.badgeTextDanger, badge.tone === "muted" && styles.badgeTextMuted, badge.tone === "info" && styles.badgeTextInfo]}>
@@ -117,6 +122,7 @@ function AccountCardContent({
 function AccountCardBase({
   account,
   baseCurrencyCode,
+  pendingAt,
   onPress,
   onArchive,
   onRestore,
@@ -158,6 +164,7 @@ function AccountCardBase({
       <AccountCardContent
         account={account}
         baseCurrencyCode={baseCurrencyCode}
+        pendingAt={pendingAt}
         onPress={onPress}
         onLongPress={onLongPress}
         selected={selected}
@@ -171,6 +178,7 @@ function AccountCardBase({
         <AccountCardContent
           account={account}
           baseCurrencyCode={baseCurrencyCode}
+          pendingAt={pendingAt}
           selected={selected}
           onLongPress={onLongPress}
           onPress={() => {

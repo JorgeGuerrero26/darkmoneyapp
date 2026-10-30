@@ -1,3 +1,5 @@
+import { TOAST_DURATION_MS } from "../constants/config";
+import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { CheckSquare, Download, MoreVertical, Pause, Trash2, TrendingUp } from "lucide-react-native";
@@ -72,6 +74,7 @@ function RecurringIncomeScreen() {
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("recurring_income", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
@@ -300,7 +303,7 @@ function RecurringIncomeScreen() {
       // la ejecutaria por segunda vez.
       pendingDeleteRuns.current.delete(item.id);
       run();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     deleteTimers.current.set(item.id, timer);
     pendingDeleteRuns.current.set(item.id, run);
   }, [deleteMutation, showToast]);
@@ -365,6 +368,7 @@ function RecurringIncomeScreen() {
   const renderItem: SectionListRenderItem<RecurringIncomeSummary, RecurringIncomeListSection> = useCallback(({ item }) => (
     <RecurringIncomeSwipeRow
       item={item}
+      pendingAt={pendingTimes.get(item.id)}
       onPress={() => {
         if (selectMode) {
           toggleSelect(item.id);
@@ -381,7 +385,7 @@ function RecurringIncomeScreen() {
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [arrival.open, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [arrival.open, pendingTimes, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -583,7 +587,7 @@ function RecurringIncomeScreen() {
               return `${pendingDeleteIds.size} ingresos fijos eliminados`;
             })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            durationMs={5000}
+            durationMs={TOAST_DURATION_MS}
             bottomOffset={insets.bottom + 80}
           />
         </>

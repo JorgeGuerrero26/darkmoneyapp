@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { format } from "date-fns";
@@ -55,29 +55,39 @@ export function PendingChangesSheet() {
   const status = useOfflineStatus();
   const [changes, setChanges] = useState<PendingChange[]>([]);
   const [inbox, setInbox] = useState<InboxEntry[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const loadSequence = useRef(0);
 
   const reload = useCallback(async () => {
-    const [nextChanges, nextInbox] = await Promise.all([offlineRuntime.listPendingChanges(), offlineRuntime.inbox()]);
-    setChanges(nextChanges);
-    setInbox(nextInbox);
+    const sequence = ++loadSequence.current;
+    setLoadError(false);
+    try {
+      const [nextChanges, nextInbox] = await Promise.all([offlineRuntime.listPendingChanges(), offlineRuntime.inbox()]);
+      if (sequence !== loadSequence.current) return;
+      setChanges(nextChanges);
+      setInbox(nextInbox);
+    } catch {
+      if (sequence === loadSequence.current) setLoadError(true);
+    }
   }, []);
 
   // Se rehace al abrir y cada vez que cambia lo pendiente o lo que hay para revisar.
   useEffect(() => {
     if (open) void reload();
+    return () => { loadSequence.current += 1; };
   }, [open, reload, status.pending, status.rejected, status.review]);
 
   // Si ya no queda nada que mostrar, la hoja se cierra sola.
   useEffect(() => {
-    if (open && changes.length === 0 && inbox.length === 0 && status.pending === 0 && status.rejected + status.review === 0) {
+    if (open && status.online && changes.length === 0 && inbox.length === 0 && status.pending === 0 && status.rejected + status.review === 0) {
       setPendingSheetOpen(false);
     }
-  }, [open, changes.length, inbox.length, status.pending, status.rejected, status.review]);
+  }, [open, changes.length, inbox.length, status.online, status.pending, status.rejected, status.review]);
 
   const close = () => setPendingSheetOpen(false);
 
   return (
-    <BottomSheet visible={open} onClose={close} title="Pendientes de enviar" snapHeight={0.7}>
+    <BottomSheet visible={open} onClose={close} title="Pendientes de enviar" snapHeight={0.5}>
       <View style={styles.body}>
         {inbox.length > 0 ? (
           <View style={styles.group}>
@@ -107,17 +117,19 @@ export function PendingChangesSheet() {
             </Text>
             {changes.map((change) => {
               const copy = describePendingChange(change);
+              const otherWorkspace = change.workspaceId !== status.workspaceId;
               return (
                 <TouchableOpacity
                   key={change.opId}
                   activeOpacity={0.7}
+                  disabled={otherWorkspace}
                   style={styles.row}
                   onPress={() => {
                     close();
                     router.push(routeFor(change) as never);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`${copy.title}, ${formatTime(change.createdAt)}`}
+                  accessibilityLabel={`${copy.title}, ${formatTime(change.createdAt)}${otherWorkspace ? ", pertenece a otro espacio" : ""}`}
                 >
                   <View style={styles.rowHead}>
                     <CloudOff size={14} color={COLORS.gold} />
@@ -125,15 +137,22 @@ export function PendingChangesSheet() {
                     <Text style={styles.rowTime} maxFontSizeMultiplier={1.3}>{formatTime(change.createdAt)}</Text>
                   </View>
                   {copy.detail ? <Text style={styles.rowDetail} maxFontSizeMultiplier={1.3}>{copy.detail}</Text> : null}
+                  {otherWorkspace ? <Text style={styles.rowDetail}>De otro espacio · cambia de espacio para abrirlo</Text> : null}
                 </TouchableOpacity>
               );
             })}
           </View>
         ) : null}
 
-        <Text style={styles.note} maxFontSizeMultiplier={1.3}>
-          Mientras tanto, los saldos ya incluyen estos cambios. No cierres sesión ni borres la app hasta que se envíen.
-        </Text>
+        {loadError ? <View accessibilityRole="alert">
+          <Text style={styles.note}>No se pudieron cargar los cambios pendientes.</Text>
+          <Button label="Reintentar lectura" variant="ghost" size="sm" onPress={() => void reload()} />
+        </View> : null}
+        {!loadError ? <Text style={styles.note} maxFontSizeMultiplier={1.3}>
+          {changes.length || inbox.length
+            ? "Mientras tanto, los saldos ya incluyen estos cambios. No cierres sesión ni borres la app hasta que se envíen."
+            : status.pending + status.rejected + status.review > 0 ? "Cargando cambios pendientes…" : "No hay cambios pendientes de enviar."}
+        </Text> : null}
         <Button
           label="Intentar enviar ahora"
           variant="secondary"

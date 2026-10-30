@@ -1,3 +1,4 @@
+import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
@@ -63,6 +64,7 @@ function SpendTypesScreen() {
   const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/more" });
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("spend_types", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
 
   const { data: spendTypes = [], isLoading } = useSpendTypesQuery(activeWorkspaceId);
@@ -133,7 +135,7 @@ function SpendTypesScreen() {
         <ResourceSectionList<SpendType, Section>
           sections={sections}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => <SpendTypeSwipeRow item={item}
+          renderItem={({ item }) => <SpendTypeSwipeRow item={item} pendingAt={pendingTimes.get(item.id)}
             categoryCount={gastoCategorias.filter((category) => category.defaultSpendTypeId === item.id).length}
             onPress={() => router.push(`/spend-type/${item.id}?from=spend-types`)} onDelete={() => setDeleteTarget(item)} />}
           contentContainerStyle={{ paddingHorizontal: 0 }}

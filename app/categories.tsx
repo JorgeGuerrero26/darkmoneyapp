@@ -1,3 +1,5 @@
+import { TOAST_DURATION_MS } from "../constants/config";
+import { usePendingRowTimes } from "../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import type { SectionListRenderItem } from "react-native";
@@ -55,6 +57,7 @@ function CategoriesScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("categories", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
 
   const { data: overviewList = [], isLoading, isError } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
@@ -184,7 +187,7 @@ function CategoriesScreen() {
       // la ejecutaria por segunda vez.
       pendingDeleteRuns.current.delete(category.id);
       run();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     deleteTimers.current.set(category.id, timer);
     pendingDeleteRuns.current.set(category.id, run);
   }, [deleteMutation, showToast]);
@@ -276,6 +279,7 @@ function CategoriesScreen() {
     return (
       <CategorySwipeRow
         category={item}
+        pendingAt={pendingTimes.get(item.id)}
         kindLabel={kindLabel}
         canDelete={canDelete}
         toggleDisabled={toggleMutation.isPending}
@@ -296,7 +300,7 @@ function CategoriesScreen() {
         selectMode={selectMode}
       />
     );
-  }, [handleToggleActive, router, overviewList, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
+  }, [handleToggleActive, router, overviewList, pendingTimes, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -459,7 +463,7 @@ function CategoriesScreen() {
               [...pendingDeleteIds].map((id) => pendingDeleteLabels.current.get(id) ?? ""),
             )}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            durationMs={5000}
+            durationMs={TOAST_DURATION_MS}
             bottomOffset={insets.bottom + 80}
           />
 

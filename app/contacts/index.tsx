@@ -1,3 +1,5 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
+import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { useRouter } from "expo-router";
@@ -53,6 +55,7 @@ function ContactsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("counterparties", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -88,7 +91,7 @@ function ContactsScreen() {
   }, []);
 
   // Undo-delete: contactos ocultos pendientes de eliminación real
-  const UNDO_DELETE_MS = 5000;
+  const UNDO_DELETE_MS = TOAST_DURATION_MS;
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
@@ -338,6 +341,7 @@ function ContactsScreen() {
   const renderContactItem: SectionListRenderItem<CounterpartyOverview, ContactListSection> = useCallback(({ item }) => (
     <ContactCard
       contact={item}
+      pendingAt={pendingTimes.get(item.id)}
       metrics={contactMetricsById.get(item.id)}
       onPress={() => {
         if (selectMode) {
@@ -357,7 +361,7 @@ function ContactsScreen() {
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, router, selectMode, selectedIds, toggleSelect]);
+  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, pendingTimes, router, selectMode, selectedIds, toggleSelect]);
 
   return (
     <ResourceModuleTemplate

@@ -53,9 +53,13 @@ export function useToast() {
     } else {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    InteractionManager.runAfterInteractions(() => {
+    // El plazo de deshacer empieza al programar el borrado. No retrasar su aviso hasta el
+    // final de las animaciones: podría aparecer cuando ya no queda tiempo para deshacer.
+    if (config.onUndo) {
       show(config);
-    });
+    } else {
+      InteractionManager.runAfterInteractions(() => show(config));
+    }
   }
 
   /**

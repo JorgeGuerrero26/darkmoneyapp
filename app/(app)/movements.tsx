@@ -1,3 +1,4 @@
+import { TOAST_DURATION_MS } from "../../constants/config";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { MoreVertical, Download, Trash2, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -210,7 +211,7 @@ function MovementsScreen() {
       // la ejecutaria por segunda vez.
       pendingDeleteRuns.current.delete(item.id);
       run();
-    }, 5000);
+    }, TOAST_DURATION_MS);
     deleteTimers.current.set(item.id, timer);
     pendingDeleteRuns.current.set(item.id, run);
   }
@@ -277,7 +278,7 @@ function MovementsScreen() {
       type: 'delete',
       title: described.title,
       subtitle: described.subtitle ?? undefined,
-      duration: 5000,
+      duration: TOAST_DURATION_MS,
       onUndo: () => undoDelete(item.id),
     });
   }
@@ -733,7 +734,7 @@ function MovementsScreen() {
     showRichToast({
       type: 'delete',
       title: describeDeletedMovements(toDelete.length),
-      duration: 5000,
+      duration: TOAST_DURATION_MS,
       onUndo: () => ids.forEach((id) => undoDelete(id)),
     });
   }
@@ -1194,7 +1195,7 @@ function MovementsScreen() {
             <ConfirmDialog
               visible={deleteTarget !== null}
               title="¿Eliminar movimiento?"
-              body="Se eliminará permanentemente. Tienes 5 segundos para deshacer."
+              body="Se eliminará permanentemente. Tienes 3 segundos para deshacer."
               confirmLabel="Eliminar"
               cancelLabel="Cancelar"
               onCancel={cancelDelete}

@@ -12,7 +12,6 @@ import {
   SlidersHorizontal,
   Circle,
   Paperclip,
-  Clock,
 } from "lucide-react-native";
 
 import {
@@ -23,6 +22,7 @@ import {
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY } from "../../constants/theme";
 import { AmountDisplay } from "../ui/AmountDisplay";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { useUiStore } from "../../store/ui-store";
 import { parseDisplayDate } from "../../lib/date";
 import type { MovementRecord } from "../../types/domain";
@@ -174,12 +174,7 @@ export const MovementRow = memo(function MovementRow({
           {statusBadge ? (
             <ResourceCardBadge label={statusBadge.label} color={statusBadge.color} />
           ) : null}
-          {pendingAt ? (
-            <View style={styles.pendingMeta}>
-              <Clock size={10} color={COLORS.gold} />
-              <Text style={styles.pendingText} maxFontSizeMultiplier={1.3}>Por enviar · {formatPendingTime(pendingAt)}</Text>
-            </View>
-          ) : null}
+          <PendingSyncMeta at={pendingAt} />
           {attachmentCount > 0 ? (
             <View style={styles.attachmentMeta}>
               <Paperclip size={9} color={COLORS.storm} />
@@ -204,22 +199,7 @@ export const MovementRow = memo(function MovementRow({
   );
 });
 
-function formatPendingTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : format(date, "H:mm");
-}
-
 const styles = StyleSheet.create({
-  pendingMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
-  pendingText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 10,
-    color: COLORS.gold,
-  },
   attachmentMeta: {
     flexDirection: "row",
     alignItems: "center",

@@ -710,7 +710,6 @@ function ObligationDetailScreen() {
         type: "success",
         title: result.emailSent ? "Invitación enviada" : "Invitación creada",
         subtitle: result.invitedEmail,
-        duration: 5000,
       });
     } catch (err) {
       throw err;

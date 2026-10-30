@@ -6,12 +6,14 @@ import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ResourceCard } from "../ui/ResourceCard";
+import { PendingSyncMeta } from "../ui/PendingSyncMeta";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import { todayPeru } from "../../lib/date";
 import { subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   subscription: SubscriptionSummary;
   onPress: () => void;
   onLongPress?: () => void;
@@ -42,6 +44,7 @@ function formatYmdLocal(ymd: string) {
  */
 function SubscriptionCardBase({
   subscription,
+  pendingAt,
   onPress,
   onLongPress,
   selected = false,
@@ -68,6 +71,7 @@ function SubscriptionCardBase({
       pinned={subscription.isPinned}
       title={subscription.name}
       muted={!isActive}
+      meta={pendingAt ? <PendingSyncMeta at={pendingAt} /> : undefined}
       subtitle={subtitle}
       subtitleTone={overdue ? "alert" : "muted"}
       archived={subscription.status === "cancelled"}

@@ -49,6 +49,21 @@ describe("usePendingRowTimes", () => {
     expect(mockTimes).not.toHaveBeenCalled();
   });
 
+  it("no muestra pendientes de otro espacio mientras carga el actual", async () => {
+    mockState = base;
+    mockTimes.mockResolvedValueOnce([{ id: 7, at: "anterior" }]);
+    let resolveNext!: (rows: { id: number; at: string }[]) => void;
+    mockTimes.mockReturnValueOnce(new Promise((resolve) => { resolveNext = resolve; }));
+    act(() => { tree = create(<Probe workspaceId={1} />); });
+    await flush();
+    expect(shown(tree)).toBe("7@anterior");
+
+    act(() => tree.update(<Probe workspaceId={2} />));
+    expect(shown(tree)).toBe("(vacío)");
+    await act(async () => { resolveNext([{ id: 8, at: "actual" }]); });
+    expect(shown(tree)).toBe("8@actual");
+  });
+
   it("al quedar todo enviado vuelve a vacío", async () => {
     mockState = base;
     mockTimes.mockResolvedValue([{ id: 7, at: "2026-10-14T13:56:00.000Z" }]);

@@ -6,6 +6,7 @@ import { COLORS, RADIUS } from "../../../constants/theme";
 import type { SubscriptionSummary } from "../../../types/domain";
 
 type Props = {
+  pendingAt?: string | null;
   subscription: SubscriptionSummary;
   onPress: () => void;
   onDelete: () => void;
@@ -18,6 +19,7 @@ type Props = {
 
 export function SubscriptionSwipeRow({
   subscription,
+  pendingAt,
   onPress,
   onDelete,
   onTogglePause,
@@ -53,6 +55,7 @@ export function SubscriptionSwipeRow({
     return (
       <SubscriptionCard
         subscription={subscription}
+        pendingAt={pendingAt}
         onPress={onPress}
         onLongPress={onLongPress}
         selected={selected}
@@ -78,6 +81,7 @@ export function SubscriptionSwipeRow({
       {({ close, isOpen }) => (
         <SubscriptionCard
           subscription={subscription}
+          pendingAt={pendingAt}
           onPress={() => {
             if (isOpen()) {
               close();
