@@ -15,14 +15,14 @@ export const CHANGELOG: ChangelogEntry[] = [
     changes: [
       "El ícono de la app, la pantalla de carga, el inicio de sesión, los avisos y las notificaciones muestran ahora el mismo logo: la billetera blanca con la tarjeta verde. Ya no aparecen la calavera ni el logo anterior.",
       "En Android, el ícono se ve completo con cualquier forma que use tu teléfono (redondo, cuadrado o de gota). Si usas íconos temáticos, que toman los colores de tu fondo de pantalla, DarkMoney también se adapta.",
+      "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
+      "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
     ],
   },
   {
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [
-      "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
-      "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
       "Los campos de selección que tienen un error ahora se resaltan también cuando están agrupados con otros campos.",
       "El inicio simple también muestra los movimientos detectados para que puedas revisarlos desde allí.",
       "La hoja de cambios pendientes ocupa como máximo media pantalla y puedes deslizarla para ver la lista.",
