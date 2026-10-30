@@ -11,12 +11,13 @@ const mockRequestSync = jest.fn();
 const mockResolve = jest.fn(async (_id: number) => undefined);
 let mockChanges: PendingChange[] = [];
 let mockInbox: unknown[] = [];
+let mockReadFailure = false;
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../../../lib/offline/react", () => ({ useOfflineStatus: () => mockState }));
 jest.mock("../../../lib/offline/instance", () => ({
   offlineRuntime: {
-    listPendingChanges: async () => mockChanges,
+    listPendingChanges: async () => { if (mockReadFailure) throw new Error("lectura fallida"); return mockChanges; },
     inbox: async () => mockInbox,
     requestSync: (...args: unknown[]) => mockRequestSync(...args),
     resolveInboxEntry: (id: number) => mockResolve(id),
@@ -51,6 +52,7 @@ describe("PendingChangesSheet", () => {
     jest.clearAllMocks();
     mockState = base;
     mockInbox = [];
+    mockReadFailure = false;
     mockChanges = [
       change({ opId: "a", table: "movements", kind: "insert", rowId: 5, label: "Taxi" }),
       change({ opId: "b", table: "accounts", kind: "update", rowId: 2, label: "Principal", changedFields: ["name"] }),
@@ -103,6 +105,17 @@ describe("PendingChangesSheet", () => {
     expect(texts(tree)).toEqual([]); // se cerró
   });
 
+  it("no abre en el espacio actual un cambio de otro espacio", async () => {
+    mockChanges = [change({ workspaceId: 2 })];
+    act(() => { tree = create(<PendingChangesSheet />); });
+    act(() => setPendingSheetOpen(true));
+    await flush();
+    expect(texts(tree).join("\n")).toContain("De otro espacio · cambia de espacio para abrirlo");
+    const row = tree.root.findAll((node: any) => node.props.accessibilityRole === "button" && String(node.props.accessibilityLabel).includes("pertenece a otro espacio"))[0];
+    expect(row.props.disabled).toBe(true);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("lo que necesita revisión sale arriba, con su explicación y su salida", async () => {
     mockState = { ...base, rejected: 1 };
     mockInbox = [{ id: 9, opId: "x", table: "movements", rowId: 3, kind: "update", status: "rejected", code: "row_not_found", message: null, previous: null, summary: "Editar «Café»", createdAt: "2026-10-14T10:00:00Z", resolved: 0 }];
@@ -115,6 +128,19 @@ describe("PendingChangesSheet", () => {
     const discard = tree.root.findAll((node: any) => node.props.label === "Descartar")[0];
     await act(async () => { await discard.props.onPress(); });
     expect(mockResolve).toHaveBeenCalledWith(9);
+  });
+
+  it("ofrece reintentar si falla la lectura de pendientes", async () => {
+    mockReadFailure = true;
+    act(() => { tree = create(<PendingChangesSheet />); });
+    act(() => setPendingSheetOpen(true));
+    await flush();
+    expect(texts(tree).join("\n")).toContain("No se pudieron cargar los cambios pendientes.");
+    expect(texts(tree).join("\n")).not.toContain("Cargando cambios pendientes…");
+    mockReadFailure = false;
+    const retry = tree.root.findAll((node: any) => node.props.label === "Reintentar lectura")[0];
+    await act(async () => { retry.props.onPress(); await Promise.resolve(); await Promise.resolve(); });
+    expect(texts(tree).join("\n")).toContain("Nuevo movimiento · Taxi");
   });
 
   it("el botón de enviar pide un envío manual", async () => {
