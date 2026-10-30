@@ -69,10 +69,10 @@ export function PendingChangesSheet() {
 
   // Si ya no queda nada que mostrar, la hoja se cierra sola.
   useEffect(() => {
-    if (open && changes.length === 0 && inbox.length === 0 && status.pending === 0 && status.rejected + status.review === 0) {
+    if (open && status.online && changes.length === 0 && inbox.length === 0 && status.pending === 0 && status.rejected + status.review === 0) {
       setPendingSheetOpen(false);
     }
-  }, [open, changes.length, inbox.length, status.pending, status.rejected, status.review]);
+  }, [open, changes.length, inbox.length, status.online, status.pending, status.rejected, status.review]);
 
   const close = () => setPendingSheetOpen(false);
 
@@ -132,7 +132,9 @@ export function PendingChangesSheet() {
         ) : null}
 
         <Text style={styles.note} maxFontSizeMultiplier={1.3}>
-          Mientras tanto, los saldos ya incluyen estos cambios. No cierres sesión ni borres la app hasta que se envíen.
+          {changes.length || inbox.length
+            ? "Mientras tanto, los saldos ya incluyen estos cambios. No cierres sesión ni borres la app hasta que se envíen."
+            : status.pending + status.rejected + status.review > 0 ? "Cargando cambios pendientes…" : "No hay cambios pendientes de enviar."}
         </Text>
         <Button
           label="Intentar enviar ahora"

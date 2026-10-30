@@ -68,6 +68,15 @@ describe("PendingChangesSheet", () => {
     expect(texts(tree)).toEqual([]);
   });
 
+  it("permanece abierta sin conexión aunque no haya cambios pendientes", async () => {
+    mockState = { ...base, pending: 0 };
+    mockChanges = [];
+    act(() => { tree = create(<PendingChangesSheet />); });
+    act(() => setPendingSheetOpen(true));
+    await flush();
+    expect(texts(tree).join("\n")).toContain("No hay cambios pendientes de enviar.");
+  });
+
   it("abierta lista los cambios de todos los módulos con su hora, la nota de saldos y el botón de enviar", async () => {
     act(() => { tree = create(<PendingChangesSheet />); });
     act(() => setPendingSheetOpen(true));
