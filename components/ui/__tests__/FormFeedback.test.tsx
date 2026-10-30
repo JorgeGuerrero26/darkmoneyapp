@@ -80,6 +80,13 @@ describe("shared form feedback", () => {
     expect(StyleSheet.flatten(row().props.style).backgroundColor).toBe(COLORS.dangerStrong + "12");
     expect(tree.root.findAllByType(Text).filter((node: any) => node.props.children === "Cuenta no disponible")).toHaveLength(1);
   });
+  it("anuncia la acción requerida de una opción vacía", () => {
+    act(() => { tree = create(<FormFeedbackProvider onSubmit={save} fields={{ account: requiredField(null, "Elige una cuenta") }}>
+      <FormOptionRow grouped label="Cuenta" fieldId="account" onPress={account} />
+      <FormSubmitBar onSubmit={save} />
+    </FormFeedbackProvider>); });
+    expect(tree.root.findAll((node: any) => node.props.accessibilityLabel === "Cuenta: Elige una cuenta").length).toBeGreaterThan(0);
+  });
   it("blocks repeated Save and shows Retry only after an asynchronous failure", async () => {
     let reject!: (error: Error) => void;
     save.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; }));

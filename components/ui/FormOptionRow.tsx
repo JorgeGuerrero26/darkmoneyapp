@@ -80,7 +80,7 @@ export function FormOptionRow({
       disabled={disabled}
       activeOpacity={0.78}
       accessibilityRole="button"
-      accessibilityLabel={trailing ? label : `${label}: ${value ?? placeholder}`}
+      accessibilityLabel={missing ? `${label}: ${feedback.message}` : trailing ? label : `${label}: ${value || placeholder}`}
     >
       {leading ? <View style={styles.leading}>{leading}</View> : null}
       <View style={styles.copy}>
