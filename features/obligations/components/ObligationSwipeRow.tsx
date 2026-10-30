@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Archive, BarChart2, Bell, CreditCard, Trash2, Users } from "lucide-react-native";
 
+import { PendingSyncMeta } from "../../../components/ui/PendingSyncMeta";
 import { ProgressBar } from "../../../components/ui/ProgressBar";
 import {
   ResourceCard,
@@ -45,6 +46,7 @@ type RowIcon = ComponentType<{
 
 export type ObligationSwipeRowProps = {
   obligation: ObligationSummary | SharedObligationSummary;
+  pendingAt?: string | null;
   obligationShare?: ObligationShareSummary | null;
   isSharedWithMe?: boolean;
   pendingRequestCount?: number;
@@ -63,6 +65,7 @@ export type ObligationSwipeRowProps = {
 
 export function ObligationSwipeRow({
   obligation,
+  pendingAt,
   obligationShare,
   isSharedWithMe,
   pendingRequestCount = 0,
@@ -132,7 +135,7 @@ export function ObligationSwipeRow({
           </View>
         }
         meta={
-          shareLabel ? <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} /> : null
+          <>{shareLabel ? <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} /> : null}<PendingSyncMeta at={pendingAt} /></>
         }
       />
     );
@@ -196,8 +199,9 @@ export function ObligationSwipeRow({
           meta={
             // Solo lo EXCEPCIONAL. "Me deben" y "Activa" se deducen del filtro y del signo del
             // monto, así que repetirlos en cada fila no añade nada.
-            pendingRequestCount > 0 || shareLabel || (isSharedWithMe && "share" in obligation) ? (
+            pendingAt || pendingRequestCount > 0 || shareLabel || (isSharedWithMe && "share" in obligation) ? (
               <>
+                <PendingSyncMeta at={pendingAt} />
                 {pendingRequestCount > 0 ? (
                   <ResourceCardBadge
                     label={`${pendingRequestCount} pendiente${pendingRequestCount === 1 ? "" : "s"}`}

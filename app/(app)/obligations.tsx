@@ -1,3 +1,4 @@
+import { usePendingRowTimes } from "../../hooks/useOfflinePendingTimes";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import * as Haptics from "expo-haptics";
@@ -99,6 +100,7 @@ function ObligationsScreen() {
   const queryClient = useQueryClient();
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const pendingTimes = usePendingRowTimes("obligations", activeWorkspaceId);
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
@@ -594,6 +596,7 @@ function ObligationsScreen() {
       return (
         <ObligationSwipeRow
           obligation={ob}
+          pendingAt={pendingTimes.get(ob.id)}
           obligationShare={shareByObligationId.get(ob.id) ?? null}
           pendingRequestCount={pendingRequestCounts?.get(ob.id) ?? 0}
           selectMode={selectMode}
@@ -621,7 +624,7 @@ function ObligationsScreen() {
         />
       );
     },
-    [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction, selectMode, selectedIds, toggleSelect],
+    [router, shareByObligationId, pendingRequestCounts, pendingTimes, handleObligationRemoveAction, selectMode, selectedIds, toggleSelect],
   );
 
   return (
