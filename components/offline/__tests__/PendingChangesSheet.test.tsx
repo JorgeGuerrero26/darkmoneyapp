@@ -12,12 +12,13 @@ const mockResolve = jest.fn(async (_id: number) => undefined);
 let mockChanges: PendingChange[] = [];
 let mockInbox: unknown[] = [];
 let mockReadFailure = false;
+let mockPendingRead: (() => Promise<PendingChange[]>) | null = null;
 
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock("../../../lib/offline/react", () => ({ useOfflineStatus: () => mockState }));
 jest.mock("../../../lib/offline/instance", () => ({
   offlineRuntime: {
-    listPendingChanges: async () => { if (mockReadFailure) throw new Error("lectura fallida"); return mockChanges; },
+    listPendingChanges: async () => { if (mockReadFailure) throw new Error("lectura fallida"); return mockPendingRead ? mockPendingRead() : mockChanges; },
     inbox: async () => mockInbox,
     requestSync: (...args: unknown[]) => mockRequestSync(...args),
     resolveInboxEntry: (id: number) => mockResolve(id),
@@ -53,6 +54,7 @@ describe("PendingChangesSheet", () => {
     mockState = base;
     mockInbox = [];
     mockReadFailure = false;
+    mockPendingRead = null;
     mockChanges = [
       change({ opId: "a", table: "movements", kind: "insert", rowId: 5, label: "Taxi" }),
       change({ opId: "b", table: "accounts", kind: "update", rowId: 2, label: "Principal", changedFields: ["name"] }),
@@ -128,6 +130,21 @@ describe("PendingChangesSheet", () => {
     const discard = tree.root.findAll((node: any) => node.props.label === "Descartar")[0];
     await act(async () => { await discard.props.onPress(); });
     expect(mockResolve).toHaveBeenCalledWith(9);
+  });
+
+  it("ignora una lectura antigua que termina después de la más reciente", async () => {
+    let finishOld!: (changes: PendingChange[]) => void;
+    mockPendingRead = () => new Promise((resolve) => { finishOld = resolve; });
+    act(() => { tree = create(<PendingChangesSheet />); });
+    act(() => setPendingSheetOpen(true));
+    mockPendingRead = null;
+    mockChanges = [change({ label: "Nuevo" })];
+    mockState = { ...base, pending: 1 };
+    act(() => tree.update(<PendingChangesSheet />));
+    await flush();
+    expect(texts(tree).join("\n")).toContain("Nuevo movimiento · Nuevo");
+    await act(async () => { finishOld([change({ label: "Antiguo" })]); await Promise.resolve(); });
+    expect(texts(tree).join("\n")).not.toContain("Nuevo movimiento · Antiguo");
   });
 
   it("ofrece reintentar si falla la lectura de pendientes", async () => {
