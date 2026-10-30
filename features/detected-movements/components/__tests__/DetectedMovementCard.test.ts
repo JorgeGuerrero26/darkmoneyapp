@@ -2,6 +2,7 @@ import React from "react";
 import { DetectedMovementCard, DuplicateDecision } from "../DetectedMovementCard";
 import { DetectedMovementReviewSheet } from "../DetectedMovementReviewSheet";
 import { Button } from "../../../../components/ui/Button";
+import { DetailActionBar } from "../../../../components/ui/DetailActionBar";
 import type { DetectedMovementReview } from "../../hooks/useDetectedMovementReview";
 import type { DetectedMovementSuggestion } from "../../../../services/queries/notification-detection";
 import type { MovementRecord } from "../../../../types/domain";
@@ -18,6 +19,23 @@ jest.mock("../../../../components/ui/DateTimeSheet", () => ({ DateTimeSheet: () 
 jest.mock("../../../../components/ui/InlineFormSheet", () => ({ InlineFormSheet: ({ children }: any) => require("react").createElement(require("react-native").View, null, children) }));
 
 const candidate = { id: 22, description: "Compra manual", movementType: "expense", sourceAmount: 15, occurredAt: "2026-10-07T18:00:00Z" } as MovementRecord;
+
+it("anuncia el reintento al fallar el guardado", async () => {
+  const retry = jest.fn();
+  let renderer: ReturnType<typeof create>;
+  await act(async () => { renderer = create(React.createElement(DetectedMovementCard, {
+    suggestion: { currencyCode: "PEN", movementType: "expense", status: "pending", occurredAt: candidate.occurredAt } as DetectedMovementSuggestion,
+    draft: { movementType: "expense", amount: "15.00", description: "Compra", date: "2026-10-07", time: "13:00", accountId: null, destinationAccountId: null, destinationAmount: "", fxRate: "", categoryId: null } satisfies DetectionDraft,
+    count: 1, accounts: [], categories: [], readyToSave: true, missing: [], busy: false, error: "Sin conexión",
+    onReview: jest.fn(), onSave: retry, onDiscard: jest.fn(), onViewAll: jest.fn(),
+  })); });
+  const primary = renderer!.root.findByType(DetailActionBar).props.primary;
+  expect(primary.label).toBe("Reintentar");
+  expect(primary.accessibilityLabel).toBe("Reintentar guardar movimiento detectado");
+  act(() => primary.onPress());
+  expect(retry).toHaveBeenCalledTimes(1);
+  await act(async () => renderer!.unmount());
+});
 
 it.each([[false, false], [true, false], [false, true], [true, true]])("Omitir aparece solo en la cabecera (ocupado: %s, duplicado: %s)", async (busy, duplicate) => {
   const onDiscard = jest.fn();
