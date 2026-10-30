@@ -341,14 +341,14 @@ export default function LoginScreen() {
                 ]}
               >
                 <Image
-                  source={require("../../assets/images/logo-darkmoney.png")}
+                  source={require("../../assets/images/logo-billetera.png")}
                   style={[styles.logoFace, showLogoBack && styles.logoFaceBack]}
                   resizeMode="contain"
                 />
                 {showLogoBack ? (
                   <>
                     <Image
-                      source={require("../../assets/images/logo-darkmoney.png")}
+                      source={require("../../assets/images/logo-billetera.png")}
                       style={[styles.logoFace, styles.logoFaceBackBoost]}
                       resizeMode="contain"
                     />

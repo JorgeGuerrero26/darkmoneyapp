@@ -10,6 +10,14 @@ export type ChangelogEntry = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    title: "Un solo logo: la billetera",
+    changes: [
+      "El ícono de la app, la pantalla de carga, el inicio de sesión, los avisos y las notificaciones muestran ahora el mismo logo: la billetera blanca con la tarjeta verde. Ya no aparecen la calavera ni el logo anterior.",
+      "En Android, el ícono se ve completo con cualquier forma que use tu teléfono (redondo, cuadrado o de gota). Si usas íconos temáticos, que toman los colores de tu fondo de pantalla, DarkMoney también se adapta.",
+    ],
+  },
+  {
     version: "1.2.0",
     title: "Tus datos sin internet, protegidos",
     changes: [

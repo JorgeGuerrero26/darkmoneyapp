@@ -727,7 +727,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .joinToString(" · ")
 
     val notification = Notification.Builder(this, channelId)
-      .setSmallIcon(R.mipmap.ic_launcher_foreground)
+      .setSmallIcon(R.drawable.notification_icon)
       .setContentTitle("Movimiento detectado")
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
