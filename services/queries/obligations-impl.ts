@@ -2440,6 +2440,9 @@ export type ObligationPaymentInput = {
   hasAttachments?: boolean;
 };
 
+/** Pagos y cobros guardados en la base local: el motor ya dejó el saldo exacto y él mismo pide de nuevo la deuda. */
+const paymentsSavedLocally = new WeakSet<object>();
+
 export function useCreateObligationPaymentMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   const networkMode = useOfflineNetworkMode(workspaceId);
@@ -2465,7 +2468,9 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
             notes: input.notes ?? null,
           });
           if (local) {
-            return { id: local.eventId, movementId: local.movementId, workspaceId, installmentNoApplied: input.installmentNo ?? null };
+            const saved = { id: local.eventId, movementId: local.movementId, workspaceId, installmentNoApplied: input.installmentNo ?? null };
+            paymentsSavedLocally.add(saved);
+            return saved;
           }
           offlineRuntime.assertCompoundOnline();
         }
@@ -2526,20 +2531,30 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       // Parche quirúrgico primero: saldo de cuenta y pendiente de la obligación
       // cambian en este frame; el refresh de abajo confirma/corrige detrás.
       const isReceivable = variables.direction === "receivable";
+      const savedLocally = paymentsSavedLocally.has(data);
       if (data.movementId && variables.accountId) {
-        patchSnapshotWithCreatedMovement(queryClient, data.workspaceId, {
-          id: data.movementId,
-          status: "posted",
-          occurredAt: dateStrToISO(variables.paymentDate),
-          sourceAccountId: isReceivable ? null : variables.accountId,
-          sourceAmount: isReceivable ? null : variables.amount,
-          destinationAccountId: isReceivable ? variables.accountId : null,
-          destinationAmount: isReceivable ? variables.amount : null,
-        });
+        patchSnapshotWithCreatedMovement(
+          queryClient,
+          data.workspaceId,
+          {
+            id: data.movementId,
+            status: "posted",
+            occurredAt: dateStrToISO(variables.paymentDate),
+            sourceAccountId: isReceivable ? null : variables.accountId,
+            sourceAmount: isReceivable ? null : variables.amount,
+            destinationAccountId: isReceivable ? variables.accountId : null,
+            destinationAmount: isReceivable ? variables.amount : null,
+          },
+          // Guardado en local: el saldo exacto (con este cobro) ya lo puso el motor; sumarlo otra vez lo duplicaba.
+          { balances: !savedLocally },
+        );
       }
       patchSnapshotObligationPayment(queryClient, data.workspaceId, variables.obligationId, variables.amount);
       // El resumen del contacto (lo que se le debe o debe) sale de la obligación recién parchada: sin internet no hay refetch.
       void applyLocalCounterpartyFinancialsToCache(queryClient, data.workspaceId).catch(() => false);
+      // Guardado en local: el motor ya pide de nuevo la deuda y su historial (useOfflineBridge). El aviso
+      // «Actualizando pago» se quedaba en pantalla mientras el servidor respondía, con el cobro ya guardado.
+      if (savedLocally) return;
       const queryKeys: Array<readonly unknown[]> = [
         ["workspace-snapshot"],
         ["movements"],

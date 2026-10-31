@@ -17,6 +17,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "En Android, el ícono se ve completo con cualquier forma que use tu teléfono (redondo, cuadrado o de gota). Si usas íconos temáticos, que toman los colores de tu fondo de pantalla, DarkMoney también se adapta.",
       "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
       "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
+      "Con el modo sin conexión encendido, registrar el pago o el cobro de una deuda ya no deja en pantalla el aviso «Actualizando pago» durante un buen rato: se guarda al instante, y el saldo de la cuenta sube o baja una sola vez.",
     ],
   },
   {
