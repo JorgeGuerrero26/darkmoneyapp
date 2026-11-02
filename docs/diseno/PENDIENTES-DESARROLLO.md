@@ -23,7 +23,7 @@ Marcar con [x] al resolver.
 Todas deben venir de una misma función o selector.
 
 - [x] **Próximos 7 días:** Resumen y Flujo leen la misma ventana; en las capturas de móvil del 2 nov ambos muestran S/ 100.00 de entradas y S/ 53.90 de salidas, neto +S/ 46.10. *(rev. 47)*
-- [x] ~~**Cierre de mes:** S/ 5,151.60 (Flujo), S/ 5,194.01 (Resumen), S/ 4,927.33 (Fin de mes).~~ Resumen y Flujo muestran S/ 7,612.33 en las capturas del 2 nov. Falta comprobar la hoja Fin de mes en esa misma fecha. *(rev. 47)*
+- [x] ~~**Cierre de mes:** S/ 5,151.60 (Flujo), S/ 5,194.01 (Resumen), S/ 4,927.33 (Fin de mes).~~ Las capturas móviles del 2 nov muestran S/ 7,612.33 en Resumen, Flujo y la hoja Fin de mes. *(rev. 47)*
 - [x] ~~**Reserva:** 0.9 vs 1.2 meses.~~ Resuelto en código: Salud y caja usan `healthBaseline`. Confirmar en la app. *(rev. 50)*
 - [x] **Suscripciones:** las cinco filas de móvil suman S/ 115.90; la quinta es S/ 53.90. El total y la lista usan los cobros de los próximos 30 días. *(rev. 47)*
 - [x] **7 d y 15 d muestran exactamente lo mismo:** los cortes son distintos y se verifica que cada último día esté incluido; en la web, el 29 oct no había compromisos nuevos entre ambos plazos. Pendiente comprobar el selector de 15 días en móvil. *(rev. 47)*
@@ -49,7 +49,7 @@ Todas deben venir de una misma función o selector.
 - [ ] **Formularios:** estado por campo `missing | invalid | ok` y `submitError` solo para errores sin campo. Hoy el mismo mensaje se pinta dos veces y el botón cambia a "Reintentar" con cualquier fallo. *(rev. 53, web 6e)*
 - [ ] **Confirmaciones:** banner arriba, 3 s, nunca empuja el botón +. *(rev. 40, web 5c)*
 - [ ] **Sin conexión:** cola global con estado `online | offline | syncing | needsReview`, leído por el encabezado de todas las pantallas. Esperar 2–3 s antes de mostrar "Sin conexión". *(rev. 54, web 6f)*
-- [ ] **Detecciones:** estado `pendiente | guardada | descartada` separado de leído/no leído. Una sola fuente para dashboard, "Ver los N" y Notificaciones. La revisión es el mismo componente en todas. Las detecciones no entran en la cola sin conexión. La captura móvil del 2 nov muestra la revisión de una transferencia, el destino pendiente y «Omitir detección» en el menú; no verifica las acciones ni la sincronización de estados. *(rev. 52, web 6g)*
+- [ ] **Detecciones:** estado `pendiente | guardada | descartada` separado de leído/no leído. Una sola fuente para dashboard, "Ver los N" y Notificaciones. La revisión es el mismo componente en todas. Las detecciones no entran en la cola sin conexión. El usuario indica que ha usado guardar y omitir sin problemas; la captura del 2 nov muestra la revisión, el destino pendiente y «Omitir detección». Falta verificar específicamente los estados entre pantallas y sin conexión. *(rev. 52, web 6g)*
 - [ ] **Margen inferior del scroll:** el botón + tapa "Informe con IA" y podría tapar botones de tarjetas. *(rev. 52)*
 - [ ] **Web: hojas de móvil = panel lateral de 440 px** con fundido, Esc cierra y conserva lo escrito. *(web 5c)*
 - [x] **Encabezado igual en todas las pestañas del dashboard** ("Hola, Adrian"). Confirmado en las capturas del 2 nov de Resumen, Patrones, Flujo, Historial y Salud. *(rev. 46)*
