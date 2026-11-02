@@ -32,7 +32,7 @@ Todas deben venir de una misma función o selector.
 ## 3. Datos y nombres
 
 - [x] **Hábitos sin descripción:** `habitPresentation` reemplaza el nombre de cuenta por «Gasto sin descripción» o «Ingreso sin descripción» y `PatternsTab` muestra la cuenta en la segunda línea. Cubierto por pruebas. *(rev. 46)*
-- [ ] **Tres presupuestos llamados "Alimentación mensual" con cifras distintas:** ¿duplicados o de meses distintos? *(rev. 51)*
+- [x] **Presupuestos «Alimentación mensual»:** el usuario confirmó que el presupuesto nuevo corresponde a noviembre; la captura del 2 nov muestra uno en curso y una sección de meses cerrados. *(rev. 51)*
 - [ ] **Tildes en categorías:** según el informe de aplicación, la migración de categorías del sistema se aplicó sin cambios y se corrigieron las tres categorías personales. Las capturas del 2 nov muestran «Alimentación» y «Tecnología»; falta comprobar «Diversión» en dispositivo y cerrar la revisión del seed. *(rev. 48, 50)*
 - [x] **"Cuenta 8":** el formulario exige nombre y Flujo busca también cuentas archivadas. La captura del 2 nov muestra «Sueldo → Inversión Interbank» para la transferencia que antes aparecía como «Sueldo → Cuenta 8». *(rev. 47)*
 - [ ] **Errores de tipeo del usuario** ("Correción", "Suelgo AGV", "Yt Premiun"): opcional, sugerir corrección. *(rev. 49, 51)*
@@ -50,7 +50,7 @@ Todas deben venir de una misma función o selector.
 - [ ] **Confirmaciones:** banner arriba, 3 s, nunca empuja el botón +. *(rev. 40, web 5c)*
 - [ ] **Sin conexión:** cola global con estado `online | offline | syncing | needsReview`, leído por el encabezado de todas las pantallas. Esperar 2–3 s antes de mostrar "Sin conexión". *(rev. 54, web 6f)*
 - [ ] **Detecciones:** estado `pendiente | guardada | descartada` separado de leído/no leído. Una sola fuente para dashboard, "Ver los N" y Notificaciones. La revisión es el mismo componente en todas. Las detecciones no entran en la cola sin conexión. El usuario indica que ha usado guardar y omitir sin problemas; la captura del 2 nov muestra la revisión, el destino pendiente y «Omitir detección». Falta verificar específicamente los estados entre pantallas y sin conexión. *(rev. 52, web 6g)*
-- [ ] **Margen inferior del scroll:** el botón + tapa "Informe con IA" y podría tapar botones de tarjetas. *(rev. 52)*
+- [ ] **Margen inferior del scroll:** la pantalla deja espacio al final y el usuario confirma que el botón + funciona con normalidad; falta confirmar que puede acceder a las filas que aparecen detrás al desplazarse. *(rev. 52)*
 - [ ] **Web: hojas de móvil = panel lateral de 440 px** con fundido, Esc cierra y conserva lo escrito. *(web 5c)*
 - [x] **Encabezado igual en todas las pestañas del dashboard** ("Hola, Adrian"). Confirmado en las capturas del 2 nov de Resumen, Patrones, Flujo, Historial y Salud. *(rev. 46)*
 
