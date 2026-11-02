@@ -49,7 +49,7 @@ Todas deben venir de una misma función o selector.
 - [ ] **Formularios:** estado por campo `missing | invalid | ok` y `submitError` solo para errores sin campo. Hoy el mismo mensaje se pinta dos veces y el botón cambia a "Reintentar" con cualquier fallo. *(rev. 53, web 6e)*
 - [ ] **Confirmaciones:** banner arriba, 3 s, nunca empuja el botón +. *(rev. 40, web 5c)*
 - [ ] **Sin conexión:** cola global con estado `online | offline | syncing | needsReview`, leído por el encabezado de todas las pantallas. Esperar 2–3 s antes de mostrar "Sin conexión". *(rev. 54, web 6f)*
-- [ ] **Detecciones:** estado `pendiente | guardada | descartada` separado de leído/no leído. Una sola fuente para dashboard, "Ver los N" y Notificaciones. La revisión es el mismo componente en todas. Las detecciones no entran en la cola sin conexión. *(rev. 52, web 6g)*
+- [ ] **Detecciones:** estado `pendiente | guardada | descartada` separado de leído/no leído. Una sola fuente para dashboard, "Ver los N" y Notificaciones. La revisión es el mismo componente en todas. Las detecciones no entran en la cola sin conexión. La captura móvil del 2 nov muestra la revisión de una transferencia, el destino pendiente y «Omitir detección» en el menú; no verifica las acciones ni la sincronización de estados. *(rev. 52, web 6g)*
 - [ ] **Margen inferior del scroll:** el botón + tapa "Informe con IA" y podría tapar botones de tarjetas. *(rev. 52)*
 - [ ] **Web: hojas de móvil = panel lateral de 440 px** con fundido, Esc cierra y conserva lo escrito. *(web 5c)*
 - [x] **Encabezado igual en todas las pestañas del dashboard** ("Hola, Adrian"). Confirmado en las capturas del 2 nov de Resumen, Patrones, Flujo, Historial y Salud. *(rev. 46)*
