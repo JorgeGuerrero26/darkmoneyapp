@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Modal, StyleSheet, Text, View } from "react-native";
+import { Animated, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, View } from "react-native";
 import { COLORS, ELEVATION, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 import { Button } from "./Button";
@@ -19,6 +19,10 @@ type Props = {
   destructive?: boolean;
   confirmLoading?: boolean;
   confirmLoadingLabel?: string;
+  /** Apaga el botón de confirmar (p. ej. hasta escribir la palabra de confirmación). */
+  confirmDisabled?: boolean;
+  /** Con un campo de texto dentro: el diálogo sube con el teclado en vez de quedar tapado (solo en Modal). */
+  avoidKeyboard?: boolean;
   /** Fundido con subida breve y resorte, para los diálogos abiertos desde el dashboard. */
   entranceAnimation?: "fade" | "springFade";
   /**
@@ -47,6 +51,8 @@ export function ConfirmDialog({
   destructive = true,
   confirmLoading = false,
   confirmLoadingLabel,
+  confirmDisabled = false,
+  avoidKeyboard = false,
   entranceAnimation = "fade",
   inline = false,
 }: Props) {
@@ -93,6 +99,7 @@ export function ConfirmDialog({
             onPress={onConfirm}
             loading={confirmLoading}
             loadingLabel={confirmLoadingLabel}
+            disabled={confirmDisabled}
           />
           <Button
             label={cancelLabel}
@@ -116,7 +123,13 @@ export function ConfirmDialog({
       animationType="fade"
       onRequestClose={confirmLoading ? undefined : onCancel}
     >
-      {content}
+      {avoidKeyboard ? (
+        <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          {content}
+        </KeyboardAvoidingView>
+      ) : (
+        content
+      )}
     </Modal>
   );
 }
@@ -165,4 +178,5 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   actions: { gap: SPACING.sm },
+  keyboard: { flex: 1 },
 });
