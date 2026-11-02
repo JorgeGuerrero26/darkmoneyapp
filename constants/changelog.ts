@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.3.0",
     title: "Un solo logo: la billetera",
     changes: [
+      "Las detecciones de movimientos aparecen en el inicio avanzado de Pro, para revisarlas en un solo lugar. (Pro)",
       "El ícono de la app, la pantalla de carga, el inicio de sesión, los avisos y las notificaciones muestran ahora el mismo logo: la billetera blanca con la tarjeta verde. Ya no aparecen la calavera ni el logo anterior.",
       "En Android, el ícono se ve completo con cualquier forma que use tu teléfono (redondo, cuadrado o de gota). Si usas íconos temáticos, que toman los colores de tu fondo de pantalla, DarkMoney también se adapta.",
       "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
