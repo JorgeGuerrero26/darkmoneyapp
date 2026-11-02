@@ -266,6 +266,16 @@ export class OfflineRuntime {
     return { wiped: true, pending: 0 };
   }
 
+  /**
+   * La cuenta se eliminó: se borra la base local de esta persona (cifrada, con su clave y la cola de cambios) AUNQUE
+   * quede algo sin enviar. Ya no hay a dónde enviarlo, y no deben quedar sus datos en el teléfono. Sin intento de
+   * sincronizar: el servidor ya no la reconoce.
+   */
+  async forgetUser(userId: string): Promise<void> {
+    await this.configure({ enabled: this.config.enabled, userId: null, workspaceId: null });
+    await this.deps.deleteDatabase(userId);
+  }
+
   // ─── Sincronización ─────────────────────────────────────────────────────────────────────────
 
   async requestSync(reason: SyncReason): Promise<SyncReport | null> {

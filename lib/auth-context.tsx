@@ -16,6 +16,8 @@ import { readCachedProfile, writeCachedProfile } from "./profile-cache";
 import { markStartupPhase } from "./startup-timing";
 import { readStoredSession } from "./stored-session";
 import { secureSessionStorage } from "./secure-session-storage";
+import { wipeDeviceAfterAccountDeletion } from "./account-deletion-local";
+import { useUiStore } from "../store/ui-store";
 
 type ProfileRow = {
   id: string;
@@ -64,6 +66,8 @@ type AuthContextValue = {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Tras eliminar la cuenta en el servidor: cierra la sesión solo aquí y borra todo lo suyo del teléfono. */
+  finishAccountDeletion: () => Promise<void>;
   saveProfile: (input: SaveProfileInput) => Promise<void>;
   saveAvatar: (uri: string) => Promise<void>;
   removeAvatar: () => Promise<void>;
@@ -524,6 +528,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     signingOutRef.current = false;
   }
 
+  async function finishAccountDeletion() {
+    const userId = user?.id ?? session?.user?.id ?? null;
+    signingOutRef.current = true;
+    setSession(null);
+    setUser(null);
+    setProfile(null);
+    setIsLoading(false);
+    // La cuenta ya no existe: el servidor revocó sus sesiones al borrarla. Solo queda olvidar la de este teléfono.
+    await supabase?.auth.signOut({ scope: "local" }).catch(() => undefined);
+    if (userId) await wipeDeviceAfterAccountDeletion(userId).catch(() => undefined);
+    await clearLastTabRoute().catch(() => undefined);
+    useUiStore.getState().setAuthNotice("Eliminamos tu cuenta y tus datos.");
+    signingOutRef.current = false;
+  }
+
   async function resetPassword(email: string) {
     if (!supabase) throw new Error("Supabase no está configurado.");
     const { error } = await withTimeout(
@@ -622,6 +641,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     resetPassword,
     updatePassword,
     signOut,
+    finishAccountDeletion,
     saveProfile,
     saveAvatar,
     removeAvatar,

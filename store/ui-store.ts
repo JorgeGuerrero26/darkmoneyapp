@@ -50,6 +50,12 @@ type UiState = {
    */
   networkBannerHeight: number;
   setNetworkBannerHeight: (height: number) => void;
+  /**
+   * Aviso para la pantalla de entrada tras una salida que la persona no eligió en esa pantalla (p. ej. "Eliminamos tu
+   * cuenta y tus datos"). Transitorio: no entra en `partialize`.
+   */
+  authNotice: string | null;
+  setAuthNotice: (notice: string | null) => void;
   dismissToast: (id: string) => void;
   showActivityNotice: (message: string, description?: string) => string;
   dismissActivityNotice: (id?: string) => void;
@@ -66,6 +72,8 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       toasts: [],
       networkBannerHeight: 0,
+      authNotice: null,
+      setAuthNotice: (notice) => set({ authNotice: notice }),
       activityNotice: null,
       isBiometricLocked: false,
       biometricEnabled: false,

@@ -18,6 +18,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "En Flujo, las transferencias con cuentas archivadas ahora muestran el nombre de la cuenta cuando está disponible.",
       "Las cabeceras de Movimientos, Cuentas y Créditos y Deudas muestran el tiempo desde la última actualización con un espacio, por ejemplo «hace 42 s».",
       "Con el modo sin conexión encendido, registrar el pago o el cobro de una deuda ya no deja en pantalla el aviso «Actualizando pago» durante un buen rato: se guarda al instante, y el saldo de la cuenta sube o baja una sola vez.",
+      "Ahora puedes eliminar tu cuenta desde Configuración → Eliminar mi cuenta. Se borran para siempre tus datos, también los que guardaba este teléfono. Si compartes un espacio con otras personas, no se pierde lo que registraron: el espacio pasa a otro miembro. Si tu plan Pro todavía se cobra, primero te pedimos cancelarlo.",
     ],
   },
   {

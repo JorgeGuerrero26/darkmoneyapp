@@ -392,6 +392,18 @@ describe("OfflineRuntime", () => {
     expect(dirty.deleted).toEqual([]);
   });
 
+  it("eliminar la cuenta borra la base del teléfono aunque quede algo sin enviar (ya no hay a dónde enviarlo)", async () => {
+    const { runtime, log, deleted } = setup();
+    await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });
+    await settle();
+    runtime.setOnline(false);
+    await runtime.createMovement(WS, expense("Sin enviar", 7));
+    log.failPush = true;
+    await runtime.forgetUser("u1");
+    expect(deleted).toEqual(["u1"]);
+    expect(runtime.canReadLocal(WS)).toBe(false);
+  });
+
   it("cambiar de usuario cierra la base anterior y abre la del nuevo", async () => {
     const { runtime, drivers } = setup();
     await runtime.configure({ enabled: true, userId: "u1", workspaceId: WS });

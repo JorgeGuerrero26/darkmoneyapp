@@ -19,6 +19,7 @@ import { humanizeError } from "../lib/errors";
 import { useUiStore } from "../store/ui-store";
 import { useDashboardAiTone } from "../features/dashboard/hooks/useDashboardAiTone";
 import { EmailDetectionSheet } from "../features/settings/components/EmailDetectionSheet";
+import { DeleteAccountDialog } from "../features/settings/components/DeleteAccountDialog";
 import { ProBadge, ProFeatureSheet } from "../components/ui/ProFeatureSheet";
 import { EMAIL_DETECTION_PRO_DESCRIPTION, openDarkMoneyProPlans } from "../features/settings/lib/email-detection-pro";
 import { useEmailDetectionProAccessQuery } from "../services/queries/email-detection-access";
@@ -132,13 +133,15 @@ function SettingsScreen() {
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [changelogVisible, setChangelogVisible] = useState(false);
+  const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
+  const [accountDeleted, setAccountDeleted] = useState(false);
 
-  const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
+  const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut || accountDeleted });
   const router = useRouter();
   const queryClient = useQueryClient();
   const offlineStatus = useOfflineStatus();
   const offlineFlag = useOfflineFlag();
-  const { profile, saveProfile, signOut } = useAuth();
+  const { profile, saveProfile, signOut, finishAccountDeletion } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const { showToast, showErrorToast } = useToast();
@@ -869,6 +872,10 @@ function SettingsScreen() {
           <TouchableOpacity onPress={handleSignOut} style={styles.signOutRow} activeOpacity={0.7}>
             <Text style={styles.signOutText}>Cerrar sesión</Text>
           </TouchableOpacity>
+          {/* Apple y Google exigen poder eliminar la cuenta desde la app. Igual de discreto que cerrar sesión. */}
+          <TouchableOpacity onPress={() => setDeleteAccountVisible(true)} style={styles.signOutRow} activeOpacity={0.7}>
+            <Text style={styles.deleteAccountText}>Eliminar mi cuenta</Text>
+          </TouchableOpacity>
 
           {Constants.expoConfig?.version ? (
             <TouchableOpacity
@@ -962,6 +969,16 @@ function SettingsScreen() {
         </View>
       </Modal>
       </FormFeedbackProvider>
+
+      <DeleteAccountDialog
+        visible={deleteAccountVisible}
+        onClose={() => setDeleteAccountVisible(false)}
+        onDeleted={async () => {
+          setAccountDeleted(true);
+          setDeleteAccountVisible(false);
+          await finishAccountDeletion();
+        }}
+      />
 
       <ConfirmDialog
         visible={signOutVisible}
@@ -1156,6 +1173,11 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
+  },
+  deleteAccountText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.danger,
   },
   flex: { flex: 1 },
   group: {
