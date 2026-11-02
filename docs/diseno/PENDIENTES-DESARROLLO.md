@@ -22,8 +22,8 @@ Marcar con [x] al resolver.
 
 Todas deben venir de una misma función o selector.
 
-- [x] **Próximos 7 días:** Resumen y Flujo leen la misma ventana; en las capturas de móvil del 29 oct ambos muestran S/ 650.00 de entradas y S/ 115.90 de salidas, neto +S/ 534.10. *(rev. 47)*
-- [x] ~~**Cierre de mes:** S/ 5,151.60 (Flujo), S/ 5,194.01 (Resumen), S/ 4,927.33 (Fin de mes).~~ Resuelto en código: Resumen y Flujo leen el mismo `useCashflowProjection`. Confirmar en la app que también coincide con la hoja Fin de mes. *(rev. 47)*
+- [x] **Próximos 7 días:** Resumen y Flujo leen la misma ventana; en las capturas de móvil del 2 nov ambos muestran S/ 100.00 de entradas y S/ 53.90 de salidas, neto +S/ 46.10. *(rev. 47)*
+- [x] ~~**Cierre de mes:** S/ 5,151.60 (Flujo), S/ 5,194.01 (Resumen), S/ 4,927.33 (Fin de mes).~~ Resumen y Flujo muestran S/ 7,612.33 en las capturas del 2 nov. Falta comprobar la hoja Fin de mes en esa misma fecha. *(rev. 47)*
 - [x] ~~**Reserva:** 0.9 vs 1.2 meses.~~ Resuelto en código: Salud y caja usan `healthBaseline`. Confirmar en la app. *(rev. 50)*
 - [x] **Suscripciones:** las cinco filas de móvil suman S/ 115.90; la quinta es S/ 53.90. El total y la lista usan los cobros de los próximos 30 días. *(rev. 47)*
 - [x] **7 d y 15 d muestran exactamente lo mismo:** los cortes son distintos y se verifica que cada último día esté incluido; en la web, el 29 oct no había compromisos nuevos entre ambos plazos. Pendiente comprobar el selector de 15 días en móvil. *(rev. 47)*
@@ -33,8 +33,8 @@ Todas deben venir de una misma función o selector.
 
 - [x] **Hábitos sin descripción:** `habitPresentation` reemplaza el nombre de cuenta por «Gasto sin descripción» o «Ingreso sin descripción» y `PatternsTab` muestra la cuenta en la segunda línea. Cubierto por pruebas. *(rev. 46)*
 - [ ] **Tres presupuestos llamados "Alimentación mensual" con cifras distintas:** ¿duplicados o de meses distintos? *(rev. 51)*
-- [ ] **Tildes en categorías del sistema:** migración preparada para registros heredados del sistema sin colisiones, con prueba local. Falta identificar el seed de nuevas categorías y validar/aplicar la migración en el entorno correspondiente. *(rev. 48, 50)*
-- [ ] **"Cuenta 8":** el formulario ya exige nombre; Flujo ahora busca nombres también en cuentas archivadas. Falta comprobar con los datos reales que esa cuenta esté en el catálogo cargado. *(rev. 47)*
+- [ ] **Tildes en categorías:** según el informe de aplicación, la migración de categorías del sistema se aplicó sin cambios y se corrigieron las tres categorías personales. Las capturas del 2 nov muestran «Alimentación» y «Tecnología»; falta comprobar «Diversión» en dispositivo y cerrar la revisión del seed. *(rev. 48, 50)*
+- [x] **"Cuenta 8":** el formulario exige nombre y Flujo busca también cuentas archivadas. La captura del 2 nov muestra «Sueldo → Inversión Interbank» para la transferencia que antes aparecía como «Sueldo → Cuenta 8». *(rev. 47)*
 - [ ] **Errores de tipeo del usuario** ("Correción", "Suelgo AGV", "Yt Premiun"): opcional, sugerir corrección. *(rev. 49, 51)*
 - [x] **"Actualizado hace 42s" → "hace 42 s":** corregido en las cabeceras de Movimientos, Cuentas y Créditos y Deudas. *(rev. 54)*
 
@@ -52,7 +52,7 @@ Todas deben venir de una misma función o selector.
 - [ ] **Detecciones:** estado `pendiente | guardada | descartada` separado de leído/no leído. Una sola fuente para dashboard, "Ver los N" y Notificaciones. La revisión es el mismo componente en todas. Las detecciones no entran en la cola sin conexión. *(rev. 52, web 6g)*
 - [ ] **Margen inferior del scroll:** el botón + tapa "Informe con IA" y podría tapar botones de tarjetas. *(rev. 52)*
 - [ ] **Web: hojas de móvil = panel lateral de 440 px** con fundido, Esc cierra y conserva lo escrito. *(web 5c)*
-- [ ] **Encabezado igual en todas las pestañas del dashboard** ("Hola, Adrian"), sin cambiar el título por pestaña. *(rev. 46)*
+- [x] **Encabezado igual en todas las pestañas del dashboard** ("Hola, Adrian"). Confirmado en las capturas del 2 nov de Resumen, Patrones, Flujo, Historial y Salud. *(rev. 46)*
 
 ## 6. Ocultar cuando no hay nada que decir (regla 5)
 
