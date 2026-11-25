@@ -5,10 +5,7 @@
  * ## Por qué existe
  *
  * La política de runtime es `appVersion`: una publicación normal solo alcanza al runtime del
- * repo y **los binarios con otro runtime se quedan atrás en silencio**, sin ningún error; la
- * única señal es que alguien reporta que un arreglo "no llegó". Hubo dos casos: el iPhone con un
- * IPA firmado a mano congelado en 1.0.8 (ya reemplazado por el IPA 1.1.0, 2026-10-14) y el APK
- * 1.0.9 de los compañeros.
+ * repo y **los binarios con otro runtime se quedan atrás en silencio**, sin ningún error.
  *
  * Así que cada cambio hay que publicarlo en cada runtime vivo, cambiando `app.json` en medio.
  * Hacerlo a mano es un ritual donde olvidar un paso no avisa de nada. Este script lo hace
@@ -16,8 +13,8 @@
  *
  * ## Cuándo borrar esto
  *
- * Cuando los compañeros instalen el APK nuevo, sacar también 1.0.9. Con la lista vacía, este
- * script se vuelve un `eas update` normal y se puede borrar.
+ * Cuando deje de usarse el último runtime legado, este script se vuelve un `eas update`
+ * normal y se puede borrar.
  *
  * ## Uso
  *
@@ -34,21 +31,15 @@ const CHANNEL = "preview";
 /**
  * Runtimes VIEJOS que siguen vivos ahí fuera y a los que también hay que publicar.
  *
- *   1.0.9 — el APK que tienen los compañeros. Mientras no instalen el nuevo, esta es su
- *           única vía de recibir arreglos.
+ *   1.2.0 — se mantiene mientras haya dispositivos con ese runtime.
  *
- *   1.1.0 — el IPA que tiene hoy el iPhone y el primer APK con el motor sin conexión. Pasó a «legado» al
- *           salir la 1.2.0 (copia local cifrada con SQLCipher): hasta que ese iPhone instale el IPA 1.2.0, esta es su
- *           única vía de recibir arreglos. Quitarla de aquí antes lo dejaría sin actualizaciones EN SILENCIO.
- *
- * (1.0.8, el IPA viejo del iPhone, se quitó el 2026-10-14: el dueño confirmó que ningún
- * dispositivo lo corre desde que el iPhone usa el IPA 1.1.0. Sus actualizaciones ya publicadas
- * siguen en EAS, pero no se les publica más.)
+ * Los runtimes 1.0.9 y 1.1.0 se retiraron el 2026-11-25: el usuario confirmó que ya no se usan.
+ * Sus actualizaciones previamente publicadas siguen en EAS.
  *
  * Se quita una entrada de aquí SOLO cuando conste que ya nadie corre ese binario. Dejar una
  * de más solo gasta un publicado; quitarla antes de tiempo deja a alguien tirado en silencio.
  */
-const LEGACY_RUNTIMES = ["1.2.0", "1.1.0", "1.0.9"];
+const LEGACY_RUNTIMES = ["1.2.0"];
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
