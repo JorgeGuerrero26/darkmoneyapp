@@ -32,6 +32,25 @@ it("un error al conciliar no se presenta como una lista vacía", async () => {
   mockRpc.mockResolvedValue({ data: null, error: { message: "database unavailable" } });
   await expect(reconcileDetectedMovements(1)).rejects.toThrow("No se pudieron conciliar");
 });
+it("no concilia si no hay detecciones pendientes", async () => {
+  mockFrom.mockReturnValue(chain([]));
+  usePendingDetectedMovementsQuery("tester", 1);
+  expect(await mockUseQuery.mock.calls[0][0].queryFn()).toEqual([]);
+  expect(mockRpc).not.toHaveBeenCalled();
+});
+it("vuelve a cargar la lista tras resolver detecciones", async () => {
+  mockFrom.mockReturnValueOnce(chain([receipt])).mockReturnValueOnce(chain([]));
+  mockRpc.mockResolvedValue({ data: { resolvedIds: [7], candidates: [] }, error: null });
+  usePendingDetectedMovementsQuery("tester", 1);
+  expect(await mockUseQuery.mock.calls[0][0].queryFn()).toEqual([]);
+  expect(mockFrom).toHaveBeenCalledTimes(2);
+});
+it("no muestra pendientes sin conciliar cuando falla la RPC", async () => {
+  mockFrom.mockReturnValue(chain([receipt]));
+  mockRpc.mockResolvedValue({ data: null, error: { message: "unavailable" } });
+  usePendingDetectedMovementsQuery("tester", 1);
+  await expect(mockUseQuery.mock.calls[0][0].queryFn()).rejects.toThrow("No se pudieron conciliar");
+});
 it("el dashboard obtiene el estado conciliado y avisa a Notificaciones", async () => {
   mockRpc.mockResolvedValue({ data: { resolvedIds: [8], candidates: [{ suggestionId: 7, movement }] }, error: null });
   const query = chain([receipt]); mockFrom.mockReturnValue(query);

@@ -446,18 +446,24 @@ export function usePendingDetectedMovementsQuery(userId: string | null, workspac
     queryFn: async () => {
       // Antes de pedir la lista: qué registros hechos en el teléfono siguen sin enviar (ver locallyRegistered).
       const checkedLocal = await stillLocalRegistrations((movementId) => offlineRuntime.hasPendingInsert(workspaceId!, "movements", movementId));
+      const loadPending = async () => {
+        const { data, error } = await supabase!.from("notification_detected_movement_suggestions")
+          .select("*").eq("user_id", userId!).eq("workspace_id", workspaceId!)
+          .in("status", ["pending", "needs_review"]).order("created_at", { ascending: false });
+        if (error) throw new Error("No se pudieron cargar los movimientos por revisar.");
+        return data ?? [];
+      };
+      let rows = await loadPending();
+      if (!rows.length) return [];
       const reconciliation = await reconcileDetectedMovements(workspaceId!);
       if (reconciliation.resolvedIds.length) {
         void queryClient.invalidateQueries({ queryKey: ["notifications"] });
         for (const id of reconciliation.resolvedIds) {
           void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", id] });
         }
+        rows = await loadPending();
       }
-      const { data, error } = await supabase!.from("notification_detected_movement_suggestions")
-        .select("*").eq("user_id", userId!).eq("workspace_id", workspaceId!)
-        .in("status", ["pending", "needs_review"]).order("created_at", { ascending: false });
-      if (error) throw new Error("No se pudieron cargar los movimientos por revisar.");
-      const list = (data ?? []).map((row) => ({ ...mapSuggestion(row), duplicateCandidate: reconciliation.candidates.get(Number(row.id)) ?? null }));
+      const list = rows.map((row) => ({ ...mapSuggestion(row), duplicateCandidate: reconciliation.candidates.get(Number(row.id)) ?? null }));
       return withoutLocallyRegistered(list, checkedLocal);
     },
   });
