@@ -461,7 +461,10 @@ export function usePendingDetectedMovementsQuery(userId: string | null, workspac
         for (const id of reconciliation.resolvedIds) {
           void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", id] });
         }
-        rows = await loadPending();
+        // La RPC devuelve los IDs que acaba de resolver: no hace falta descargar
+        // toda la bandeja otra vez. Las detecciones nuevas llegan en el próximo refetch.
+        const resolvedIds = new Set(reconciliation.resolvedIds);
+        rows = rows.filter((row) => !resolvedIds.has(Number(row.id)));
       }
       const list = rows.map((row) => ({ ...mapSuggestion(row), duplicateCandidate: reconciliation.candidates.get(Number(row.id)) ?? null }));
       return withoutLocallyRegistered(list, checkedLocal);

@@ -42,6 +42,14 @@ omite se indica el progreso y se bloquean las pulsaciones repetidas.
 manual. Las queries de pendientes y de revisión también concilian: cubren el
 histórico y correos recibidos después de haber anotado el movimiento.
 
+La bandeja consulta pendientes cada 30 segundos mientras está activa. Si está
+vacía no llama a la RPC. Cuando la RPC resuelve detecciones, elimina sus IDs de
+la lista ya descargada, conserva el orden y los candidatos de las restantes e
+invalida las notificaciones y los detalles afectados. Así ese ciclo usa dos
+peticiones (lista + RPC), sin una tercera descarga completa de pendientes.
+Las detecciones que lleguen durante la conciliación aparecen en el siguiente
+refetch; la revisión individual sigue releyendo su estado resuelto.
+
 La RPC exige sesión y membresía y opera solo sobre las detecciones del usuario.
 Correo mantiene la verificación PRO del servidor. Los helpers privados no tienen
 EXECUTE para usuarios. Un lock por usuario/workspace coalesce llamadas simultáneas;

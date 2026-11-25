@@ -38,12 +38,30 @@ it("no concilia si no hay detecciones pendientes", async () => {
   expect(await mockUseQuery.mock.calls[0][0].queryFn()).toEqual([]);
   expect(mockRpc).not.toHaveBeenCalled();
 });
-it("vuelve a cargar la lista tras resolver detecciones", async () => {
-  mockFrom.mockReturnValueOnce(chain([receipt])).mockReturnValueOnce(chain([]));
+it("quita la última detección resuelta sin volver a descargar la bandeja", async () => {
+  mockFrom.mockReturnValue(chain([receipt]));
   mockRpc.mockResolvedValue({ data: { resolvedIds: [7], candidates: [] }, error: null });
   usePendingDetectedMovementsQuery("tester", 1);
   expect(await mockUseQuery.mock.calls[0][0].queryFn()).toEqual([]);
-  expect(mockFrom).toHaveBeenCalledTimes(2);
+  expect(mockFrom).toHaveBeenCalledTimes(1);
+  expect(mockRpc).toHaveBeenCalledTimes(1);
+  expect(mockClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["notifications"] });
+  expect(mockClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["detected-movement-suggestion", 7] });
+});
+it("conserva el orden y el candidato de los pendientes al resolver solo parte de la bandeja", async () => {
+  mockFrom.mockReturnValue(chain([
+    { ...receipt, id: "9", status: "needs_review" },
+    { ...receipt, id: "8" },
+    { ...receipt, id: "7" },
+  ]));
+  mockRpc.mockResolvedValue({ data: { resolvedIds: [8], candidates: [{ suggestionId: 7, movement }] }, error: null });
+  usePendingDetectedMovementsQuery("tester", 1);
+  const result = await mockUseQuery.mock.calls[0][0].queryFn();
+  expect(result.map((item: DetectedMovementSuggestion) => item.id)).toEqual([9, 7]);
+  expect(result[0].status).toBe("needs_review");
+  expect(result[0].duplicateCandidate).toBeNull();
+  expect(result[1].duplicateCandidate.id).toBe(22);
+  expect(mockFrom).toHaveBeenCalledTimes(1);
 });
 it("no muestra pendientes sin conciliar cuando falla la RPC", async () => {
   mockFrom.mockReturnValue(chain([receipt]));
