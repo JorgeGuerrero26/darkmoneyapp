@@ -50,6 +50,12 @@ peticiones (lista + RPC), sin una tercera descarga completa de pendientes.
 Las detecciones que lleguen durante la conciliación aparecen en el siguiente
 refetch; la revisión individual sigue releyendo su estado resuelto.
 
+En Android, la conciliación al abrir o volver a la app lee primero la cola local
+de guardados fallidos. Solo recupera la sesión si hay payloads para reintentar:
+una cola vacía o con marcadores de reintentos agotados no dispara la revalidación
+general de `recoverSession`. El escaneo nativo, el refresco de movimientos/saldos
+y la comprobación de sugerencias registradas siguen ejecutándose.
+
 La RPC exige sesión y membresía y opera solo sobre las detecciones del usuario.
 Correo mantiene la verificación PRO del servidor. Los helpers privados no tienen
 EXECUTE para usuarios. Un lock por usuario/workspace coalesce llamadas simultáneas;
@@ -57,6 +63,14 @@ las resoluciones bloquean y vuelven a validar el candidato y la detección. Las
 queries se invalidan tras crear o editar para actualizar ambas superficies.
 
 ## Validación y despliegue
+
+Optimización móvil del 2026-11-25: pasaron 72 pruebas en cuatro suites dirigidas
+(queries de conciliación, duplicados, revisión y conciliación de foreground),
+TypeScript, lint de los archivos modificados y `git diff --check`. El lint general
+detecta 36 errores ajenos a estos cambios por referencias a `import/first` sin
+esa regla configurada. Estas optimizaciones no se han publicado por OTA ni
+comprobado en un teléfono; los conteos de peticiones corresponden al flujo
+de la query, sin incluir las revalidaciones de notificaciones o detalles.
 
 La revisión conserva un único `BottomSheet` durante carga, guardado, resolución y
 avance al siguiente pendiente. La eliminación de un pendiente de la caché no cambia

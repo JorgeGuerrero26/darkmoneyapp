@@ -77,8 +77,10 @@ export function useNotificationDetectionForegroundReconcile() {
         // ahora". El re-encolar primero sube attempts/empuja el backoff (por si la red sigue
         // caída); si el flujo termina lo limpia con clearSaveRetry. client_dedupe_key hace
         // idempotente reintentar aunque el insert anterior sí llegó.
-        await recoverSession();
         const pendingRetries = await notificationDetection.getAllSaveRetries();
+        // recoverSession también revalida todas las queries activas. Solo hace falta
+        // aquí si vamos a reintentar un guardado con un token posiblemente vencido.
+        if (pendingRetries.some((entry) => entry.payloadJson)) await recoverSession();
         let retried = 0;
         for (const entry of pendingRetries) {
           if (!entry.payloadJson) continue; // marcador de reintentos agotados: requiere al usuario
