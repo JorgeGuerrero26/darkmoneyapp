@@ -16,6 +16,7 @@
 | Doc | Contenido |
 |---|---|
 | [`DARKMONEY_PHASE_2_INCOMING_FEATURES.md`](DARKMONEY_PHASE_2_INCOMING_FEATURES.md) | Fase 2: fundaciones, reportes históricos, chat IA, insights |
+| [`DARK_FAMILY_REUSE_PLAN.md`](DARK_FAMILY_REUSE_PLAN.md) | Inventario de reutilización DarkCompany, piloto Select nativo y plan de migración por etapas (2026-11-25) |
 
 ## Specs y planes por feature
 
